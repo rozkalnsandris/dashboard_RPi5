@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildAgentApp } from "./app.js";
+import { DockerSourceUnavailableError } from "./docker-read.js";
 import { HostSourceUnavailableError } from "./host-read.js";
 
 const apps: ReturnType<typeof buildAgentApp>["app"][] = [];
@@ -46,6 +47,40 @@ const hostSummaryFixture = {
   },
 };
 
+const dockerContainersFixture = {
+  observedAt: "2026-08-15T13:00:00.000Z",
+  apiVersion: "1.40" as const,
+  engineVersion: "29.6.1",
+  daemonApiVersion: "1.55",
+  daemonMinApiVersion: "1.40",
+  containers: [
+    {
+      id: "a".repeat(64),
+      name: "homeassistant",
+      image: "ghcr.io/home-assistant/home-assistant:stable",
+      imageId: "sha256:1234",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      state: "RUNNING" as const,
+      health: "HEALTHY" as const,
+      restartCount: 1,
+      startedAt: "2026-08-15T12:00:00.000Z",
+      uptimeSeconds: 3_600,
+      statsState: "AVAILABLE" as const,
+      stats: {
+        cpuPercent: 12.5,
+        memoryUsedBytes: 500_000_000,
+        memoryLimitBytes: 8_000_000_000,
+        memoryPercent: 6.25,
+        networkRxBytes: 100,
+        networkTxBytes: 200,
+        blockReadBytes: 300,
+        blockWriteBytes: 400,
+        pids: 12,
+      },
+    },
+  ],
+};
+
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
@@ -54,6 +89,7 @@ describe("agent health protocol", () => {
   it("returns the versioned source-only contract", async () => {
     const { app } = buildAgentApp({
       hostSummaryReader: async () => hostSummaryFixture,
+      dockerContainersReader: async () => dockerContainersFixture,
     });
     apps.push(app);
 
@@ -66,8 +102,8 @@ describe("agent health protocol", () => {
       service: "dashboard-rpi5-agent",
       mode: "SOURCE_ONLY",
       protocolVersion: 1,
-      agentVersion: "0.3.0",
-      capabilities: ["protocol.health", "host.summary"],
+      agentVersion: "0.4.0",
+      capabilities: ["protocol.health", "host.summary", "docker.containers"],
     });
     expect(new Date(payload.observedAt).toISOString()).toBe(payload.observedAt);
   });
@@ -75,6 +111,7 @@ describe("agent health protocol", () => {
   it("returns the purpose-built host summary contract", async () => {
     const { app } = buildAgentApp({
       hostSummaryReader: async () => hostSummaryFixture,
+      dockerContainersReader: async () => dockerContainersFixture,
     });
     apps.push(app);
 
@@ -83,11 +120,24 @@ describe("agent health protocol", () => {
     expect(response.json()).toEqual(hostSummaryFixture);
   });
 
+  it("returns the purpose-built Docker containers contract", async () => {
+    const { app } = buildAgentApp({
+      hostSummaryReader: async () => hostSummaryFixture,
+      dockerContainersReader: async () => dockerContainersFixture,
+    });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/v1/docker/containers" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(dockerContainersFixture);
+  });
+
   it("normalizes unavailable host evidence without leaking details", async () => {
     const { app } = buildAgentApp({
       hostSummaryReader: async () => {
         throw new HostSourceUnavailableError();
       },
+      dockerContainersReader: async () => dockerContainersFixture,
     });
     apps.push(app);
 
@@ -96,9 +146,24 @@ describe("agent health protocol", () => {
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });
 
+  it("normalizes unavailable Docker evidence without leaking details", async () => {
+    const { app } = buildAgentApp({
+      hostSummaryReader: async () => hostSummaryFixture,
+      dockerContainersReader: async () => {
+        throw new DockerSourceUnavailableError();
+      },
+    });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/v1/docker/containers" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
+  });
+
   it("normalizes unknown routes without leaking internal details", async () => {
     const { app } = buildAgentApp({
       hostSummaryReader: async () => hostSummaryFixture,
+      dockerContainersReader: async () => dockerContainersFixture,
     });
     apps.push(app);
 
