@@ -1,3 +1,5 @@
+/* global self, caches, URL, fetch, Response */
+
 const CACHE_PREFIX = "dashboard-rpi5-static-";
 const CACHE_NAME = `${CACHE_PREFIX}v1`;
 const PRECACHE_URLS = [
