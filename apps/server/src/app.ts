@@ -29,6 +29,7 @@ import { isAbsolute } from "node:path";
 import { createAgentBackupEvidenceReader } from "./agent-backup-evidence-client.js";
 import { createAgentDeployEventsReader } from "./agent-deploy-events-client.js";
 import { createAgentDockerEventsReader } from "./agent-docker-events-client.js";
+import { createAgentEndpointEvidenceReader } from "./agent-endpoint-evidence-client.js";
 import {
   createAgentLogsReaders,
   type LogsReader,
@@ -85,6 +86,7 @@ function buildDefaultActivityReader(servicesReader: ServicesReader): ActivityRea
     backupEvidenceReader: createAgentBackupEvidenceReader(agentSocketOptions()),
     maintenanceEventsReader: createAgentMaintenanceEventsReader(agentSocketOptions()),
     deployEventsReader: createAgentDeployEventsReader(agentSocketOptions()),
+    endpointEvidenceReader: createAgentEndpointEvidenceReader(agentSocketOptions()),
   });
 }
 
