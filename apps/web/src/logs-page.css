@@ -93,6 +93,7 @@
 }
 
 .logs-live-page .log-line {
+  grid-template-columns: 72px 64px 82px minmax(0, 1fr);
   align-items: start;
 }
 
