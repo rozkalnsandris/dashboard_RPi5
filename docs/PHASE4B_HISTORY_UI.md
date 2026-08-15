@@ -11,7 +11,7 @@ This source-only phase consumes the normalized Phase 4A host-history API in the 
 - `UNAVAILABLE` is explicit and never rendered as zero.
 - Loading and source-error states remain visible and fail closed.
 - The Grafana deep link appears only when the server returns a non-null `grafanaHref`.
-- Range controls are at least 44 px high and reflow at 320 CSS px.
+- Range controls are at least 48 px high and reflow at 320 CSS px.
 - Polling is bounded to 60 seconds while the query has an active observer and is not continued in the background.
 - No charting dependency is added for this compact presentation.
 
