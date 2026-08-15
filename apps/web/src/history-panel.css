@@ -6,7 +6,7 @@
 
 .history-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
 .history-range { display: inline-grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 12px; background: #090f17; }
-.history-range__button { min-width: 54px; min-height: 44px; border: 0; border-radius: 9px; background: transparent; color: var(--subtle); cursor: pointer; font-size: .74rem; font-weight: 850; font-variant-numeric: tabular-nums; }
+.history-range__button { min-width: 54px; min-height: 48px; border: 0; border-radius: 9px; background: transparent; color: var(--subtle); cursor: pointer; font-size: .74rem; font-weight: 850; font-variant-numeric: tabular-nums; }
 .history-range__button.is-active { background: var(--surface-3); color: var(--text); }
 .history-refresh { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; color: var(--subtle); font-size: .68rem; font-weight: 750; }
 .history-refresh svg { animation: history-spin .9s linear infinite; }
@@ -30,7 +30,7 @@
 .history-sparkline polyline { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 .history-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; color: var(--subtle); font-size: .66rem; }
-.history-footer a { min-height: 44px; display: inline-flex; align-items: center; gap: 5px; color: #a9c1ff; font-weight: 850; text-decoration: none; }
+.history-footer a { min-height: 48px; display: inline-flex; align-items: center; gap: 5px; color: #a9c1ff; font-weight: 850; text-decoration: none; }
 
 @keyframes history-spin { to { transform: rotate(360deg); } }
 
