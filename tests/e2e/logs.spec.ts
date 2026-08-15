@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const sourcesPayload = {
   observedAt: "2026-08-15T16:00:00.000Z",
@@ -34,9 +34,9 @@ function logsPayload(message = "Docker daemon ready") {
   };
 }
 
-async function mockLogs(page: Parameters<typeof test>[0] extends never ? never : any) {
+async function mockLogs(page: Page) {
   const requestedUrls: string[] = [];
-  await page.route("**/api/logs/sources", async (route: any) => {
+  await page.route("**/api/logs/sources", async (route) => {
     requestedUrls.push(route.request().url());
     await route.fulfill({
       status: 200,
@@ -44,7 +44,7 @@ async function mockLogs(page: Parameters<typeof test>[0] extends never ? never :
       body: JSON.stringify(sourcesPayload),
     });
   });
-  await page.route("**/api/logs?*", async (route: any) => {
+  await page.route("**/api/logs?*", async (route) => {
     requestedUrls.push(route.request().url());
     await route.fulfill({
       status: 200,
