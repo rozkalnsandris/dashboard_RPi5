@@ -24,9 +24,16 @@ export const DeploymentClassificationSchema = Type.Union([
 ]);
 export type DeploymentClassification = Static<typeof DeploymentClassificationSchema>;
 
-const DeploymentImpactPathSchema = Type.Union(
-  DEPLOYMENT_IMPACT_PATHS.map((path) => Type.Literal(path)),
-);
+const DeploymentImpactPathSchema = Type.Union([
+  Type.Literal("ops/bin/rpi5-backup"),
+  Type.Literal("ops/cron.d/rpi5-backup"),
+  Type.Literal("ops/logrotate.d/rpi5-backup"),
+  Type.Literal("ops/deploy/targets.json"),
+  Type.Literal("scripts/rpi5-deploy"),
+  Type.Literal("scripts/rpi5_deploy.py"),
+  Type.Literal("scripts/rpi5_deploy_lib.py"),
+  Type.Literal("scripts/rpi5_deploy_tx.py"),
+]);
 export type DeploymentImpactPath = (typeof DEPLOYMENT_IMPACT_PATHS)[number];
 
 const NullableFullShaSchema = Type.Union([
