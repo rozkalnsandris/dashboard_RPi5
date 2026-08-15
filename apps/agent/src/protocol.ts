@@ -1,4 +1,4 @@
-import type { AgentCapability } from "@dashboard-rpi5/contracts";
+import type { AgentCapability } from "@dashboard-rpi5/contracts/agent";
 
 export const AGENT_SERVICE_NAME = "dashboard-rpi5-agent" as const;
 export const AGENT_VERSION = "0.6.0" as const;
