@@ -9,11 +9,13 @@ import { ActivityPage } from "./pages/ActivityPage";
 import { LogsPage } from "./pages/LogsPage";
 import { OverviewHistoryPage } from "./pages/OverviewHistoryPage";
 import { ReliabilityStatesPage } from "./pages/ReliabilityStatesPage";
+import { ServicesPage } from "./pages/ServicesPage";
 import { TerminalPage } from "./pages/TerminalPage";
 import "./styles.css";
 import "./phase1-pages.css";
 import "./reliability-states.css";
 import "./history-panel.css";
+import "./services-page.css";
 import "./input-mode.css";
 import "./navigation.css";
 
@@ -35,7 +37,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <OverviewHistoryPage /> },
       { path: "docker", element: <DockerPage /> },
-      { path: "services", element: <PlaceholderPage /> },
+      { path: "services", element: <ServicesPage /> },
       { path: "logs", element: <LogsPage /> },
       { path: "terminal", element: <TerminalPage /> },
       { path: "activity", element: <ActivityPage /> },
