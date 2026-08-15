@@ -12,6 +12,7 @@ import { TerminalPage } from "./pages/TerminalPage";
 import "./styles.css";
 import "./phase1-pages.css";
 import "./reliability-states.css";
+import "./input-mode.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
