@@ -13,6 +13,8 @@ import { OverviewHistoryPage } from "./pages/OverviewHistoryPage";
 import { ReliabilityStatesPage } from "./pages/ReliabilityStatesPage";
 import { ServicesPage } from "./pages/ServicesPage";
 import { TerminalPage } from "./pages/TerminalPage";
+import { OfflineBanner } from "./pwa";
+import { registerPwaServiceWorker } from "./pwa-register";
 import "./styles.css";
 import "./phase1-pages.css";
 import "./logs-page.css";
@@ -26,6 +28,7 @@ import "./history-panel.css";
 import "./services-page.css";
 import "./input-mode.css";
 import "./navigation.css";
+import "./pwa.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -59,8 +62,11 @@ const router = createBrowserRouter([
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root mount element");
 
+registerPwaServiceWorker();
+
 createRoot(root).render(
   <StrictMode>
+    <OfflineBanner />
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>

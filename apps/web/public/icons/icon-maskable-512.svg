@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="RPi5 Dashboard">
+  <rect width="512" height="512" fill="#070b11"/>
+  <circle cx="256" cy="256" r="184" fill="#121e30" stroke="#5f8cff" stroke-width="10"/>
+  <text x="256" y="292" text-anchor="middle" font-family="system-ui, sans-serif" font-size="150" font-weight="800" fill="#f4f7fb">R5</text>
+  <circle cx="338" cy="338" r="15" fill="#42d77d"/>
+</svg>
