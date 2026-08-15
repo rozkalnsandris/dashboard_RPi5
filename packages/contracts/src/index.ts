@@ -24,6 +24,7 @@ export type ApiHealth = Static<typeof ApiHealthSchema>;
 export const AgentCapabilitySchema = Type.Union([
   Type.Literal("protocol.health"),
   Type.Literal("host.summary"),
+  Type.Literal("docker.containers"),
 ]);
 
 export type AgentCapability = Static<typeof AgentCapabilitySchema>;
@@ -44,7 +45,9 @@ export const AgentHealthSchema = Type.Object(
 export type AgentHealth = Static<typeof AgentHealthSchema>;
 
 const NonNegativeIntegerSchema = Type.Integer({ minimum: 0 });
+const NullableNonNegativeIntegerSchema = Type.Union([NonNegativeIntegerSchema, Type.Null()]);
 const PercentSchema = Type.Number({ minimum: 0, maximum: 100 });
+const NullablePercentSchema = Type.Union([PercentSchema, Type.Null()]);
 
 export const HostThrottleFlagsSchema = Type.Object(
   {
@@ -120,6 +123,88 @@ export const HostSummarySchema = Type.Object(
 );
 
 export type HostSummary = Static<typeof HostSummarySchema>;
+
+export const DockerContainerStateSchema = Type.Union([
+  Type.Literal("CREATED"),
+  Type.Literal("RUNNING"),
+  Type.Literal("PAUSED"),
+  Type.Literal("RESTARTING"),
+  Type.Literal("REMOVING"),
+  Type.Literal("EXITED"),
+  Type.Literal("DEAD"),
+  Type.Literal("UNKNOWN"),
+]);
+
+export type DockerContainerState = Static<typeof DockerContainerStateSchema>;
+
+export const DockerHealthStatusSchema = Type.Union([
+  Type.Literal("HEALTHY"),
+  Type.Literal("UNHEALTHY"),
+  Type.Literal("STARTING"),
+  Type.Literal("NONE"),
+  Type.Literal("UNKNOWN"),
+]);
+
+export type DockerHealthStatus = Static<typeof DockerHealthStatusSchema>;
+
+export const DockerStatsStateSchema = Type.Union([
+  Type.Literal("AVAILABLE"),
+  Type.Literal("UNAVAILABLE"),
+  Type.Literal("NOT_RUNNING"),
+]);
+
+export type DockerStatsState = Static<typeof DockerStatsStateSchema>;
+
+export const DockerResourceStatsSchema = Type.Object(
+  {
+    cpuPercent: NullablePercentSchema,
+    memoryUsedBytes: NullableNonNegativeIntegerSchema,
+    memoryLimitBytes: NullableNonNegativeIntegerSchema,
+    memoryPercent: NullablePercentSchema,
+    networkRxBytes: NullableNonNegativeIntegerSchema,
+    networkTxBytes: NullableNonNegativeIntegerSchema,
+    blockReadBytes: NullableNonNegativeIntegerSchema,
+    blockWriteBytes: NullableNonNegativeIntegerSchema,
+    pids: NullableNonNegativeIntegerSchema,
+  },
+  { additionalProperties: false },
+);
+
+export type DockerResourceStats = Static<typeof DockerResourceStatsSchema>;
+
+export const DockerContainerSnapshotSchema = Type.Object(
+  {
+    id: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+    name: Type.String({ minLength: 1, maxLength: 256 }),
+    image: Type.String({ minLength: 1, maxLength: 1024 }),
+    imageId: Type.String({ minLength: 1, maxLength: 256 }),
+    createdAt: Type.String({ format: "date-time" }),
+    state: DockerContainerStateSchema,
+    health: DockerHealthStatusSchema,
+    restartCount: NonNegativeIntegerSchema,
+    startedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+    uptimeSeconds: Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
+    statsState: DockerStatsStateSchema,
+    stats: Type.Union([DockerResourceStatsSchema, Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+
+export type DockerContainerSnapshot = Static<typeof DockerContainerSnapshotSchema>;
+
+export const DockerContainersSnapshotSchema = Type.Object(
+  {
+    observedAt: Type.String({ format: "date-time" }),
+    apiVersion: Type.Literal("1.40"),
+    engineVersion: Type.String({ minLength: 1, maxLength: 64 }),
+    daemonApiVersion: Type.String({ pattern: "^\\d+\\.\\d+$" }),
+    daemonMinApiVersion: Type.String({ pattern: "^\\d+\\.\\d+$" }),
+    containers: Type.Array(DockerContainerSnapshotSchema, { maxItems: 512 }),
+  },
+  { additionalProperties: false },
+);
+
+export type DockerContainersSnapshot = Static<typeof DockerContainersSnapshotSchema>;
 
 export const AgentErrorCodeSchema = Type.Union([
   Type.Literal("NOT_FOUND"),
