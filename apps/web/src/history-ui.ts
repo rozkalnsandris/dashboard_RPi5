@@ -8,6 +8,14 @@ import type {
 
 export const HISTORY_RANGES: readonly HistoryRange[] = ["1h", "24h", "7d"];
 
+const HISTORY_MAX_POINTS: Record<HistoryRange, number> = {
+  "1h": 121,
+  "24h": 289,
+  "7d": 337,
+};
+
+const HISTORY_MAX_RESPONSE_CHARS = 2 * 1024 * 1024;
+
 export const HISTORY_METRIC_META: Record<
   HostHistoryMetric,
   { label: string; unit: string; decimals: number }
@@ -36,21 +44,31 @@ function isMetric(value: unknown): value is HostHistoryMetric {
   return value === "CPU_PERCENT" || value === "MEMORY_PERCENT" || value === "ROOT_FS_PERCENT" || value === "LOAD1";
 }
 
-function parsePoint(value: unknown): HistoryPoint | null {
+function metricValueIsValid(metric: HostHistoryMetric, value: number): boolean {
+  if (!Number.isFinite(value)) return false;
+  if (metric === "LOAD1") return value >= 0;
+  return value >= 0 && value <= 100;
+}
+
+function parsePoint(value: unknown, metric: HostHistoryMetric): HistoryPoint | null {
   if (!isRecord(value) || typeof value.timestamp !== "string" || typeof value.value !== "number") return null;
-  if (!Number.isFinite(value.value) || !Number.isFinite(Date.parse(value.timestamp))) return null;
+  if (!metricValueIsValid(metric, value.value) || !Number.isFinite(Date.parse(value.timestamp))) return null;
   return { timestamp: value.timestamp, value: value.value };
 }
 
-function parseSeries(value: unknown): HostHistorySeries | null {
+function parseSeries(value: unknown, maxPoints: number): HostHistorySeries | null {
   if (!isRecord(value) || !isMetric(value.metric)) return null;
   if (value.state !== "AVAILABLE" && value.state !== "UNAVAILABLE") return null;
-  if (!Array.isArray(value.points) || value.points.length > 337) return null;
+  if (!Array.isArray(value.points) || value.points.length > maxPoints) return null;
 
   const points: HistoryPoint[] = [];
+  let previousTimestamp = Number.NEGATIVE_INFINITY;
   for (const point of value.points) {
-    const parsed = parsePoint(point);
+    const parsed = parsePoint(point, value.metric);
     if (parsed === null) return null;
+    const timestamp = Date.parse(parsed.timestamp);
+    if (timestamp <= previousTimestamp) return null;
+    previousTimestamp = timestamp;
     points.push(parsed);
   }
 
@@ -94,11 +112,24 @@ export function parseHostHistorySnapshot(value: unknown): HostHistorySnapshot {
     throw new Error("Invalid history response");
   }
 
-  const series = value.series.map(parseSeries);
+  const windowStart = Date.parse(value.windowStart);
+  const windowEnd = Date.parse(value.windowEnd);
+  const observedAt = Date.parse(value.observedAt);
+  if (windowStart > windowEnd || observedAt < windowEnd) throw new Error("Invalid history response");
+
+  const maxPoints = HISTORY_MAX_POINTS[value.range];
+  const series = value.series.map((item) => parseSeries(item, maxPoints));
   if (series.some((item) => item === null)) throw new Error("Invalid history response");
   const typedSeries = series as HostHistorySeries[];
   const metrics = new Set(typedSeries.map((item) => item.metric));
   if (metrics.size !== 4) throw new Error("Invalid history response");
+
+  for (const item of typedSeries) {
+    for (const point of item.points) {
+      const timestamp = Date.parse(point.timestamp);
+      if (timestamp < windowStart || timestamp > windowEnd) throw new Error("Invalid history response");
+    }
+  }
 
   return {
     observedAt: value.observedAt,
@@ -118,7 +149,20 @@ export async function fetchHostHistory(range: HistoryRange, signal?: AbortSignal
     ...(signal === undefined ? {} : { signal }),
   });
   if (!response.ok) throw new Error("History source unavailable");
-  return parseHostHistorySnapshot(await response.json());
+
+  const raw = await response.text();
+  if (raw.length > HISTORY_MAX_RESPONSE_CHARS) throw new Error("History source unavailable");
+
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(raw);
+  } catch {
+    throw new Error("History source unavailable");
+  }
+
+  const snapshot = parseHostHistorySnapshot(parsedJson);
+  if (snapshot.range !== range) throw new Error("History source unavailable");
+  return snapshot;
 }
 
 export function getSeriesStats(series: HostHistorySeries): SeriesStats | null {
