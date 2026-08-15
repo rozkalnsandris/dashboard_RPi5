@@ -4,16 +4,26 @@ import {
   HostHistoryQuerySchema,
   HostHistorySnapshotSchema,
 } from "@dashboard-rpi5/contracts/history";
+import {
+  SystemdServicesApiErrorSchema,
+  SystemdServicesQuerySchema,
+  SystemdServicesSnapshotSchema,
+} from "@dashboard-rpi5/contracts/services";
 import fastifyStatic from "@fastify/static";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import Fastify from "fastify";
 import { isAbsolute } from "node:path";
 
+import {
+  createAgentServicesReader,
+  type ServicesReader,
+} from "./agent-services-client.js";
 import { createHostHistoryReader, type HostHistoryReader } from "./host-history.js";
 
 interface BuildAppOptions {
   staticRoot?: string;
   historyReader?: HostHistoryReader;
+  servicesReader?: ServicesReader;
 }
 
 function buildDefaultHistoryReader(): HostHistoryReader {
@@ -33,6 +43,14 @@ function buildDefaultHistoryReader(): HostHistoryReader {
   });
 }
 
+function buildDefaultServicesReader(): ServicesReader {
+  return createAgentServicesReader({
+    ...(process.env.DASHBOARD_AGENT_SOCKET_PATH === undefined
+      ? {}
+      : { socketPath: process.env.DASHBOARD_AGENT_SOCKET_PATH }),
+  });
+}
+
 export function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({
     logger: false,
@@ -43,6 +61,7 @@ export function buildApp(options: BuildAppOptions = {}) {
     },
   }).withTypeProvider<TypeBoxTypeProvider>();
   const historyReader = options.historyReader ?? buildDefaultHistoryReader();
+  const servicesReader = options.servicesReader ?? buildDefaultServicesReader();
 
   app.get(
     "/api/health",
@@ -81,6 +100,32 @@ export function buildApp(options: BuildAppOptions = {}) {
 
       try {
         return await historyReader(request.query.range);
+      } catch {
+        return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/services",
+    {
+      attachValidation: true,
+      schema: {
+        querystring: SystemdServicesQuerySchema,
+        response: {
+          200: SystemdServicesSnapshotSchema,
+          400: SystemdServicesApiErrorSchema,
+          503: SystemdServicesApiErrorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (request.validationError !== undefined) {
+        return reply.code(400).send({ error: "INVALID_REQUEST" });
+      }
+
+      try {
+        return await servicesReader();
       } catch {
         return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
       }
