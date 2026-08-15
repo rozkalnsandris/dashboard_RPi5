@@ -16,7 +16,7 @@
     "react": "latest",
     "react-aria-components": "latest",
     "react-dom": "latest",
-    "react-router-dom": "latest"
+    "react-router": "latest"
   },
   "devDependencies": {
     "@tailwindcss/vite": "latest",
