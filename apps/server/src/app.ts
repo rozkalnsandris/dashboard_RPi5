@@ -5,6 +5,11 @@ import {
   ActivitySnapshotSchema,
 } from "@dashboard-rpi5/contracts/activity";
 import {
+  BackupStatusApiErrorSchema,
+  BackupStatusQuerySchema,
+  BackupStatusSnapshotSchema,
+} from "@dashboard-rpi5/contracts/backup-status";
+import {
   DashboardApiErrorSchema,
   HostHistoryQuerySchema,
   HostHistorySnapshotSchema,
@@ -41,6 +46,7 @@ import {
   type ServicesReader,
 } from "./agent-services-client.js";
 import { createActivityReader, type ActivityReader } from "./activity.js";
+import { createBackupStatusReader, type BackupStatusReader } from "./backup-status.js";
 import { createHostHistoryReader, type HostHistoryReader } from "./host-history.js";
 
 interface BuildAppOptions {
@@ -48,6 +54,7 @@ interface BuildAppOptions {
   historyReader?: HostHistoryReader;
   servicesReader?: ServicesReader;
   activityReader?: ActivityReader;
+  backupStatusReader?: BackupStatusReader;
   logSourcesReader?: LogSourcesReader;
   logsReader?: LogsReader;
 }
@@ -90,6 +97,12 @@ function buildDefaultActivityReader(servicesReader: ServicesReader): ActivityRea
   });
 }
 
+function buildDefaultBackupStatusReader(): BackupStatusReader {
+  return createBackupStatusReader({
+    backupEvidenceReader: createAgentBackupEvidenceReader(agentSocketOptions()),
+  });
+}
+
 function buildDefaultLogsReaders(): {
   readSources: LogSourcesReader;
   readLogs: LogsReader;
@@ -109,6 +122,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   const historyReader = options.historyReader ?? buildDefaultHistoryReader();
   const servicesReader = options.servicesReader ?? buildDefaultServicesReader();
   const activityReader = options.activityReader ?? buildDefaultActivityReader(servicesReader);
+  const backupStatusReader = options.backupStatusReader ?? buildDefaultBackupStatusReader();
   const defaultLogsReaders =
     options.logSourcesReader === undefined || options.logsReader === undefined
       ? buildDefaultLogsReaders()
@@ -182,6 +196,33 @@ export function buildApp(options: BuildAppOptions = {}) {
 
       try {
         return await servicesReader();
+      } catch {
+        return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/backups",
+    {
+      attachValidation: true,
+      schema: {
+        querystring: BackupStatusQuerySchema,
+        response: {
+          200: BackupStatusSnapshotSchema,
+          400: BackupStatusApiErrorSchema,
+          503: BackupStatusApiErrorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      if (request.validationError !== undefined) {
+        return reply.code(400).send({ error: "INVALID_REQUEST" });
+      }
+
+      try {
+        return await backupStatusReader();
       } catch {
         return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
       }
