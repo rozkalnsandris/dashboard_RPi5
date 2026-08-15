@@ -36,21 +36,21 @@ afterEach(async () => {
   );
 });
 
+const dockerSource = {
+  sourceId: "systemd:docker",
+  label: "Docker Engine",
+  kind: "SYSTEMD",
+  rangeMode: "TIME",
+};
+
 const sourcesPayload = {
   observedAt: "2026-08-15T15:00:00.000Z",
-  sources: [
-    {
-      sourceId: "systemd:docker",
-      label: "Docker Engine",
-      kind: "SYSTEMD",
-      rangeMode: "TIME",
-    },
-  ],
+  sources: [dockerSource],
 };
 
 const logsPayload = {
   observedAt: "2026-08-15T15:00:00.000Z",
-  source: sourcesPayload.sources[0],
+  source: dockerSource,
   range: "1h",
   rangeApplied: true,
   entries: [
@@ -120,6 +120,34 @@ describe("Phase 5B agent logs Unix-socket client", () => {
     });
     await expect(
       createAgentLogsReaders({ socketPath }).readLogs("systemd:docker", "1h"),
+    ).rejects.toBeInstanceOf(AgentLogsSourceError);
+  });
+
+  it("rejects a valid-looking snapshot that does not match the requested source or range", async () => {
+    const mismatchedSourceSocket = await listen((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          ...logsPayload,
+          source: {
+            sourceId: "systemd:ssh",
+            label: "SSH",
+            kind: "SYSTEMD",
+            rangeMode: "TIME",
+          },
+        }),
+      );
+    });
+    await expect(
+      createAgentLogsReaders({ socketPath: mismatchedSourceSocket }).readLogs("systemd:docker", "1h"),
+    ).rejects.toBeInstanceOf(AgentLogsSourceError);
+
+    const mismatchedRangeSocket = await listen((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ ...logsPayload, range: "6h" }));
+    });
+    await expect(
+      createAgentLogsReaders({ socketPath: mismatchedRangeSocket }).readLogs("systemd:docker", "1h"),
     ).rejects.toBeInstanceOf(AgentLogsSourceError);
   });
 
