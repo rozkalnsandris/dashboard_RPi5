@@ -25,6 +25,7 @@ export const AgentCapabilitySchema = Type.Union([
   Type.Literal("protocol.health"),
   Type.Literal("host.summary"),
   Type.Literal("docker.containers"),
+  Type.Literal("docker.events.recent"),
 ]);
 
 export type AgentCapability = Static<typeof AgentCapabilitySchema>;
@@ -206,6 +207,71 @@ export const DockerContainersSnapshotSchema = Type.Object(
 );
 
 export type DockerContainersSnapshot = Static<typeof DockerContainersSnapshotSchema>;
+
+export const DockerEventActionSchema = Type.Union([
+  Type.Literal("CREATE"),
+  Type.Literal("DESTROY"),
+  Type.Literal("DIE"),
+  Type.Literal("HEALTH_STATUS"),
+  Type.Literal("KILL"),
+  Type.Literal("OOM"),
+  Type.Literal("PAUSE"),
+  Type.Literal("RENAME"),
+  Type.Literal("RESTART"),
+  Type.Literal("START"),
+  Type.Literal("STOP"),
+  Type.Literal("UNPAUSE"),
+  Type.Literal("UPDATE"),
+]);
+
+export type DockerEventAction = Static<typeof DockerEventActionSchema>;
+
+export const DockerEventHealthSchema = Type.Union([
+  Type.Literal("HEALTHY"),
+  Type.Literal("UNHEALTHY"),
+  Type.Literal("STARTING"),
+  Type.Literal("UNKNOWN"),
+]);
+
+export type DockerEventHealth = Static<typeof DockerEventHealthSchema>;
+
+export const DockerEventScopeSchema = Type.Union([
+  Type.Literal("LOCAL"),
+  Type.Literal("SWARM"),
+  Type.Literal("UNKNOWN"),
+]);
+
+export type DockerEventScope = Static<typeof DockerEventScopeSchema>;
+
+export const DockerRecentEventSchema = Type.Object(
+  {
+    occurredAt: Type.String({ format: "date-time" }),
+    action: DockerEventActionSchema,
+    containerId: Type.String({ pattern: "^[0-9a-f]{64}$" }),
+    containerName: Type.Union([Type.String({ minLength: 1, maxLength: 256 }), Type.Null()]),
+    image: Type.Union([Type.String({ minLength: 1, maxLength: 1024 }), Type.Null()]),
+    health: Type.Union([DockerEventHealthSchema, Type.Null()]),
+    exitCode: Type.Union([Type.Integer({ minimum: 0, maximum: 255 }), Type.Null()]),
+    signal: Type.Union([Type.String({ minLength: 1, maxLength: 32 }), Type.Null()]),
+    scope: DockerEventScopeSchema,
+  },
+  { additionalProperties: false },
+);
+
+export type DockerRecentEvent = Static<typeof DockerRecentEventSchema>;
+
+export const DockerRecentEventsSnapshotSchema = Type.Object(
+  {
+    observedAt: Type.String({ format: "date-time" }),
+    windowStart: Type.String({ format: "date-time" }),
+    windowEnd: Type.String({ format: "date-time" }),
+    apiVersion: Type.Literal("1.40"),
+    events: Type.Array(DockerRecentEventSchema, { maxItems: 256 }),
+  },
+  { additionalProperties: false },
+);
+
+export type DockerRecentEventsSnapshot = Static<typeof DockerRecentEventsSnapshotSchema>;
 
 export const AgentErrorCodeSchema = Type.Union([
   Type.Literal("NOT_FOUND"),
