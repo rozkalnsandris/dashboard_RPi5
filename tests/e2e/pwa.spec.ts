@@ -30,16 +30,16 @@ test("PWA manifest exposes standalone identity and required icon sizes", async (
   });
   expect(manifest.icons).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ sizes: "192x192", purpose: "any" }),
-      expect.objectContaining({ sizes: "512x512", purpose: "any" }),
-      expect.objectContaining({ sizes: "512x512", purpose: "maskable" }),
+      expect.objectContaining({ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" }),
+      expect.objectContaining({ src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" }),
+      expect.objectContaining({ src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" }),
     ]),
   );
 
   for (const icon of manifest.icons) {
     const iconResponse = await page.request.get(icon.src);
     expect(iconResponse.ok(), `${icon.src} should be served`).toBe(true);
-    expect(icon.type).toBe("image/svg+xml");
+    expect(["image/png", "image/svg+xml"]).toContain(icon.type);
   }
 });
 
@@ -76,7 +76,7 @@ test("service worker caches only reviewed static assets and uses an offline fall
       const image = new Image();
       image.onload = () => resolve();
       image.onerror = () => reject(new Error("runtime image load failed"));
-      image.src = "/icons/icon-192.svg?runtime-cache=1";
+      image.src = "/icons/icon-192.png?runtime-cache=1";
       document.body.append(image);
     });
     await fetch("/api/pwa-cache-probe").catch(() => undefined);
@@ -94,7 +94,7 @@ test("service worker caches only reviewed static assets and uses an offline fall
 
   expect(cachedUrls.some((url) => url.includes("/api/"))).toBe(false);
   expect(cachedUrls.some((url) => url.endsWith("/offline.html"))).toBe(true);
-  expect(cachedUrls.some((url) => url.includes("icon-192.svg?runtime-cache=1"))).toBe(true);
+  expect(cachedUrls.some((url) => url.includes("icon-192.png?runtime-cache=1"))).toBe(true);
 
   await page.context().setOffline(true);
   try {
