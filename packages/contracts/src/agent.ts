@@ -22,5 +22,4 @@ export const AgentHealthSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type AgentCapability = Static<typeof AgentCapabilitySchema>;
 export type AgentHealth = Static<typeof AgentHealthSchema>;
