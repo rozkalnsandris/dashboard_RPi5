@@ -9,6 +9,11 @@ import {
 } from "@dashboard-rpi5/contracts";
 import { AgentHealthSchema, type AgentHealth } from "@dashboard-rpi5/contracts/agent";
 import {
+  BackupEvidenceQuerySchema,
+  BackupEvidenceSnapshotSchema,
+  type BackupEvidenceSnapshot,
+} from "@dashboard-rpi5/contracts/backups";
+import {
   LogSnapshotSchema,
   LogSourcesQuerySchema,
   LogSourcesSnapshotSchema,
@@ -25,6 +30,7 @@ import {
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import Fastify from "fastify";
 
+import { readBackupEvidence } from "./backup-evidence.js";
 import { readRecentDockerEvents } from "./docker-events.js";
 import { readDockerContainers } from "./docker-read.js";
 import { readHostSummary } from "./host-read.js";
@@ -49,6 +55,7 @@ interface BuildAgentAppOptions {
   dockerContainersReader?: (signal: AbortSignal) => Promise<DockerContainersSnapshot>;
   dockerEventsReader?: (signal: AbortSignal) => Promise<DockerRecentEventsSnapshot>;
   servicesReader?: (signal: AbortSignal) => Promise<SystemdServicesSnapshot>;
+  backupReader?: (signal: AbortSignal) => Promise<BackupEvidenceSnapshot>;
   logSourcesReader?: () => LogSourcesSnapshot;
   logsReader?: (
     sourceId: LogSourceId,
@@ -70,6 +77,8 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
   const servicesReader =
     options.servicesReader ??
     ((signal: AbortSignal) => readSystemdServices(undefined, signal));
+  const backupReader =
+    options.backupReader ?? ((signal: AbortSignal) => readBackupEvidence(undefined, signal));
   const logSourcesReader = options.logSourcesReader ?? (() => listRegisteredLogSources());
   const logsReader =
     options.logsReader ??
@@ -80,6 +89,7 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
   operationRegistry.register("docker.containers", dockerContainersReader);
   operationRegistry.register("docker.events.recent", dockerEventsReader);
   operationRegistry.register("services.status", servicesReader);
+  operationRegistry.register("backups.recent", backupReader);
 
   const app = Fastify({
     logger: false,
@@ -169,6 +179,28 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
     },
     async (): Promise<SystemdServicesSnapshot> =>
       operationRegistry.run<SystemdServicesSnapshot>("services.status"),
+  );
+
+  app.get(
+    "/v1/backups/recent",
+    {
+      attachValidation: true,
+      schema: {
+        querystring: BackupEvidenceQuerySchema,
+        response: {
+          200: BackupEvidenceSnapshotSchema,
+          400: AgentErrorSchema,
+          503: AgentErrorSchema,
+          504: AgentErrorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (request.validationError !== undefined) {
+        return reply.code(400).send({ error: "INVALID_OPERATION" });
+      }
+      return operationRegistry.run<BackupEvidenceSnapshot>("backups.recent");
+    },
   );
 
   app.get(
