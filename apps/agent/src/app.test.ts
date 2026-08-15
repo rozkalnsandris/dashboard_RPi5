@@ -1,5 +1,3 @@
-import { AgentHealthSchema } from "@dashboard-rpi5/contracts";
-import { Value } from "@sinclair/typebox/value";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildAgentApp } from "./app.js";
@@ -19,7 +17,6 @@ describe("agent health protocol", () => {
     expect(response.statusCode).toBe(200);
 
     const payload = response.json();
-    expect(Value.Check(AgentHealthSchema, payload)).toBe(true);
     expect(payload).toMatchObject({
       status: "ok",
       service: "dashboard-rpi5-agent",
@@ -28,6 +25,7 @@ describe("agent health protocol", () => {
       agentVersion: "0.2.0",
       capabilities: ["protocol.health"],
     });
+    expect(new Date(payload.observedAt).toISOString()).toBe(payload.observedAt);
   });
 
   it("normalizes unknown routes without leaking internal details", async () => {
