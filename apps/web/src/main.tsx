@@ -13,6 +13,7 @@ import "./styles.css";
 import "./phase1-pages.css";
 import "./reliability-states.css";
 import "./input-mode.css";
+import "./navigation.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
