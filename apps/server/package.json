@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@dashboard-rpi5/contracts": "*",
+    "@fastify/static": "10.1.2",
     "@fastify/type-provider-typebox": "6.1.0",
     "fastify": "5.12.0"
   }
