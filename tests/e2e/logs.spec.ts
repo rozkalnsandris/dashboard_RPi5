@@ -83,19 +83,39 @@ test("Logs renders bounded registered-source evidence without horizontal page ov
   expect(hasHorizontalOverflow).toBe(false);
 });
 
-test("Logs search, pause and wrap controls keep the bounded snapshot local", async ({ page }, testInfo) => {
+test("Logs search, pause and wrap controls keep the bounded snapshot local", async ({ page, context }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop-1440", "One desktop project is enough for interaction semantics");
   let logsRequests = 0;
+  let markSlowRefreshStarted = () => {};
+  let releaseSlowRefresh = () => {};
+  const slowRefreshStarted = new Promise<void>((resolve) => {
+    markSlowRefreshStarted = () => resolve();
+  });
+  const slowRefreshRelease = new Promise<void>((resolve) => {
+    releaseSlowRefresh = () => resolve();
+  });
+
   await page.route("**/api/logs/sources", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(sourcesPayload) }),
   );
-  await page.route("**/api/logs?*", (route) => {
+  await page.route("**/api/logs?*", async (route) => {
     logsRequests += 1;
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(logsPayload()),
-    });
+    const requestNumber = logsRequests;
+    if (requestNumber === 2) {
+      markSlowRefreshStarted();
+      await slowRefreshRelease;
+    }
+    try {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          logsPayload(requestNumber === 1 ? "Docker daemon ready" : "Unexpected paused refresh"),
+        ),
+      });
+    } catch {
+      // Pausing is expected to abort an in-flight refresh before it can replace the snapshot.
+    }
   });
 
   await page.goto("/logs");
@@ -108,11 +128,24 @@ test("Logs search, pause and wrap controls keep the bounded snapshot local", asy
   await page.getByRole("button", { name: "Wrap on" }).click();
   await expect(page.getByRole("button", { name: "Wrap off" })).toBeVisible();
 
+  await slowRefreshStarted;
   await page.getByRole("button", { name: "Pause" }).click();
   await expect(page.getByText("Paused · snapshot frozen")).toBeVisible();
   const pausedAt = logsRequests;
+  releaseSlowRefresh();
+
+  await page.getByPlaceholder("Search logs").fill("");
+  await expect(page.getByText("Docker daemon ready")).toBeVisible();
+  await expect(page.getByText("Unexpected paused refresh")).toHaveCount(0);
+
+  await context.setOffline(true);
+  await context.setOffline(false);
+  await page.waitForTimeout(250);
+  expect(logsRequests).toBe(pausedAt);
+
   await page.waitForTimeout(2_250);
   expect(logsRequests).toBe(pausedAt);
+  await expect(page.getByText("Unexpected paused refresh")).toHaveCount(0);
 });
 
 test("Logs source failure remains explicit", async ({ page }, testInfo) => {

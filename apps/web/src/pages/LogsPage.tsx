@@ -3,7 +3,7 @@ import type {
   LogRange,
   LogSourceId,
 } from "@dashboard-rpi5/contracts/logs";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDownToLine,
   Copy,
@@ -58,12 +58,14 @@ export function LogsPage() {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const viewerRef = useRef<HTMLDivElement | null>(null);
   const previousKeysRef = useRef<Set<string>>(new Set());
+  const queryClient = useQueryClient();
 
   const sourcesQuery = useQuery({
     queryKey: ["log-sources"],
     queryFn: ({ signal }) => fetchLogSources(signal),
     staleTime: 60_000,
     refetchInterval: false,
+    refetchOnReconnect: live,
   });
 
   const resolvedSourceId =
@@ -71,9 +73,10 @@ export function LogsPage() {
   const selectedSource = sourcesQuery.data?.sources.find(
     (source) => source.sourceId === resolvedSourceId,
   );
+  const logsQueryKey = ["logs", resolvedSourceId, range] as const;
 
   const logsQuery = useQuery({
-    queryKey: ["logs", resolvedSourceId, range],
+    queryKey: logsQueryKey,
     enabled: resolvedSourceId !== null,
     queryFn: ({ signal }) => {
       if (resolvedSourceId === null) throw new Error("Log source unavailable");
@@ -82,6 +85,7 @@ export function LogsPage() {
     staleTime: 0,
     refetchInterval: live ? LIVE_REFRESH_MS : false,
     refetchIntervalInBackground: false,
+    refetchOnReconnect: live,
     retry: 1,
   });
 
@@ -116,6 +120,18 @@ export function LogsPage() {
     if (added > 0) setNewLineCount((current) => Math.min(999, current + added));
     return undefined;
   }, [logsQuery.data?.observedAt, logsQuery.data?.entries, stickToBottom]);
+
+  const toggleLive = () => {
+    if (live) {
+      setLive(false);
+      void queryClient.cancelQueries(
+        { queryKey: logsQueryKey, exact: true },
+        { silent: true },
+      );
+      return;
+    }
+    setLive(true);
+  };
 
   const jumpToNewest = () => {
     const viewer = viewerRef.current;
@@ -186,7 +202,7 @@ export function LogsPage() {
           </select>
         </label>
 
-        <Button className="toolbar-button" onPress={() => setLive((value) => !value)}>
+        <Button className="toolbar-button" onPress={toggleLive}>
           {live ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
           {live ? "Pause" : "Live"}
         </Button>
