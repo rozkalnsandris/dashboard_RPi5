@@ -33,6 +33,7 @@ import {
   type LogsReader,
   type LogSourcesReader,
 } from "./agent-logs-client.js";
+import { createAgentMaintenanceEventsReader } from "./agent-maintenance-events-client.js";
 import {
   createAgentServicesReader,
   type ServicesReader,
@@ -81,6 +82,7 @@ function buildDefaultActivityReader(servicesReader: ServicesReader): ActivityRea
     dockerEventsReader: createAgentDockerEventsReader(agentSocketOptions()),
     servicesReader,
     backupEvidenceReader: createAgentBackupEvidenceReader(agentSocketOptions()),
+    maintenanceEventsReader: createAgentMaintenanceEventsReader(agentSocketOptions()),
   });
 }
 
