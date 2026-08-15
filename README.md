@@ -73,6 +73,8 @@ Cloudflare Tunnel
     |
     v
 Dashboard web/API on RPi5 loopback
+    |-- Prometheus history reads
+    |-- Grafana deep links
     |
     | Unix socket / narrow local protocol
     v
@@ -80,7 +82,6 @@ RPi5 privileged-read agent
     |-- Docker Engine Unix socket
     |-- systemd / journal
     |-- vcgencmd / sysfs / procfs
-    |-- Prometheus
     `-- allowlisted backup/deploy evidence
 ```
 
