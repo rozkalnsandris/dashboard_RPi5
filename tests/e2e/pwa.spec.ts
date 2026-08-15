@@ -69,13 +69,18 @@ test("service worker caches only reviewed static assets and uses an offline fall
     if (!("serviceWorker" in navigator)) throw new Error("service workers unavailable");
     await navigator.serviceWorker.ready;
   });
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
 
-  const scriptSrc = await page.locator('script[type="module"]').getAttribute("src");
-  expect(scriptSrc).toBeTruthy();
-  await page.evaluate(async (src) => {
-    await fetch(src);
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("runtime image load failed"));
+      image.src = "/icons/icon-192.svg?runtime-cache=1";
+      document.body.append(image);
+    });
     await fetch("/api/pwa-cache-probe").catch(() => undefined);
-  }, scriptSrc!);
+  });
 
   const cachedUrls = await page.evaluate(async () => {
     const urls: string[] = [];
@@ -89,7 +94,7 @@ test("service worker caches only reviewed static assets and uses an offline fall
 
   expect(cachedUrls.some((url) => url.includes("/api/"))).toBe(false);
   expect(cachedUrls.some((url) => url.endsWith("/offline.html"))).toBe(true);
-  expect(cachedUrls.some((url) => url.includes("/assets/") && url.endsWith(".js"))).toBe(true);
+  expect(cachedUrls.some((url) => url.includes("icon-192.svg?runtime-cache=1"))).toBe(true);
 
   await page.context().setOffline(true);
   try {
