@@ -45,7 +45,7 @@ export function normalizePrometheusMatrix(
     throw new PrometheusSourceUnavailableError();
   }
 
-  const points: HostHistorySeries["points"] = [];
+  const points: Array<{ timestamp: string; value: number }> = [];
   let previousTimestamp = -1;
 
   for (const rawPoint of result.values) {
@@ -75,9 +75,9 @@ export function normalizePrometheusMatrix(
     points.push({ timestamp: date.toISOString(), value });
   }
 
-  return {
-    metric,
-    state: points.length === 0 ? "UNAVAILABLE" : "AVAILABLE",
-    points,
-  };
+  if (points.length === 0) {
+    return { metric, state: "UNAVAILABLE", points: [] };
+  }
+
+  return { metric, state: "AVAILABLE", points };
 }
