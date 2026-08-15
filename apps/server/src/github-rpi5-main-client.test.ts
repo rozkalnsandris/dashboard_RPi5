@@ -17,10 +17,10 @@ function jsonResponse(value: unknown, status = 200): Response {
 }
 
 describe("GitHub RPi5 main reader", () => {
-  it("uses only the fixed public branch route and caches an in-sync result", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
-      jsonResponse({ commit: { sha: productionSha } }),
-    );
+  it("resolves the short SHA through fixed public routes and caches an in-sync result", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ commit: { sha: productionSha } }))
+      .mockResolvedValueOnce(jsonResponse({ sha: productionSha }));
     let now = 1_000_000;
     const read = createGithubRpi5MainReader({
       fetchImpl,
@@ -40,16 +40,22 @@ describe("GitHub RPi5 main reader", () => {
       changedFiles: [],
     });
     expect(second).toEqual(first);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchImpl.mock.calls[0]!;
-    expect(String(url)).toBe("https://api.github.com/repos/rozkalnsandris/RPi5_main/branches/main");
-    expect(init).toMatchObject({ method: "GET", redirect: "error" });
-    expect(init?.headers).toMatchObject({
-      accept: "application/vnd.github+json",
-      "user-agent": "dashboard-rpi5/phase6c",
-      "x-github-api-version": "2026-03-10",
-    });
-    expect(JSON.stringify(init?.headers)).not.toMatch(/authorization|token|cookie/i);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe(
+      "https://api.github.com/repos/rozkalnsandris/RPi5_main/branches/main",
+    );
+    expect(String(fetchImpl.mock.calls[1]![0])).toBe(
+      `https://api.github.com/repos/rozkalnsandris/RPi5_main/commits/${productionShort}`,
+    );
+    for (const [, init] of fetchImpl.mock.calls) {
+      expect(init).toMatchObject({ method: "GET", redirect: "error" });
+      expect(init?.headers).toMatchObject({
+        accept: "application/vnd.github+json",
+        "user-agent": "dashboard-rpi5/phase6c",
+        "x-github-api-version": "2026-03-10",
+      });
+      expect(JSON.stringify(init?.headers)).not.toMatch(/authorization|token|cookie/i);
+    }
   });
 
   it("resolves the verified short SHA and compares only fixed full SHAs", async () => {
