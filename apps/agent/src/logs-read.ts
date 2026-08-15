@@ -108,6 +108,16 @@ export const LOG_SOURCE_REGISTRY = Object.freeze<readonly LogSourceRegistration[
   },
   {
     descriptor: {
+      sourceId: "systemd:rpi5-update",
+      label: "RPi5 maintenance",
+      kind: "SYSTEMD",
+      rangeMode: "TIME",
+    },
+    kind: "SYSTEMD",
+    unitId: "rpi5-update.service",
+  },
+  {
+    descriptor: {
       sourceId: "file:rpi5-backup",
       label: "RPi5 backup",
       kind: "FILE",

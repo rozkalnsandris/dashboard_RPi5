@@ -5,6 +5,7 @@ import { BackupSourceUnavailableError } from "./backup-evidence.js";
 import { DockerSourceUnavailableError } from "./docker-read.js";
 import { HostSourceUnavailableError } from "./host-read.js";
 import { LogSourceUnavailableError } from "./logs-read.js";
+import { MaintenanceSourceUnavailableError } from "./maintenance-events.js";
 import { SystemdSourceUnavailableError } from "./systemd-services.js";
 
 const apps: ReturnType<typeof buildAgentApp>["app"][] = [];
@@ -136,6 +137,18 @@ const backupEvidenceFixture = {
   ],
 };
 
+const maintenanceEventsFixture = {
+  observedAt: "2026-08-15T13:00:00.000Z",
+  events: [
+    {
+      invocationId: "0123456789abcdef0123456789abcdef",
+      occurredAt: "2026-08-15T12:58:00.000Z",
+      result: "SUCCESS" as const,
+      unitResult: null,
+    },
+  ],
+};
+
 const dockerLogSource = {
   sourceId: "systemd:docker" as const,
   label: "Docker Engine",
@@ -192,7 +205,7 @@ describe("agent health protocol", () => {
       service: "dashboard-rpi5-agent",
       mode: "SOURCE_ONLY",
       protocolVersion: 1,
-      agentVersion: "0.8.0",
+      agentVersion: "0.9.0",
       capabilities: [
         "protocol.health",
         "host.summary",
@@ -201,6 +214,7 @@ describe("agent health protocol", () => {
         "services.status",
         "logs.read",
         "backups.recent",
+        "maintenance.events.recent",
       ],
     });
     expect(new Date(payload.observedAt).toISOString()).toBe(payload.observedAt);
@@ -266,6 +280,29 @@ describe("agent health protocol", () => {
     const rejected = await app.inject({
       method: "GET",
       url: "/v1/backups/recent?path=%2Fetc%2Fshadow",
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json()).toEqual({ error: "INVALID_OPERATION" });
+  });
+
+  it("returns only structured maintenance results and rejects browser selectors", async () => {
+    const { app } = buildAgentApp({
+      maintenanceEventsReader: async () => maintenanceEventsFixture,
+    });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/maintenance/events/recent",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(maintenanceEventsFixture);
+    expect(response.body).not.toContain("MESSAGE");
+    expect(response.body).not.toContain(".service");
+
+    const rejected = await app.inject({
+      method: "GET",
+      url: "/v1/maintenance/events/recent?unit=ssh.service",
     });
     expect(rejected.statusCode).toBe(400);
     expect(rejected.json()).toEqual({ error: "INVALID_OPERATION" });
@@ -382,6 +419,22 @@ describe("agent health protocol", () => {
     apps.push(app);
 
     const response = await app.inject({ method: "GET", url: "/v1/backups/recent" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
+  });
+
+  it("normalizes unavailable maintenance evidence without leaking details", async () => {
+    const { app } = buildAgentApp({
+      maintenanceEventsReader: async () => {
+        throw new MaintenanceSourceUnavailableError();
+      },
+    });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/maintenance/events/recent",
+    });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });

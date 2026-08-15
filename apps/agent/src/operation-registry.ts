@@ -4,6 +4,7 @@ import { BackupSourceUnavailableError } from "./backup-evidence.js";
 import { DockerSourceUnavailableError } from "./docker-read.js";
 import { HostSourceUnavailableError } from "./host-read.js";
 import { LogSourceUnavailableError } from "./logs-read.js";
+import { MaintenanceSourceUnavailableError } from "./maintenance-events.js";
 import {
   DEFAULT_OPERATION_TIMEOUT_MS,
   MAX_OPERATION_TIMEOUT_MS,
@@ -126,7 +127,8 @@ export function normalizeAgentError(error: unknown): AgentError {
     error instanceof DockerSourceUnavailableError ||
     error instanceof SystemdSourceUnavailableError ||
     error instanceof LogSourceUnavailableError ||
-    error instanceof BackupSourceUnavailableError
+    error instanceof BackupSourceUnavailableError ||
+    error instanceof MaintenanceSourceUnavailableError
   ) {
     return { error: "SOURCE_UNAVAILABLE" };
   }

@@ -10,6 +10,7 @@ import {
   RefreshCw,
   ServerCog,
   ShieldAlert,
+  Wrench,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -39,6 +40,8 @@ function sourceLabel(source: ActivitySource): string {
       return "Services";
     case "BACKUP":
       return "Backups";
+    case "MAINTENANCE":
+      return "Maintenance";
   }
 }
 
@@ -50,6 +53,8 @@ function sourceIcon(source: ActivitySource) {
       return ServerCog;
     case "BACKUP":
       return Archive;
+    case "MAINTENANCE":
+      return Wrench;
   }
 }
 
@@ -86,7 +91,7 @@ export function ActivityPage() {
         <div>
           <p className="eyebrow">What changed</p>
           <h1 id="activity-page-title">Activity</h1>
-          <p>Bounded operational events from structured Docker, allowlisted service and structured backup evidence. No free-form backup log parsing or fixture deploy, endpoint or maintenance events.</p>
+          <p>Bounded operational events from structured Docker, allowlisted service, structured backup and systemd-manager maintenance evidence. Maintenance results never depend on updater message text.</p>
         </div>
       </div>
 
@@ -102,6 +107,7 @@ export function ActivityPage() {
             <option value="DOCKER">Docker</option>
             <option value="SYSTEMD">Services</option>
             <option value="BACKUP">Backups</option>
+            <option value="MAINTENANCE">Maintenance</option>
           </select>
         </label>
         <label>
@@ -129,7 +135,7 @@ export function ActivityPage() {
       {sourceFailure ? (
         <div className="logs-message logs-message--warning" role="status">
           <ShieldAlert size={18} aria-hidden="true" />
-          <div><strong>Activity evidence unavailable</strong><span>Docker, service and backup evidence sources are all unavailable.</span></div>
+          <div><strong>Activity evidence unavailable</strong><span>Docker, service, backup and maintenance evidence sources are all unavailable.</span></div>
         </div>
       ) : null}
 
