@@ -96,6 +96,23 @@ describe("Phase 5C-A Docker events Unix-socket client", () => {
     ).rejects.toBeInstanceOf(AgentDockerEventsSourceError);
   });
 
+  it("rejects action-specific evidence that does not match the normalized event action", async () => {
+    for (const mismatchedEvent of [
+      { ...payload.events[0], health: "UNHEALTHY" },
+      { ...payload.events[0], exitCode: 1 },
+      { ...payload.events[0], signal: "SIGTERM" },
+      { ...payload.events[0], action: "HEALTH_STATUS", health: null },
+    ]) {
+      const socketPath = await listen((_request, response) => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ ...payload, events: [mismatchedEvent] }));
+      });
+      await expect(createAgentDockerEventsReader({ socketPath })()).rejects.toBeInstanceOf(
+        AgentDockerEventsSourceError,
+      );
+    }
+  });
+
   it("bounds stalled requests and rejects unsafe socket configuration", async () => {
     const socketPath = await listen(() => {
       // Intentionally left open until the wall-clock deadline destroys the request.
