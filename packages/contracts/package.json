@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsup src/index.ts --format esm --platform neutral --clean --dts"
+    "build": "tsup src/index.ts --format esm --platform neutral --clean"
   },
   "dependencies": {
     "@sinclair/typebox": "latest"
