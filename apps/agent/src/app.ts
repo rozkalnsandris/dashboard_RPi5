@@ -1,13 +1,16 @@
 import {
   AgentErrorSchema,
   AgentHealthSchema,
+  DockerContainersSnapshotSchema,
   HostSummarySchema,
   type AgentHealth,
+  type DockerContainersSnapshot,
   type HostSummary,
 } from "@dashboard-rpi5/contracts";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import Fastify from "fastify";
 
+import { readDockerContainers } from "./docker-read.js";
 import { readHostSummary } from "./host-read.js";
 import { normalizeAgentError, OperationRegistry } from "./operation-registry.js";
 import {
@@ -21,14 +24,19 @@ import {
 interface BuildAgentAppOptions {
   operationRegistry?: OperationRegistry;
   hostSummaryReader?: (signal: AbortSignal) => Promise<HostSummary>;
+  dockerContainersReader?: (signal: AbortSignal) => Promise<DockerContainersSnapshot>;
 }
 
 export function buildAgentApp(options: BuildAgentAppOptions = {}) {
   const operationRegistry = options.operationRegistry ?? new OperationRegistry();
   const hostSummaryReader =
     options.hostSummaryReader ?? ((signal: AbortSignal) => readHostSummary(undefined, signal));
+  const dockerContainersReader =
+    options.dockerContainersReader ??
+    ((signal: AbortSignal) => readDockerContainers(undefined, signal));
 
   operationRegistry.register("host.summary", hostSummaryReader);
+  operationRegistry.register("docker.containers", dockerContainersReader);
 
   const app = Fastify({
     logger: false,
@@ -68,6 +76,21 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
       },
     },
     async (): Promise<HostSummary> => operationRegistry.run<HostSummary>("host.summary"),
+  );
+
+  app.get(
+    "/v1/docker/containers",
+    {
+      schema: {
+        response: {
+          200: DockerContainersSnapshotSchema,
+          503: AgentErrorSchema,
+          504: AgentErrorSchema,
+        },
+      },
+    },
+    async (): Promise<DockerContainersSnapshot> =>
+      operationRegistry.run<DockerContainersSnapshot>("docker.containers"),
   );
 
   app.setNotFoundHandler(async (_request, reply) =>
