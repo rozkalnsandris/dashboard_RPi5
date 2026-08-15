@@ -100,9 +100,10 @@ describe("Prometheus HTTP transport", () => {
       endEpochSeconds: 4_600,
       stepSeconds: 30,
     });
+    const rejection = expect(pending).rejects.toThrow("Prometheus source unavailable");
 
     await vi.advanceTimersByTimeAsync(PROMETHEUS_REQUEST_TIMEOUT_MS);
-    await expect(pending).rejects.toThrow("Prometheus source unavailable");
+    await rejection;
   });
 
   it("propagates caller cancellation as a normalized source failure", async () => {
