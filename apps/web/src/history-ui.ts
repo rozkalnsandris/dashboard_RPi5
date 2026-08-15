@@ -59,6 +59,25 @@ function parseSeries(value: unknown): HostHistorySeries | null {
   return { metric: value.metric, state: value.state, points };
 }
 
+function parseGrafanaHref(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== "string" || value.length > 2048) throw new Error("Invalid history response");
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("Invalid history response");
+  }
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username !== "" ||
+    url.password !== ""
+  ) {
+    throw new Error("Invalid history response");
+  }
+  return url.toString();
+}
+
 export function parseHostHistorySnapshot(value: unknown): HostHistorySnapshot {
   if (!isRecord(value)) throw new Error("Invalid history response");
   if (
@@ -70,8 +89,7 @@ export function parseHostHistorySnapshot(value: unknown): HostHistorySnapshot {
     typeof value.windowEnd !== "string" ||
     !Number.isFinite(Date.parse(value.windowEnd)) ||
     !Array.isArray(value.series) ||
-    value.series.length !== 4 ||
-    !(typeof value.grafanaHref === "string" || value.grafanaHref === null)
+    value.series.length !== 4
   ) {
     throw new Error("Invalid history response");
   }
@@ -88,7 +106,7 @@ export function parseHostHistorySnapshot(value: unknown): HostHistorySnapshot {
     windowStart: value.windowStart,
     windowEnd: value.windowEnd,
     series: typedSeries,
-    grafanaHref: value.grafanaHref,
+    grafanaHref: parseGrafanaHref(value.grafanaHref),
   };
 }
 
@@ -97,7 +115,7 @@ export async function fetchHostHistory(range: HistoryRange, signal?: AbortSignal
   const response = await fetch(`/api/history/host?range=${range}`, {
     method: "GET",
     headers: { Accept: "application/json" },
-    signal,
+    ...(signal === undefined ? {} : { signal }),
   });
   if (!response.ok) throw new Error("History source unavailable");
   return parseHostHistorySnapshot(await response.json());
