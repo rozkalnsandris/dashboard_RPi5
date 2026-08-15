@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createServer, type Server } from "node:http";
+import { createServer, type RequestListener, type Server } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -12,7 +12,7 @@ import {
 const servers: Server[] = [];
 const directories: string[] = [];
 
-async function listen(handler: Parameters<typeof createServer>[0]) {
+async function listen(handler: RequestListener) {
   const directory = await mkdtemp(join(tmpdir(), "dashboard-services-"));
   const socketPath = join(directory, "agent.sock");
   const server = createServer(handler);
@@ -88,7 +88,7 @@ describe("Phase 5A agent services Unix-socket client", () => {
   });
 
   it("bounds a stalled agent request and rejects unsafe socket configuration", async () => {
-    const socketPath = await listen(() => {
+    const socketPath = await listen((_request, _response) => {
       // Intentionally leave the response open until the client timeout destroys the request.
     });
     await expect(
