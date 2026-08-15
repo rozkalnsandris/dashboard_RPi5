@@ -53,7 +53,7 @@ afterEach(async () => {
 
 describe("startAgent", () => {
   it.runIf(process.platform !== "win32")(
-    "serves health only over the configured Unix socket and narrows its mode",
+    "serves the versioned protocol only over the configured Unix socket and narrows its mode",
     async () => {
       const socketPath = await tempSocketPath();
       const running = await startAgent({ socketPath });
@@ -69,7 +69,7 @@ describe("startAgent", () => {
           service: "dashboard-rpi5-agent",
           mode: "SOURCE_ONLY",
           protocolVersion: 1,
-          capabilities: ["protocol.health"],
+          capabilities: ["protocol.health", "host.summary"],
         });
       } finally {
         await running.app.close();
