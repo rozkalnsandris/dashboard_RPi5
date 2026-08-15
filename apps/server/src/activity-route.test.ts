@@ -11,6 +11,7 @@ const snapshot = {
     { source: "SYSTEMD" as const, status: "UNAVAILABLE" as const, observedAt: null },
     { source: "BACKUP" as const, status: "UNAVAILABLE" as const, observedAt: null },
     { source: "MAINTENANCE" as const, status: "UNAVAILABLE" as const, observedAt: null },
+    { source: "DEPLOY" as const, status: "UNAVAILABLE" as const, observedAt: null },
   ],
   items: [
     {
@@ -31,7 +32,7 @@ afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
 
-describe("Phase 5C-C Activity API", () => {
+describe("Phase 5C-D Activity API", () => {
   it("returns no-store bounded activity evidence and rejects every browser selector", async () => {
     const app = buildApp({ activityReader: async () => snapshot });
     apps.push(app);
@@ -48,6 +49,7 @@ describe("Phase 5C-C Activity API", () => {
       "/api/activity?unit=ssh.service",
       "/api/activity?backupPath=%2Fvar%2Flog%2Frpi5-backup.log",
       "/api/activity?messageId=7ad2d189f7e94e70a38c781354912448",
+      "/api/activity?deployTag=rpi5-deploy",
     ]) {
       const rejected = await app.inject({ method: "GET", url });
       expect(rejected.statusCode).toBe(400);
