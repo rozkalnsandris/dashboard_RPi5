@@ -13,6 +13,33 @@ test("overview renders the fixture health shell without page overflow", async ({
   expect(hasHorizontalOverflow).toBe(false);
 });
 
+test("shell uses touch navigation on phone projects and sidebar on desktop", async ({ page }, testInfo) => {
+  await page.goto("/");
+
+  const mobile = testInfo.project.name !== "desktop-1440";
+  const primary = page.getByRole("navigation", { name: "Primary navigation" });
+  const desktop = page.getByRole("navigation", { name: "Dashboard navigation" });
+
+  if (mobile) {
+    await expect(primary).toBeVisible();
+    await expect(desktop).toBeHidden();
+    await expect(primary.getByRole("link", { name: "Overview" })).toBeVisible();
+    await expect(primary.getByRole("link", { name: "Docker" })).toBeVisible();
+    await expect(primary.getByRole("link", { name: "Logs" })).toBeVisible();
+    await expect(primary.getByRole("link", { name: "Terminal" })).toBeVisible();
+    await expect(primary.getByRole("button", { name: "More destinations" })).toBeVisible();
+  } else {
+    await expect(desktop).toBeVisible();
+    await expect(primary).toBeHidden();
+  }
+});
+
+test("keyboard reaches the skip link first", async ({ page }) => {
+  await page.goto("/");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Skip to main content" })).toBeFocused();
+});
+
 test("Logs route exposes only the fixture registered-source explorer", async ({ page }) => {
   await page.goto("/logs");
 
