@@ -15,7 +15,7 @@ const apps: ReturnType<typeof buildAgentApp>["app"][] = [];
 const hostSummaryFixture = {
   observedAt: "2026-08-15T13:00:00.000Z",
   uptimeSeconds: 12345.67,
-  loadAverage: { oneMinute: 0.25, fiveMinute: 0.5, fifteenMinute: 0.75 },
+  loadAverage: { oneMinute: 0.25, fiveMinutes: 0.5, fifteenMinutes: 0.75 },
   cpu: { usagePercent: 37.5, sampleWindowMs: 200 },
   memory: {
     totalBytes: 8_589_934_592,
