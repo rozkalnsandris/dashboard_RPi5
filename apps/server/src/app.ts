@@ -34,7 +34,14 @@ function buildDefaultHistoryReader(): HostHistoryReader {
 }
 
 export function buildApp(options: BuildAppOptions = {}) {
-  const app = Fastify({ logger: false }).withTypeProvider<TypeBoxTypeProvider>();
+  const app = Fastify({
+    logger: false,
+    ajv: {
+      customOptions: {
+        removeAdditional: false,
+      },
+    },
+  }).withTypeProvider<TypeBoxTypeProvider>();
   const historyReader = options.historyReader ?? buildDefaultHistoryReader();
 
   app.get(
