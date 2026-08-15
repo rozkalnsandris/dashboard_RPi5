@@ -194,40 +194,29 @@ export function createGithubRpi5MainReader(
       fixedUrl(`${GITHUB_REPOSITORY_PATH}/branches/main`),
     );
     const mainSha = parseBranchSha(branchValue);
+    const commitValue = await requestJson(
+      fetchImpl,
+      fixedUrl(`${GITHUB_REPOSITORY_PATH}/commits/${productionCommit}`),
+    );
+    const productionSha = parseCommitSha(commitValue, productionCommit);
 
     let value: GithubRpi5Comparison;
-    if (mainSha.startsWith(productionCommit)) {
+    if (productionSha === mainSha) {
       value = {
         mainSha,
-        productionSha: mainSha,
+        productionSha,
         relation: "IN_SYNC",
         aheadBy: 0,
         changedFiles: [],
       };
     } else {
-      const commitValue = await requestJson(
-        fetchImpl,
-        fixedUrl(`${GITHUB_REPOSITORY_PATH}/commits/${productionCommit}`),
+      const compareUrl = fixedUrl(
+        `${GITHUB_REPOSITORY_PATH}/compare/${productionSha}...${mainSha}`,
       );
-      const productionSha = parseCommitSha(commitValue, productionCommit);
-
-      if (productionSha === mainSha) {
-        value = {
-          mainSha,
-          productionSha,
-          relation: "IN_SYNC",
-          aheadBy: 0,
-          changedFiles: [],
-        };
-      } else {
-        const compareUrl = fixedUrl(
-          `${GITHUB_REPOSITORY_PATH}/compare/${productionSha}...${mainSha}`,
-        );
-        compareUrl.searchParams.set("per_page", "1");
-        compareUrl.searchParams.set("page", "1");
-        const comparison = parseCompare(await requestJson(fetchImpl, compareUrl));
-        value = { mainSha, productionSha, ...comparison };
-      }
+      compareUrl.searchParams.set("per_page", "1");
+      compareUrl.searchParams.set("page", "1");
+      const comparison = parseCompare(await requestJson(fetchImpl, compareUrl));
+      value = { mainSha, productionSha, ...comparison };
     }
 
     cache = { key: productionCommit, expiresAt: currentTime + cacheTtlMs, value };
