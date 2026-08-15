@@ -6,6 +6,7 @@ import {
   DEFAULT_OPERATION_TIMEOUT_MS,
   MAX_OPERATION_TIMEOUT_MS,
 } from "./protocol.js";
+import { SystemdSourceUnavailableError } from "./systemd-services.js";
 
 const OPERATION_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/;
 
@@ -120,7 +121,8 @@ export function normalizeAgentError(error: unknown): AgentError {
 
   if (
     error instanceof HostSourceUnavailableError ||
-    error instanceof DockerSourceUnavailableError
+    error instanceof DockerSourceUnavailableError ||
+    error instanceof SystemdSourceUnavailableError
   ) {
     return { error: "SOURCE_UNAVAILABLE" };
   }
