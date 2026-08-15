@@ -28,6 +28,7 @@ import {
   NavLink,
   Outlet,
   useLocation,
+  useNavigate,
   useRouteError,
 } from "react-router";
 
@@ -71,6 +72,8 @@ function Brand() {
 }
 
 function MobileMoreMenu() {
+  const navigate = useNavigate();
+
   return (
     <MenuTrigger>
       <Button className="mobile-nav__item mobile-nav__more" aria-label="More destinations">
@@ -78,13 +81,17 @@ function MobileMoreMenu() {
         <span>More</span>
       </Button>
       <Popover className="mobile-more-popover" placement="top end">
-        <Menu className="mobile-more-menu" aria-label="More dashboard destinations">
+        <Menu
+          className="mobile-more-menu"
+          aria-label="More dashboard destinations"
+          onAction={(key) => navigate(String(key))}
+        >
           {mobileMore.map(({ to, label, icon: Icon }) => (
             <MenuItem key={to} id={to} className="mobile-more-menu__item" textValue={label}>
-              <Link to={to}>
+              <span className="mobile-more-menu__content">
                 <Icon size={18} aria-hidden="true" />
                 <span>{label}</span>
-              </Link>
+              </span>
             </MenuItem>
           ))}
         </Menu>
