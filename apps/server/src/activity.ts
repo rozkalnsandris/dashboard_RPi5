@@ -114,9 +114,12 @@ function dockerGroupKey(event: DockerRecentEvent): string {
   return [
     event.containerId,
     event.action,
+    event.containerName ?? "none",
+    event.image ?? "none",
     event.health ?? "none",
     event.exitCode ?? "none",
     event.signal ?? "none",
+    event.scope,
   ].join("\u0000");
 }
 
