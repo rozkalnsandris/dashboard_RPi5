@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildAgentApp } from "./app.js";
+import { BackupSourceUnavailableError } from "./backup-evidence.js";
 import { DockerSourceUnavailableError } from "./docker-read.js";
 import { HostSourceUnavailableError } from "./host-read.js";
 import { LogSourceUnavailableError } from "./logs-read.js";
@@ -119,6 +120,22 @@ const servicesFixture = {
   ],
 };
 
+const backupEvidenceFixture = {
+  observedAt: "2026-08-15T13:00:00.000Z",
+  schema: "dashboard-rpi5.backup-evidence.v1" as const,
+  runs: [
+    {
+      runId: "20260815T020000+0200",
+      startedAt: "2026-08-15T02:00:00+02:00",
+      completedAt: "2026-08-15T02:02:00+02:00",
+      result: "SUCCESS" as const,
+      durationSeconds: 120,
+      sizeBytes: 123_456,
+      exitCode: 0,
+    },
+  ],
+};
+
 const dockerLogSource = {
   sourceId: "systemd:docker" as const,
   label: "Docker Engine",
@@ -175,7 +192,7 @@ describe("agent health protocol", () => {
       service: "dashboard-rpi5-agent",
       mode: "SOURCE_ONLY",
       protocolVersion: 1,
-      agentVersion: "0.7.0",
+      agentVersion: "0.8.0",
       capabilities: [
         "protocol.health",
         "host.summary",
@@ -183,6 +200,7 @@ describe("agent health protocol", () => {
         "docker.events.recent",
         "services.status",
         "logs.read",
+        "backups.recent",
       ],
     });
     expect(new Date(payload.observedAt).toISOString()).toBe(payload.observedAt);
@@ -234,6 +252,23 @@ describe("agent health protocol", () => {
     const response = await app.inject({ method: "GET", url: "/v1/services" });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual(servicesFixture);
+  });
+
+  it("returns only validated structured backup evidence and rejects browser-like selectors", async () => {
+    const { app } = buildAgentApp({ backupReader: async () => backupEvidenceFixture });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/v1/backups/recent" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(backupEvidenceFixture);
+    expect(response.body).not.toContain("/var/log/");
+
+    const rejected = await app.inject({
+      method: "GET",
+      url: "/v1/backups/recent?path=%2Fetc%2Fshadow",
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json()).toEqual({ error: "INVALID_OPERATION" });
   });
 
   it("returns only registered log-source descriptors", async () => {
@@ -334,6 +369,19 @@ describe("agent health protocol", () => {
     apps.push(app);
 
     const response = await app.inject({ method: "GET", url: "/v1/services" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
+  });
+
+  it("normalizes unavailable backup evidence without leaking details", async () => {
+    const { app } = buildAgentApp({
+      backupReader: async () => {
+        throw new BackupSourceUnavailableError();
+      },
+    });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/v1/backups/recent" });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });
