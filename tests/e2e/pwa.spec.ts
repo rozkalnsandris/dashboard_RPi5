@@ -47,7 +47,7 @@ test("offline state is explicit and never looks current", async ({ page }) => {
   await page.goto("/");
 
   await page.evaluate(() => window.dispatchEvent(new Event("offline")));
-  const banner = page.getByRole("status");
+  const banner = page.locator(".offline-banner");
   await expect(banner).toBeVisible();
   await expect(banner).toContainText("Offline.");
   await expect(banner).toContainText("Live operational data is unavailable");
