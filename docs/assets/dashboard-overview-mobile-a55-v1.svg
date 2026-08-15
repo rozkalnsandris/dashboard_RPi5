@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="412" height="915" viewBox="0 0 412 915">
+<title>dashboard_RPi5 Samsung Galaxy A55 mobile overview design concept</title>
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07111c"/><stop offset="1" stop-color="#04080d"/></linearGradient>
+  <style>.t{font-family:Inter,Segoe UI,Arial;fill:#f4f7fb}.m{font-family:Inter,Segoe UI,Arial;fill:#9fadc0}.h{font-size:16px;font-weight:700}.s{font-size:11px}.v{font-size:23px;font-weight:800}.ok{fill:#47dc7d}.warn{fill:#f5ad2f}.bad{fill:#ff5f6d}.info{fill:#48a6ff}.box{fill:#0e1722;stroke:#26384c;stroke-width:1}</style>
+</defs>
+<rect width="412" height="915" fill="url(#bg)"/>
+<text x="18" y="26" class="t s">14:45</text><text x="342" y="26" class="t s">Wi-Fi  91%</text>
+<circle cx="34" cy="65" r="18" fill="#d82052"/><text x="64" y="64" class="t" style="font:700 18px Inter,Segoe UI,Arial">dashboard_RPi5</text><text x="64" y="82" class="m s">dash.rozkalns.net</text>
+<rect x="300" y="47" width="90" height="34" rx="17" fill="#0c2418" stroke="#235c3c"/><circle cx="322" cy="64" r="8" class="ok"/><text x="338" y="68" class="ok s">Healthy</text>
+<rect x="14" y="105" width="384" height="190" rx="15" fill="#11151d" stroke="#7d2b3a"/>
+<text x="36" y="137" class="t h">Needs Attention</text><circle cx="170" cy="131" r="10" class="bad"/><text x="167" y="135" class="t s">3</text>
+<rect x="26" y="151" width="360" height="40" rx="9" fill="#151821" stroke="#4b2a34"/><circle cx="40" cy="171" r="5" class="warn"/><text x="54" y="168" class="t s">Container restart loop detected</text><text x="54" y="183" class="m" style="font:9px Inter,Segoe UI,Arial">homeassistant restarted repeatedly</text>
+<rect x="26" y="198" width="360" height="40" rx="9" fill="#151821" stroke="#4b2a34"/><circle cx="40" cy="218" r="5" class="warn"/><text x="54" y="215" class="t s">High memory usage</text><text x="54" y="230" class="m" style="font:9px Inter,Segoe UI,Arial">RAM above configured threshold</text>
+<rect x="26" y="245" width="360" height="40" rx="9" fill="#151821" stroke="#4b2a34"/><circle cx="40" cy="265" r="5" class="warn"/><text x="54" y="262" class="t s">Disk space low</text><text x="54" y="277" class="m" style="font:9px Inter,Segoe UI,Arial">NVMe requires attention</text>
+<g transform="translate(14 308)"><rect width="185" height="95" rx="14" class="box"/><text x="16" y="26" class="m s">CPU Temp</text><text x="16" y="58" class="t v">43°C</text><text x="16" y="79" class="ok s">Normal</text></g>
+<g transform="translate(213 308)"><rect width="185" height="95" rx="14" class="box"/><text x="16" y="26" class="m s">Throttle State</text><text x="16" y="58" class="t v">None</text><text x="16" y="79" class="m s">No throttling</text></g>
+<g transform="translate(14 413)"><rect width="185" height="95" rx="14" class="box"/><text x="16" y="26" class="m s">CPU</text><text x="16" y="58" class="t v">12%</text><text x="16" y="79" class="m s">1.6 / 4 cores</text></g>
+<g transform="translate(213 413)"><rect width="185" height="95" rx="14" class="box"/><text x="16" y="26" class="m s">RAM</text><text x="16" y="58" class="t v">38%</text><text x="16" y="79" class="m s">3.0 / 8.0 GB</text></g>
+<g transform="translate(14 518)"><rect width="185" height="95" rx="14" class="box"/><text x="16" y="26" class="m s">NVMe</text><text x="16" y="58" class="t v">41%</text><text x="16" y="79" class="m s">190 / 465 GB</text></g>
+<g transform="translate(213 518)"><rect width="185" height="95" rx="14" class="box"/><text x="16" y="26" class="m s">Uptime</text><text x="16" y="58" class="t" style="font:800 20px Inter,Segoe UI,Arial">37d 14h</text><text x="16" y="79" class="m s">Since last boot</text></g>
+<rect x="14" y="625" width="384" height="135" rx="14" class="box"/><text x="30" y="653" class="t h">Docker Containers</text><text x="289" y="653" class="ok s">16 / 16 running</text>
+<text x="30" y="681" class="m s">CONTAINER</text><text x="270" y="681" class="m s">CPU</text><text x="334" y="681" class="m s">RAM</text>
+<line x1="30" y1="690" x2="382" y2="690" stroke="#26384c"/>
+<circle cx="32" cy="710" r="4" class="ok"/><text x="43" y="714" class="t s">homeassistant</text><text x="272" y="714" class="t s">6.8%</text><text x="335" y="714" class="t s">624 MB</text>
+<circle cx="32" cy="735" r="4" class="ok"/><text x="43" y="739" class="t s">prometheus</text><text x="272" y="739" class="t s">3.2%</text><text x="335" y="739" class="t s">418 MB</text>
+<rect x="14" y="772" width="384" height="83" rx="14" class="box"/><text x="30" y="799" class="t h">Recent Activity</text>
+<circle cx="32" cy="820" r="4" class="ok"/><text x="43" y="824" class="t s">Backup completed</text><text x="310" y="824" class="m s">02:00</text>
+<circle cx="32" cy="843" r="4" class="warn"/><text x="43" y="847" class="t s">Container restarted</text><text x="310" y="847" class="m s">00:18</text>
+<rect x="0" y="868" width="412" height="47" fill="#08121e" stroke="#26384c"/>
+<text x="18" y="897" class="info s">⌂ Overview</text><text x="102" y="897" class="m s">◇ Docker</text><text x="184" y="897" class="m s">▤ Logs</text><text x="249" y="897" class="m s">&gt;_ Terminal</text><text x="345" y="897" class="m s">••• More</text>
+</svg>
