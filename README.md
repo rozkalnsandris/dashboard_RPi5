@@ -2,7 +2,7 @@
 
 Modern Raspberry Pi 5 homelab observability and control dashboard for **`https://dash.rozkalns.net`**.
 
-> **Current status:** Phase 3A source implementation — fixture UI, local Unix-socket agent protocol and host read-only health adapters are merged; Docker current-state read support is being prepared source-only. No production agent activation, Docker socket permission, terminal activation, Cloudflare mutation or DNS change is authorized by this status.
+> **Current status:** Phase 3B source implementation — fixture UI, local Unix-socket agent protocol, host read-only health and Docker current-state reads are merged; bounded Docker recent-event projection is being prepared source-only. No production agent activation, Docker socket permission, terminal activation, Cloudflare mutation or DNS change is authorized by this status.
 
 > **Canonical contract:** [Issue #1 — MASTER / READ FIRST](https://github.com/rozkalnsandris/dashboard_RPi5/issues/1)
 
@@ -125,6 +125,7 @@ See [`AGENTS.md`](AGENTS.md) and [`CONTRIBUTING.md`](CONTRIBUTING.md).
 - [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) — metrics/log/event authority.
 - [`docs/PHASE2B_HOST_HEALTH.md`](docs/PHASE2B_HOST_HEALTH.md) — host health evidence contract.
 - [`docs/PHASE3A_DOCKER_READ.md`](docs/PHASE3A_DOCKER_READ.md) — Docker current-state read boundary.
+- [`docs/PHASE3B_DOCKER_EVENTS.md`](docs/PHASE3B_DOCKER_EVENTS.md) — bounded Docker recent-event boundary.
 - [`docs/TERMINAL_AND_LOGS_SECURITY.md`](docs/TERMINAL_AND_LOGS_SECURITY.md) — terminal/log boundary.
 - [`docs/RESEARCH_2026-08-15.md`](docs/RESEARCH_2026-08-15.md) — research sources.
 - [`docs/MOCKUPS.md`](docs/MOCKUPS.md) — visual concepts.
