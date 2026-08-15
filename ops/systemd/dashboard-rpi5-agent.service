@@ -1,0 +1,39 @@
+# SOURCE-ONLY BLUEPRINT.
+# Do not install, enable, start, restart, or otherwise activate this unit
+# without separate owner authorization under issue #1.
+
+[Unit]
+Description=dashboard_RPi5 local read agent
+After=local-fs.target
+
+[Service]
+Type=simple
+User=dashboard-rpi5
+Group=dashboard-rpi5
+WorkingDirectory=/opt/dashboard_RPi5
+Environment=DASHBOARD_RPI5_AGENT_SOCKET=/run/dashboard-rpi5/agent.sock
+ExecStart=/usr/bin/node /opt/dashboard_RPi5/apps/agent/dist/index.js
+Restart=on-failure
+RestartSec=5s
+
+RuntimeDirectory=dashboard-rpi5
+RuntimeDirectoryMode=0750
+UMask=0007
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
