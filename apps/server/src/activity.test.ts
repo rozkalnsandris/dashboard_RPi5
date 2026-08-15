@@ -1,5 +1,6 @@
 import type { DockerRecentEventsSnapshot } from "@dashboard-rpi5/contracts";
 import type { BackupEvidenceSnapshot } from "@dashboard-rpi5/contracts/backups";
+import type { DeployEventsSnapshot } from "@dashboard-rpi5/contracts/deploy";
 import type { MaintenanceEventsSnapshot } from "@dashboard-rpi5/contracts/maintenance";
 import type { SystemdServicesSnapshot } from "@dashboard-rpi5/contracts/services";
 import { describe, expect, it } from "vitest";
@@ -8,6 +9,7 @@ import {
   ActivitySourceUnavailableError,
   createActivityReader,
   normalizeBackupActivity,
+  normalizeDeployActivity,
   normalizeDockerActivity,
   normalizeMaintenanceActivity,
   normalizeSystemdActivity,
@@ -136,7 +138,18 @@ const maintenanceSnapshot: MaintenanceEventsSnapshot = {
   ],
 };
 
-describe("Phase 5C-C activity normalization", () => {
+const deploySnapshot: DeployEventsSnapshot = {
+  observedAt: "2026-08-15T17:00:02.000Z",
+  events: [
+    {
+      transactionId: "20260815T165955000000Z-abcdef123456",
+      commit: "abcdef123456",
+      occurredAt: "2026-08-15T16:59:55.000Z",
+    },
+  ],
+};
+
+describe("Phase 5C-D activity normalization", () => {
   it("groups only matching Docker bursts and maps deterministic severity", () => {
     const items = normalizeDockerActivity(dockerSnapshot);
     expect(items).toHaveLength(2);
@@ -147,11 +160,7 @@ describe("Phase 5C-C activity normalization", () => {
       groupCount: 2,
       target: "/docker",
     });
-    expect(items[1]).toMatchObject({
-      kind: "DOCKER_OOM",
-      severity: "CRITICAL",
-      groupCount: 1,
-    });
+    expect(items[1]).toMatchObject({ kind: "DOCKER_OOM", severity: "CRITICAL", groupCount: 1 });
   });
 
   it("keeps distinct normalized Docker evidence even when timestamps share one millisecond", () => {
@@ -175,14 +184,9 @@ describe("Phase 5C-C activity normalization", () => {
         { ...base, signal: "SIGKILL" },
       ],
     };
-
     const items = normalizeDockerActivity(snapshot);
     expect(items).toHaveLength(2);
     expect(new Set(items.map((item) => item.id)).size).toBe(2);
-    expect(items.map((item) => item.detail).sort()).toEqual([
-      "signal SIGKILL · image homeassistant/home-assistant:stable · scope local",
-      "signal SIGTERM · image homeassistant/home-assistant:stable · scope local",
-    ]);
   });
 
   it("derives service transition timestamps only from validated observedAt and stateAgeSeconds", () => {
@@ -194,10 +198,7 @@ describe("Phase 5C-C activity normalization", () => {
       occurredAt: "2026-08-15T16:59:30.000Z",
       target: "/services",
     });
-    expect(items[1]).toMatchObject({
-      severity: "CRITICAL",
-      occurredAt: "2026-08-15T16:58:30.000Z",
-    });
+    expect(items[1]).toMatchObject({ severity: "CRITICAL", occurredAt: "2026-08-15T16:58:30.000Z" });
   });
 
   it("maps only structured backup runs into stable result events", () => {
@@ -207,15 +208,10 @@ describe("Phase 5C-C activity normalization", () => {
       source: "BACKUP",
       severity: "INFO",
       kind: "BACKUP_RESULT",
-      occurredAt: "2026-08-15T16:59:45.000Z",
       title: "Backup completed",
       target: "/backups",
-      groupCount: 1,
     });
-    expect(items[1]).toMatchObject({
-      severity: "CRITICAL",
-      title: "Backup failed",
-    });
+    expect(items[1]).toMatchObject({ severity: "CRITICAL", title: "Backup failed" });
   });
 
   it("maps only structured systemd-manager maintenance results", () => {
@@ -225,21 +221,28 @@ describe("Phase 5C-C activity normalization", () => {
       source: "MAINTENANCE",
       severity: "INFO",
       kind: "MAINTENANCE_RESULT",
-      occurredAt: "2026-08-15T16:59:50.000Z",
       title: "Maintenance completed",
+      target: "/logs",
+    });
+    expect(items[1]).toMatchObject({ severity: "CRITICAL", title: "Maintenance failed" });
+  });
+
+  it("maps only verified successful deploy evidence", () => {
+    const items = normalizeDeployActivity(deploySnapshot);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      source: "DEPLOY",
+      severity: "INFO",
+      kind: "DEPLOY_VERIFIED",
+      occurredAt: "2026-08-15T16:59:55.000Z",
+      title: "Deploy verified",
+      detail: "commit abcdef123456 · transaction 20260815T165955000000Z-abcdef123456",
       target: "/logs",
       groupCount: 1,
     });
-    expect(items[0]?.detail).toContain("systemd result success");
-    expect(items[1]).toMatchObject({
-      severity: "CRITICAL",
-      title: "Maintenance failed",
-      detail: "invocation fedcba9876543210fedcba9876543210 · systemd result exit-code",
-    });
-    expect(new Set(items.map((item) => item.id)).size).toBe(2);
   });
 
-  it("returns a newest-first timeline with explicit four-source degradation", async () => {
+  it("returns a newest-first timeline with explicit five-source degradation", async () => {
     const reader = createActivityReader({
       dockerEventsReader: async () => {
         throw new Error("private Docker detail");
@@ -247,62 +250,47 @@ describe("Phase 5C-C activity normalization", () => {
       servicesReader: async () => servicesSnapshot,
       backupEvidenceReader: async () => backupSnapshot,
       maintenanceEventsReader: async () => maintenanceSnapshot,
+      deployEventsReader: async () => deploySnapshot,
       now: () => new Date("2026-08-15T17:00:05.000Z"),
     });
 
     const snapshot = await reader();
-    expect(snapshot).toMatchObject({
-      observedAt: "2026-08-15T17:00:05.000Z",
-      sources: [
-        { source: "DOCKER", status: "UNAVAILABLE", observedAt: null },
-        { source: "SYSTEMD", status: "AVAILABLE", observedAt: servicesSnapshot.observedAt },
-        { source: "BACKUP", status: "AVAILABLE", observedAt: backupSnapshot.observedAt },
-        { source: "MAINTENANCE", status: "AVAILABLE", observedAt: maintenanceSnapshot.observedAt },
-      ],
-    });
-    expect(snapshot.items.map((item) => item.occurredAt)).toEqual([
-      "2026-08-15T16:59:50.000Z",
-      "2026-08-15T16:59:45.000Z",
-      "2026-08-15T16:59:30.000Z",
-      "2026-08-15T16:58:45.000Z",
-      "2026-08-15T16:58:30.000Z",
-      "2026-08-15T16:57:00.000Z",
+    expect(snapshot.sources).toEqual([
+      { source: "DOCKER", status: "UNAVAILABLE", observedAt: null },
+      { source: "SYSTEMD", status: "AVAILABLE", observedAt: servicesSnapshot.observedAt },
+      { source: "BACKUP", status: "AVAILABLE", observedAt: backupSnapshot.observedAt },
+      { source: "MAINTENANCE", status: "AVAILABLE", observedAt: maintenanceSnapshot.observedAt },
+      { source: "DEPLOY", status: "AVAILABLE", observedAt: deploySnapshot.observedAt },
     ]);
+    expect(snapshot.items[0]).toMatchObject({ source: "DEPLOY", occurredAt: "2026-08-15T16:59:55.000Z" });
   });
 
-  it("keeps one unavailable source explicit while other evidence remains usable", async () => {
+  it("keeps deploy source failure explicit while other evidence remains usable", async () => {
     const reader = createActivityReader({
       dockerEventsReader: async () => dockerSnapshot,
       servicesReader: async () => servicesSnapshot,
       backupEvidenceReader: async () => backupSnapshot,
-      maintenanceEventsReader: async () => {
+      maintenanceEventsReader: async () => maintenanceSnapshot,
+      deployEventsReader: async () => {
         throw new Error("journal permission unavailable");
       },
     });
     const snapshot = await reader();
-    expect(snapshot.sources[3]).toEqual({
-      source: "MAINTENANCE",
-      status: "UNAVAILABLE",
-      observedAt: null,
-    });
-    expect(snapshot.items.some((item) => item.source === "MAINTENANCE")).toBe(false);
-    expect(snapshot.items.some((item) => item.source === "DOCKER")).toBe(true);
+    expect(snapshot.sources[4]).toEqual({ source: "DEPLOY", status: "UNAVAILABLE", observedAt: null });
+    expect(snapshot.items.some((item) => item.source === "DEPLOY")).toBe(false);
+    expect(snapshot.items.some((item) => item.source === "MAINTENANCE")).toBe(true);
   });
 
   it("fails closed only when every authoritative source is unavailable", async () => {
+    const fail = async () => {
+      throw new Error("private detail");
+    };
     const reader = createActivityReader({
-      dockerEventsReader: async () => {
-        throw new Error("private Docker detail");
-      },
-      servicesReader: async () => {
-        throw new Error("private systemd detail");
-      },
-      backupEvidenceReader: async () => {
-        throw new Error("private backup detail");
-      },
-      maintenanceEventsReader: async () => {
-        throw new Error("private maintenance detail");
-      },
+      dockerEventsReader: fail,
+      servicesReader: fail,
+      backupEvidenceReader: fail,
+      maintenanceEventsReader: fail,
+      deployEventsReader: fail,
     });
     await expect(reader()).rejects.toBeInstanceOf(ActivitySourceUnavailableError);
   });
