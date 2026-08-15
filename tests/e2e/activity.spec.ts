@@ -5,10 +5,11 @@ const activityPayload = {
   sources: [
     { source: "DOCKER", status: "AVAILABLE", observedAt: "2026-08-15T17:00:00.000Z" },
     { source: "SYSTEMD", status: "AVAILABLE", observedAt: "2026-08-15T17:00:00.000Z" },
+    { source: "BACKUP", status: "AVAILABLE", observedAt: "2026-08-15T17:00:00.000Z" },
   ],
   items: [
     {
-      id: `docker:${"a".repeat(64)}:OOM:2026-08-15T16:59:00.000Z:none:none`,
+      id: `docker:${"a".repeat(64)}`,
       source: "DOCKER",
       severity: "CRITICAL",
       kind: "DOCKER_OOM",
@@ -16,6 +17,17 @@ const activityPayload = {
       title: "homeassistant out of memory",
       detail: "image homeassistant/home-assistant:stable · scope local",
       target: "/docker",
+      groupCount: 1,
+    },
+    {
+      id: "backup:structured-success",
+      source: "BACKUP",
+      severity: "INFO",
+      kind: "BACKUP_RESULT",
+      occurredAt: "2026-08-15T16:58:30.000Z",
+      title: "Backup completed",
+      detail: "run 20260815T020000+0200 · duration 120s · size 123456 bytes · exit 0",
+      target: "/backups",
       groupCount: 1,
     },
     {
@@ -30,7 +42,7 @@ const activityPayload = {
       groupCount: 1,
     },
     {
-      id: `docker:${"b".repeat(64)}:START:2026-08-15T16:57:00.000Z:none:none`,
+      id: `docker:${"b".repeat(64)}`,
       source: "DOCKER",
       severity: "INFO",
       kind: "DOCKER_START",
@@ -56,13 +68,14 @@ test("Activity renders bounded live evidence without fixture categories or page 
 
   await page.goto("/activity");
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
-  await expect(page.getByText("3 visible / 3 bounded events")).toBeVisible();
+  await expect(page.getByText("4 visible / 4 bounded events")).toBeVisible();
   await expect(page.getByText("homeassistant out of memory")).toBeVisible();
+  await expect(page.getByText("Backup completed")).toBeVisible();
   await expect(page.getByText("SSH is failed")).toBeVisible();
   await expect(page.getByText("2 grouped events")).toBeVisible();
-  await expect(page.getByText(/nightly backup completed/i)).toHaveCount(0);
   await expect(page.getByText(/CV production SHA verified/i)).toHaveCount(0);
   await expect(page.getByText(/public endpoints remain reachable/i)).toHaveCount(0);
+  await expect(page.getByText(/maintenance completed/i)).toHaveCount(0);
 
   expect(requestedUrls.length).toBeGreaterThan(0);
   for (const url of requestedUrls) {
@@ -98,9 +111,15 @@ test("Activity source and severity filters stay client-side", async ({ page }, t
   await expect(page.getByText("homeassistant out of memory")).toHaveCount(0);
   expect(requests).toBe(beforeFilters);
 
+  await page.getByLabel("Activity source").selectOption("BACKUP");
+  await expect(page.getByText("Backup completed")).toBeVisible();
+  await expect(page.getByText("SSH is failed")).toHaveCount(0);
+  expect(requests).toBe(beforeFilters);
+
   await page.getByLabel("Activity source").selectOption("ALL");
   await page.getByLabel("Activity severity").selectOption("INFO");
   await expect(page.getByText("prometheus started")).toBeVisible();
+  await expect(page.getByText("Backup completed")).toBeVisible();
   await expect(page.getByText("SSH is failed")).toHaveCount(0);
   expect(requests).toBe(beforeFilters);
 });
@@ -116,16 +135,18 @@ test("Activity keeps partial source failure explicit without hiding valid eviden
         sources: [
           { source: "DOCKER", status: "UNAVAILABLE", observedAt: null },
           activityPayload.sources[1],
+          { source: "BACKUP", status: "UNAVAILABLE", observedAt: null },
         ],
-        items: [activityPayload.items[1]],
+        items: [activityPayload.items[2]],
       }),
     }),
   );
 
   await page.goto("/activity");
   await expect(page.getByText("Activity is degraded")).toBeVisible();
-  await expect(page.getByText(/Unavailable: Docker/)).toBeVisible();
+  await expect(page.getByText(/Unavailable: Docker, Backups/)).toBeVisible();
   await expect(page.getByText("SSH is failed")).toBeVisible();
+  await expect(page.getByText("Backup completed")).toHaveCount(0);
 });
 
 test("Activity complete source failure remains unavailable, not empty", async ({ page }, testInfo) => {
