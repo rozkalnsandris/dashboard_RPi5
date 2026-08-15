@@ -61,11 +61,14 @@ test("Services renders allowlisted evidence without horizontal overflow", async 
 
   await page.goto("/services");
   await expect(page.getByRole("heading", { name: "Services" })).toBeVisible();
-  await expect(page.getByText("Docker Engine").first()).toBeVisible();
-  await expect(page.getByText("Dashboard agent").first()).toBeVisible();
-  await expect(page.getByText("Healthy").first()).toBeVisible();
-  await expect(page.getByText("Critical").first()).toBeVisible();
-  await expect(page.getByText("Unknown").first()).toBeVisible();
+
+  const servicesView = page.locator(".services-mobile-list:visible, .services-table-wrap:visible");
+  await expect(servicesView).toHaveCount(1);
+  await expect(servicesView.getByText("Docker Engine", { exact: true })).toBeVisible();
+  await expect(servicesView.getByText("Dashboard agent", { exact: true })).toBeVisible();
+  await expect(servicesView.locator(".service-status--healthy")).toContainText("Healthy");
+  await expect(servicesView.locator(".service-status--critical")).toContainText("Critical");
+  await expect(servicesView.locator(".service-status--unknown")).toContainText("Unknown");
   expect(requestedUrls.every((url) => new URL(url).search === "")).toBe(true);
 
   const hasHorizontalOverflow = await page.evaluate(
