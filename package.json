@@ -1,0 +1,37 @@
+{
+  "name": "dashboard-rpi5",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace @dashboard-rpi5/web",
+    "dev:server": "npm run dev --workspace @dashboard-rpi5/server",
+    "preview:web": "npm run preview --workspace @dashboard-rpi5/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint . --max-warnings=0",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspace @dashboard-rpi5/contracts && npm run build --workspace @dashboard-rpi5/web && npm run build --workspace @dashboard-rpi5/server && npm run build --workspace @dashboard-rpi5/agent",
+    "test:e2e": "playwright test",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "latest",
+    "@playwright/test": "latest",
+    "eslint": "latest",
+    "eslint-plugin-react-hooks": "latest",
+    "eslint-plugin-react-refresh": "latest",
+    "globals": "latest",
+    "tsx": "latest",
+    "tsup": "latest",
+    "typescript": "latest",
+    "typescript-eslint": "latest",
+    "vitest": "latest"
+  }
+}
