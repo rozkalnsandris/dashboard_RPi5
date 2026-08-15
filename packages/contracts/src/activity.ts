@@ -3,6 +3,7 @@ import { Static, Type } from "@sinclair/typebox";
 export const ActivitySourceSchema = Type.Union([
   Type.Literal("DOCKER"),
   Type.Literal("SYSTEMD"),
+  Type.Literal("BACKUP"),
 ]);
 export type ActivitySource = Static<typeof ActivitySourceSchema>;
 
@@ -28,12 +29,14 @@ export const ActivityEventKindSchema = Type.Union([
   Type.Literal("DOCKER_UNPAUSE"),
   Type.Literal("DOCKER_UPDATE"),
   Type.Literal("SYSTEMD_STATE"),
+  Type.Literal("BACKUP_RESULT"),
 ]);
 export type ActivityEventKind = Static<typeof ActivityEventKindSchema>;
 
 export const ActivityTargetSchema = Type.Union([
   Type.Literal("/docker"),
   Type.Literal("/services"),
+  Type.Literal("/backups"),
 ]);
 export type ActivityTarget = Static<typeof ActivityTargetSchema>;
 
@@ -72,7 +75,7 @@ export type ActivityItem = Static<typeof ActivityItemSchema>;
 export const ActivitySnapshotSchema = Type.Object(
   {
     observedAt: Type.String({ format: "date-time" }),
-    sources: Type.Array(ActivitySourceStateSchema, { minItems: 2, maxItems: 2 }),
+    sources: Type.Array(ActivitySourceStateSchema, { minItems: 3, maxItems: 3 }),
     items: Type.Array(ActivityItemSchema, { maxItems: 256 }),
   },
   { additionalProperties: false },
@@ -93,7 +96,7 @@ export const ActivityApiErrorSchema = Type.Object(
 );
 export type ActivityApiError = Static<typeof ActivityApiErrorSchema>;
 
-const SOURCES = new Set<ActivitySource>(["DOCKER", "SYSTEMD"]);
+const SOURCES = new Set<ActivitySource>(["DOCKER", "SYSTEMD", "BACKUP"]);
 const SOURCE_STATUSES = new Set<ActivitySourceStatus>(["AVAILABLE", "UNAVAILABLE"]);
 const SEVERITIES = new Set<ActivitySeverity>(["INFO", "ATTENTION", "CRITICAL"]);
 const KINDS = new Set<ActivityEventKind>([
@@ -111,8 +114,9 @@ const KINDS = new Set<ActivityEventKind>([
   "DOCKER_UNPAUSE",
   "DOCKER_UPDATE",
   "SYSTEMD_STATE",
+  "BACKUP_RESULT",
 ]);
-const TARGETS = new Set<ActivityTarget>(["/docker", "/services"]);
+const TARGETS = new Set<ActivityTarget>(["/docker", "/services", "/backups"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -206,7 +210,7 @@ export function parseActivitySnapshot(value: unknown): ActivitySnapshot {
     !hasOnlyKeys(value, ["observedAt", "sources", "items"]) ||
     !isIsoDate(value.observedAt) ||
     !Array.isArray(value.sources) ||
-    value.sources.length !== 2 ||
+    value.sources.length !== 3 ||
     !Array.isArray(value.items) ||
     value.items.length > 256
   ) {
@@ -215,9 +219,10 @@ export function parseActivitySnapshot(value: unknown): ActivitySnapshot {
 
   const sources = value.sources.map(parseSourceState);
   if (
-    new Set(sources.map((source) => source.source)).size !== 2 ||
+    new Set(sources.map((source) => source.source)).size !== 3 ||
     !sources.some((source) => source.source === "DOCKER") ||
-    !sources.some((source) => source.source === "SYSTEMD")
+    !sources.some((source) => source.source === "SYSTEMD") ||
+    !sources.some((source) => source.source === "BACKUP")
   ) {
     throw new Error("Invalid activity response");
   }

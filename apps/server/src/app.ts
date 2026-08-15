@@ -26,6 +26,7 @@ import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import Fastify from "fastify";
 import { isAbsolute } from "node:path";
 
+import { createAgentBackupEvidenceReader } from "./agent-backup-evidence-client.js";
 import { createAgentDockerEventsReader } from "./agent-docker-events-client.js";
 import {
   createAgentLogsReaders,
@@ -79,6 +80,7 @@ function buildDefaultActivityReader(servicesReader: ServicesReader): ActivityRea
   return createActivityReader({
     dockerEventsReader: createAgentDockerEventsReader(agentSocketOptions()),
     servicesReader,
+    backupEvidenceReader: createAgentBackupEvidenceReader(agentSocketOptions()),
   });
 }
 

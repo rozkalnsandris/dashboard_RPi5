@@ -1,10 +1,12 @@
 import type { DockerRecentEventsSnapshot } from "@dashboard-rpi5/contracts";
+import type { BackupEvidenceSnapshot } from "@dashboard-rpi5/contracts/backups";
 import type { SystemdServicesSnapshot } from "@dashboard-rpi5/contracts/services";
 import { describe, expect, it } from "vitest";
 
 import {
   ActivitySourceUnavailableError,
   createActivityReader,
+  normalizeBackupActivity,
   normalizeDockerActivity,
   normalizeSystemdActivity,
 } from "./activity.js";
@@ -89,8 +91,33 @@ const servicesSnapshot: SystemdServicesSnapshot = {
   ],
 };
 
-describe("Phase 5C-A activity normalization", () => {
-  it("groups only same-container/action Docker bursts and maps deterministic severity", () => {
+const backupSnapshot: BackupEvidenceSnapshot = {
+  observedAt: "2026-08-15T17:00:00.000Z",
+  schema: "dashboard-rpi5.backup-evidence.v1",
+  runs: [
+    {
+      runId: "backup-success",
+      startedAt: "2026-08-15T16:57:45.000Z",
+      completedAt: "2026-08-15T16:59:45.000Z",
+      result: "SUCCESS",
+      durationSeconds: 120,
+      sizeBytes: 123_456_789,
+      exitCode: 0,
+    },
+    {
+      runId: "backup-failed",
+      startedAt: "2026-08-15T16:56:00.000Z",
+      completedAt: "2026-08-15T16:57:00.000Z",
+      result: "FAILED",
+      durationSeconds: 60,
+      sizeBytes: null,
+      exitCode: 23,
+    },
+  ],
+};
+
+describe("Phase 5C-B activity normalization", () => {
+  it("groups only matching Docker bursts and maps deterministic severity", () => {
     const items = normalizeDockerActivity(dockerSnapshot);
     expect(items).toHaveLength(2);
     expect(items[0]).toMatchObject({
@@ -153,36 +180,81 @@ describe("Phase 5C-A activity normalization", () => {
     });
   });
 
-  it("returns a newest-first bounded timeline with explicit partial-source degradation", async () => {
+  it("maps only structured backup runs into stable result events", () => {
+    const items = normalizeBackupActivity(backupSnapshot);
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({
+      source: "BACKUP",
+      severity: "INFO",
+      kind: "BACKUP_RESULT",
+      occurredAt: "2026-08-15T16:59:45.000Z",
+      title: "Backup completed",
+      target: "/backups",
+      groupCount: 1,
+    });
+    expect(items[0]?.detail).toBe(
+      "run backup-success · duration 120s · size 123456789 bytes · exit 0",
+    );
+    expect(items[1]).toMatchObject({
+      severity: "CRITICAL",
+      title: "Backup failed",
+      detail: "run backup-failed · duration 60s · size unavailable · exit 23",
+    });
+    expect(new Set(items.map((item) => item.id)).size).toBe(2);
+  });
+
+  it("returns a newest-first timeline with explicit partial-source degradation", async () => {
     const reader = createActivityReader({
       dockerEventsReader: async () => {
         throw new Error("private Docker detail");
       },
       servicesReader: async () => servicesSnapshot,
+      backupEvidenceReader: async () => backupSnapshot,
       now: () => new Date("2026-08-15T17:00:05.000Z"),
     });
 
-    await expect(reader()).resolves.toMatchObject({
+    const snapshot = await reader();
+    expect(snapshot).toMatchObject({
       observedAt: "2026-08-15T17:00:05.000Z",
       sources: [
         { source: "DOCKER", status: "UNAVAILABLE", observedAt: null },
         { source: "SYSTEMD", status: "AVAILABLE", observedAt: servicesSnapshot.observedAt },
+        { source: "BACKUP", status: "AVAILABLE", observedAt: backupSnapshot.observedAt },
       ],
     });
-    const snapshot = await reader();
     expect(snapshot.items.map((item) => item.occurredAt)).toEqual([
+      "2026-08-15T16:59:45.000Z",
       "2026-08-15T16:59:30.000Z",
       "2026-08-15T16:58:30.000Z",
+      "2026-08-15T16:57:00.000Z",
     ]);
   });
 
-  it("fails closed when every authoritative source is unavailable", async () => {
+  it("keeps a missing backup producer explicit while valid Docker and service evidence remains usable", async () => {
+    const reader = createActivityReader({
+      dockerEventsReader: async () => dockerSnapshot,
+      servicesReader: async () => servicesSnapshot,
+      backupEvidenceReader: async () => {
+        throw new Error("structured producer not activated");
+      },
+    });
+    const snapshot = await reader();
+    expect(snapshot.sources[2]).toEqual({ source: "BACKUP", status: "UNAVAILABLE", observedAt: null });
+    expect(snapshot.items.some((item) => item.source === "BACKUP")).toBe(false);
+    expect(snapshot.items.some((item) => item.source === "DOCKER")).toBe(true);
+    expect(snapshot.items.some((item) => item.source === "SYSTEMD")).toBe(true);
+  });
+
+  it("fails closed only when every authoritative source is unavailable", async () => {
     const reader = createActivityReader({
       dockerEventsReader: async () => {
         throw new Error("private Docker detail");
       },
       servicesReader: async () => {
         throw new Error("private systemd detail");
+      },
+      backupEvidenceReader: async () => {
+        throw new Error("private backup detail");
       },
     });
     await expect(reader()).rejects.toBeInstanceOf(ActivitySourceUnavailableError);

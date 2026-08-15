@@ -5,6 +5,7 @@ import type {
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
+  Archive,
   Box,
   RefreshCw,
   ServerCog,
@@ -31,7 +32,25 @@ function formatOccurredAt(value: string): string {
 }
 
 function sourceLabel(source: ActivitySource): string {
-  return source === "DOCKER" ? "Docker" : "Services";
+  switch (source) {
+    case "DOCKER":
+      return "Docker";
+    case "SYSTEMD":
+      return "Services";
+    case "BACKUP":
+      return "Backups";
+  }
+}
+
+function sourceIcon(source: ActivitySource) {
+  switch (source) {
+    case "DOCKER":
+      return Box;
+    case "SYSTEMD":
+      return ServerCog;
+    case "BACKUP":
+      return Archive;
+  }
 }
 
 export function ActivityPage() {
@@ -67,7 +86,7 @@ export function ActivityPage() {
         <div>
           <p className="eyebrow">What changed</p>
           <h1 id="activity-page-title">Activity</h1>
-          <p>Bounded operational events from structured Docker and allowlisted service evidence. No fixture backup, deploy or endpoint events.</p>
+          <p>Bounded operational events from structured Docker, allowlisted service and structured backup evidence. No free-form backup log parsing or fixture deploy, endpoint or maintenance events.</p>
         </div>
       </div>
 
@@ -82,6 +101,7 @@ export function ActivityPage() {
             <option value="ALL">All sources</option>
             <option value="DOCKER">Docker</option>
             <option value="SYSTEMD">Services</option>
+            <option value="BACKUP">Backups</option>
           </select>
         </label>
         <label>
@@ -109,7 +129,7 @@ export function ActivityPage() {
       {sourceFailure ? (
         <div className="logs-message logs-message--warning" role="status">
           <ShieldAlert size={18} aria-hidden="true" />
-          <div><strong>Activity evidence unavailable</strong><span>Docker and service sources are both unavailable.</span></div>
+          <div><strong>Activity evidence unavailable</strong><span>Docker, service and backup evidence sources are all unavailable.</span></div>
         </div>
       ) : null}
 
@@ -118,7 +138,7 @@ export function ActivityPage() {
           <ShieldAlert size={18} aria-hidden="true" />
           <div>
             <strong>Activity is degraded</strong>
-            <span>Unavailable: {unavailableSources.map((source) => sourceLabel(source.source)).join(", ")}. Valid evidence from the other source remains visible.</span>
+            <span>Unavailable: {unavailableSources.map((source) => sourceLabel(source.source)).join(", ")}. Valid evidence from available sources remains visible.</span>
           </div>
         </div>
       ) : null}
@@ -142,7 +162,7 @@ export function ActivityPage() {
           ) : (
             <ol className="activity-timeline activity-timeline--live">
               {filteredItems.map((item) => {
-                const Icon = item.source === "DOCKER" ? Box : ServerCog;
+                const Icon = sourceIcon(item.source);
                 return (
                   <li key={item.id} data-severity={item.severity}>
                     <time dateTime={item.occurredAt}>{formatOccurredAt(item.occurredAt)}</time>
