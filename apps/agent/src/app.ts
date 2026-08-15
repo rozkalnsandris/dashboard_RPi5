@@ -1,5 +1,4 @@
 import {
-  AgentErrorSchema,
   AgentHealthSchema,
   type AgentHealth,
 } from "@dashboard-rpi5/contracts";
@@ -65,8 +64,6 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
       .type("application/json")
       .send(normalized);
   });
-
-  app.addSchema(AgentErrorSchema);
 
   return { app, operationRegistry };
 }
