@@ -1,5 +1,6 @@
 import type { AgentError } from "@dashboard-rpi5/contracts";
 
+import { HostSourceUnavailableError } from "./host-read.js";
 import {
   DEFAULT_OPERATION_TIMEOUT_MS,
   MAX_OPERATION_TIMEOUT_MS,
@@ -114,6 +115,10 @@ export function normalizeAgentError(error: unknown): AgentError {
 
   if (error instanceof OperationTimeoutError) {
     return { error: "OPERATION_TIMEOUT" };
+  }
+
+  if (error instanceof HostSourceUnavailableError) {
+    return { error: "SOURCE_UNAVAILABLE" };
   }
 
   return { error: "INTERNAL_ERROR" };
