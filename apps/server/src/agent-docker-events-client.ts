@@ -98,6 +98,7 @@ function parseEvent(value: unknown): DockerRecentEvent {
     throw new AgentDockerEventsSourceError();
   }
 
+  const action = value.action as DockerEventAction;
   const containerName = parseNullableString(value.containerName, 256);
   const image = parseNullableString(value.image, 1_024);
   const signal = parseNullableString(value.signal, 32);
@@ -105,6 +106,12 @@ function parseEvent(value: unknown): DockerRecentEvent {
   if (
     value.health !== null &&
     (typeof value.health !== "string" || !HEALTH_STATES.has(value.health as DockerEventHealth))
+  ) {
+    throw new AgentDockerEventsSourceError();
+  }
+  if (
+    (action === "HEALTH_STATUS" && value.health === null) ||
+    (action !== "HEALTH_STATUS" && value.health !== null)
   ) {
     throw new AgentDockerEventsSourceError();
   }
@@ -117,10 +124,16 @@ function parseEvent(value: unknown): DockerRecentEvent {
   ) {
     throw new AgentDockerEventsSourceError();
   }
+  if (action !== "DIE" && value.exitCode !== null) {
+    throw new AgentDockerEventsSourceError();
+  }
+  if (action !== "KILL" && signal !== null) {
+    throw new AgentDockerEventsSourceError();
+  }
 
   return {
     occurredAt: value.occurredAt,
-    action: value.action as DockerEventAction,
+    action,
     containerId: value.containerId,
     containerName,
     image,
