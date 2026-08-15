@@ -107,6 +107,37 @@ describe("Phase 5C-A activity normalization", () => {
     });
   });
 
+  it("keeps distinct normalized Docker evidence even when timestamps share one millisecond", () => {
+    const base = {
+      occurredAt: "2026-08-15T16:59:59.123Z",
+      action: "KILL" as const,
+      containerId,
+      containerName: "homeassistant",
+      image: "homeassistant/home-assistant:stable",
+      health: null,
+      exitCode: null,
+      scope: "LOCAL" as const,
+    };
+    const snapshot: DockerRecentEventsSnapshot = {
+      observedAt: "2026-08-15T17:00:00.000Z",
+      windowStart: "2026-08-15T16:00:00.000Z",
+      windowEnd: "2026-08-15T17:00:00.000Z",
+      apiVersion: "1.40",
+      events: [
+        { ...base, signal: "SIGTERM" },
+        { ...base, signal: "SIGKILL" },
+      ],
+    };
+
+    const items = normalizeDockerActivity(snapshot);
+    expect(items).toHaveLength(2);
+    expect(new Set(items.map((item) => item.id)).size).toBe(2);
+    expect(items.map((item) => item.detail).sort()).toEqual([
+      "signal SIGKILL · image homeassistant/home-assistant:stable · scope local",
+      "signal SIGTERM · image homeassistant/home-assistant:stable · scope local",
+    ]);
+  });
+
   it("derives service transition timestamps only from validated observedAt and stateAgeSeconds", () => {
     const items = normalizeSystemdActivity(servicesSnapshot);
     expect(items).toHaveLength(2);
