@@ -34,3 +34,13 @@ test("Terminal route runs fixture Quick Commands without exposing a PTY", async 
   await page.getByRole("button", { name: /Temperature \+ throttle/ }).click();
   await expect(page.getByText(/43°C · no throttle or under-voltage flags/)).toBeVisible();
 });
+
+test("Settings route documents loading stale unavailable and unknown states", async ({ page }) => {
+  await page.goto("/settings");
+
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.getByText("Checking current evidence")).toBeVisible();
+  await expect(page.getByText("Last observation is old")).toBeVisible();
+  await expect(page.getByText("Evidence source unavailable")).toBeVisible();
+  await expect(page.getByText("No trustworthy evidence")).toBeVisible();
+});
