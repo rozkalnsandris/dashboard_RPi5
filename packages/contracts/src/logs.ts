@@ -7,6 +7,7 @@ export const LogSourceIdSchema = Type.Union([
   Type.Literal("systemd:ssh"),
   Type.Literal("systemd:cron"),
   Type.Literal("systemd:dashboard-rpi5-agent"),
+  Type.Literal("systemd:rpi5-update"),
   Type.Literal("file:rpi5-backup"),
 ]);
 export type LogSourceId = Static<typeof LogSourceIdSchema>;
@@ -127,6 +128,7 @@ const SOURCE_IDS = new Set<LogSourceId>([
   "systemd:ssh",
   "systemd:cron",
   "systemd:dashboard-rpi5-agent",
+  "systemd:rpi5-update",
   "file:rpi5-backup",
 ]);
 const SOURCE_KINDS = new Set<LogSourceKind>(["DOCKER", "SYSTEMD", "FILE"]);
