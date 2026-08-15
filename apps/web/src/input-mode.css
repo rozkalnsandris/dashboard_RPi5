@@ -1,0 +1,75 @@
+/*
+ * Width alone must not turn a phone rotated to landscape into the desktop shell.
+ * The base stylesheet enhances at >=900px for desktop. This final override keeps
+ * coarse/touch pointers on the phone navigation contract, including Galaxy A55 landscape.
+ */
+@media (min-width: 900px) and (pointer: coarse) {
+  .app-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .desktop-sidebar {
+    display: none;
+  }
+
+  .workspace-header {
+    grid-column: auto;
+    min-height: calc(62px + var(--safe-top));
+    align-items: flex-end;
+    padding:
+      calc(8px + var(--safe-top))
+      max(var(--page-pad), var(--safe-right))
+      8px
+      max(var(--page-pad), var(--safe-left));
+  }
+
+  .workspace-heading {
+    display: none;
+  }
+
+  .mobile-brand {
+    display: block;
+  }
+
+  .mobile-nav {
+    display: grid;
+  }
+
+  .main-content {
+    grid-column: auto;
+    padding:
+      var(--page-pad)
+      max(var(--page-pad), var(--safe-right))
+      calc(var(--page-pad) + 8px)
+      max(var(--page-pad), var(--safe-left));
+  }
+
+  .overview-hero h1 {
+    font-size: clamp(1.8rem, 8vw, 3rem);
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .metric-card {
+    min-height: 112px;
+  }
+
+  .overview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panel {
+    padding: 13px;
+  }
+
+  .desktop-table-wrap {
+    display: none;
+  }
+
+  .mobile-container-list {
+    display: grid;
+  }
+}
