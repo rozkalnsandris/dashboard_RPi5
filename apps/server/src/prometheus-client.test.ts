@@ -5,9 +5,13 @@ import {
   createPrometheusHttpTransport,
   parsePrometheusBaseUrl,
 } from "./prometheus-client.js";
-import { PROMETHEUS_MAX_RESPONSE_BYTES } from "./prometheus-types.js";
+import {
+  PROMETHEUS_MAX_RESPONSE_BYTES,
+  PROMETHEUS_REQUEST_TIMEOUT_MS,
+} from "./prometheus-types.js";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -72,6 +76,33 @@ describe("Prometheus HTTP transport", () => {
         stepSeconds: 30,
       }),
     ).rejects.toThrow("Prometheus source unavailable");
+  });
+
+  it("aborts a stalled upstream request at the fixed transport timeout", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new Error("aborted upstream")),
+            { once: true },
+          );
+        }),
+      ),
+    );
+
+    const transport = createPrometheusHttpTransport();
+    const pending = transport.read({
+      query: "avg(node_load1)",
+      startEpochSeconds: 1_000,
+      endEpochSeconds: 4_600,
+      stepSeconds: 30,
+    });
+
+    await vi.advanceTimersByTimeAsync(PROMETHEUS_REQUEST_TIMEOUT_MS);
+    await expect(pending).rejects.toThrow("Prometheus source unavailable");
   });
 
   it("propagates caller cancellation as a normalized source failure", async () => {
