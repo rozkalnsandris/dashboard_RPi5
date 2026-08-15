@@ -1,3 +1,7 @@
+.overview-composed .attention-card {
+  display: none;
+}
+
 .backup-overview-card {
   min-width: 0;
   min-height: 72px;
