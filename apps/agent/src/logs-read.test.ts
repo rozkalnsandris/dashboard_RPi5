@@ -44,10 +44,12 @@ describe("registered log source boundary", () => {
       "systemd:ssh",
       "systemd:cron",
       "systemd:dashboard-rpi5-agent",
+      "systemd:rpi5-update",
       "file:rpi5-backup",
     ]);
     expect(JSON.stringify(snapshot)).not.toContain("/var/log/");
     expect(JSON.stringify(snapshot)).not.toContain("docker.service");
+    expect(JSON.stringify(snapshot)).not.toContain("rpi5-update.service");
   });
 
   it("builds journalctl argv only for registered systemd IDs", () => {
@@ -57,6 +59,14 @@ describe("registered log source boundary", () => {
       "--output-fields=__REALTIME_TIMESTAMP,PRIORITY,MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT",
       "--unit=docker.service",
       "--since=-1h",
+      `--lines=${LOG_MAX_ENTRIES}`,
+    ]);
+    expect(buildJournalctlArgs("systemd:rpi5-update", "24h")).toEqual([
+      "--no-pager",
+      "--output=json",
+      "--output-fields=__REALTIME_TIMESTAMP,PRIORITY,MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT",
+      "--unit=rpi5-update.service",
+      "--since=-24h",
       `--lines=${LOG_MAX_ENTRIES}`,
     ]);
     expect(() => buildJournalctlArgs("docker:homeassistant", "1h")).toThrow(
@@ -210,16 +220,17 @@ describe("readLogSnapshot", () => {
       return { stdout: "" };
     };
     const result = await readLogSnapshot(
-      "systemd:ssh",
+      "systemd:rpi5-update",
       "6h",
       dependencies({ execFile }),
     );
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.[0]).toBe(JOURNALCTL_PATH);
-    expect(calls[0]?.[1]).toContain("--unit=ssh.service");
+    expect(calls[0]?.[1]).toContain("--unit=rpi5-update.service");
     expect(calls[0]?.[1]).toContain("--since=-6h");
     expect(calls[0]?.[2]).toMatchObject({ shell: false });
+    expect(result.source.sourceId).toBe("systemd:rpi5-update");
     expect(result.rangeApplied).toBe(true);
   });
 
