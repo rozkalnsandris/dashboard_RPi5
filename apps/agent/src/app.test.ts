@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { buildAgentApp } from "./app.js";
 import { BackupSourceUnavailableError } from "./backup-evidence.js";
+import { DeploySourceUnavailableError } from "./deploy-events.js";
 import { DockerSourceUnavailableError } from "./docker-read.js";
 import { HostSourceUnavailableError } from "./host-read.js";
 import { LogSourceUnavailableError } from "./logs-read.js";
@@ -149,6 +150,17 @@ const maintenanceEventsFixture = {
   ],
 };
 
+const deployEventsFixture = {
+  observedAt: "2026-08-15T13:00:00.000Z",
+  events: [
+    {
+      transactionId: "20260815T125900000000Z-abcdef123456",
+      commit: "abcdef123456",
+      occurredAt: "2026-08-15T12:59:00.000Z",
+    },
+  ],
+};
+
 const dockerLogSource = {
   sourceId: "systemd:docker" as const,
   label: "Docker Engine",
@@ -205,7 +217,7 @@ describe("agent health protocol", () => {
       service: "dashboard-rpi5-agent",
       mode: "SOURCE_ONLY",
       protocolVersion: 1,
-      agentVersion: "0.9.0",
+      agentVersion: "0.10.0",
       capabilities: [
         "protocol.health",
         "host.summary",
@@ -215,6 +227,7 @@ describe("agent health protocol", () => {
         "logs.read",
         "backups.recent",
         "maintenance.events.recent",
+        "deploy.events.recent",
       ],
     });
     expect(new Date(payload.observedAt).toISOString()).toBe(payload.observedAt);
@@ -291,18 +304,30 @@ describe("agent health protocol", () => {
     });
     apps.push(app);
 
-    const response = await app.inject({
-      method: "GET",
-      url: "/v1/maintenance/events/recent",
-    });
+    const response = await app.inject({ method: "GET", url: "/v1/maintenance/events/recent" });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual(maintenanceEventsFixture);
-    expect(response.body).not.toContain("MESSAGE");
-    expect(response.body).not.toContain(".service");
 
     const rejected = await app.inject({
       method: "GET",
       url: "/v1/maintenance/events/recent?unit=ssh.service",
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json()).toEqual({ error: "INVALID_OPERATION" });
+  });
+
+  it("returns only verified deploy results and rejects browser selectors", async () => {
+    const { app } = buildAgentApp({ deployEventsReader: async () => deployEventsFixture });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/v1/deploy/events/recent" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(deployEventsFixture);
+    expect(response.body).not.toContain("/var/lib/rpi5-deploy");
+
+    const rejected = await app.inject({
+      method: "GET",
+      url: "/v1/deploy/events/recent?tag=other",
     });
     expect(rejected.statusCode).toBe(400);
     expect(rejected.json()).toEqual({ error: "INVALID_OPERATION" });
@@ -353,116 +378,72 @@ describe("agent health protocol", () => {
   });
 
   it("normalizes unavailable host evidence without leaking details", async () => {
-    const { app } = buildAgentApp({
-      hostSummaryReader: async () => {
-        throw new HostSourceUnavailableError();
-      },
-      dockerContainersReader: async () => dockerContainersFixture,
-      dockerEventsReader: async () => dockerEventsFixture,
-    });
+    const { app } = buildAgentApp({ hostSummaryReader: async () => { throw new HostSourceUnavailableError(); } });
     apps.push(app);
-
     const response = await app.inject({ method: "GET", url: "/v1/host/summary" });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });
 
   it("normalizes unavailable Docker evidence without leaking details", async () => {
-    const { app } = buildAgentApp({
-      hostSummaryReader: async () => hostSummaryFixture,
-      dockerContainersReader: async () => {
-        throw new DockerSourceUnavailableError();
-      },
-      dockerEventsReader: async () => dockerEventsFixture,
-    });
+    const { app } = buildAgentApp({ dockerContainersReader: async () => { throw new DockerSourceUnavailableError(); } });
     apps.push(app);
-
     const response = await app.inject({ method: "GET", url: "/v1/docker/containers" });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });
 
   it("normalizes unavailable Docker event evidence without leaking details", async () => {
-    const { app } = buildAgentApp({
-      hostSummaryReader: async () => hostSummaryFixture,
-      dockerContainersReader: async () => dockerContainersFixture,
-      dockerEventsReader: async () => {
-        throw new DockerSourceUnavailableError();
-      },
-    });
+    const { app } = buildAgentApp({ dockerEventsReader: async () => { throw new DockerSourceUnavailableError(); } });
     apps.push(app);
-
     const response = await app.inject({ method: "GET", url: "/v1/docker/events/recent" });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });
 
   it("normalizes unavailable systemd evidence without leaking details", async () => {
-    const { app } = buildAgentApp({
-      servicesReader: async () => {
-        throw new SystemdSourceUnavailableError();
-      },
-    });
+    const { app } = buildAgentApp({ servicesReader: async () => { throw new SystemdSourceUnavailableError(); } });
     apps.push(app);
-
     const response = await app.inject({ method: "GET", url: "/v1/services" });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });
 
   it("normalizes unavailable backup evidence without leaking details", async () => {
-    const { app } = buildAgentApp({
-      backupReader: async () => {
-        throw new BackupSourceUnavailableError();
-      },
-    });
+    const { app } = buildAgentApp({ backupReader: async () => { throw new BackupSourceUnavailableError(); } });
     apps.push(app);
-
     const response = await app.inject({ method: "GET", url: "/v1/backups/recent" });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });
 
   it("normalizes unavailable maintenance evidence without leaking details", async () => {
-    const { app } = buildAgentApp({
-      maintenanceEventsReader: async () => {
-        throw new MaintenanceSourceUnavailableError();
-      },
-    });
+    const { app } = buildAgentApp({ maintenanceEventsReader: async () => { throw new MaintenanceSourceUnavailableError(); } });
     apps.push(app);
+    const response = await app.inject({ method: "GET", url: "/v1/maintenance/events/recent" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
+  });
 
-    const response = await app.inject({
-      method: "GET",
-      url: "/v1/maintenance/events/recent",
-    });
+  it("normalizes unavailable deploy evidence without leaking details", async () => {
+    const { app } = buildAgentApp({ deployEventsReader: async () => { throw new DeploySourceUnavailableError(); } });
+    apps.push(app);
+    const response = await app.inject({ method: "GET", url: "/v1/deploy/events/recent" });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });
 
   it("normalizes unavailable log evidence without leaking details", async () => {
-    const { app } = buildAgentApp({
-      logsReader: async () => {
-        throw new LogSourceUnavailableError();
-      },
-    });
+    const { app } = buildAgentApp({ logsReader: async () => { throw new LogSourceUnavailableError(); } });
     apps.push(app);
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/v1/logs?sourceId=systemd%3Adocker&range=1h",
-    });
+    const response = await app.inject({ method: "GET", url: "/v1/logs?sourceId=systemd%3Adocker&range=1h" });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });
 
   it("normalizes unknown routes without leaking internal details", async () => {
-    const { app } = buildAgentApp({
-      hostSummaryReader: async () => hostSummaryFixture,
-      dockerContainersReader: async () => dockerContainersFixture,
-      dockerEventsReader: async () => dockerEventsFixture,
-    });
+    const { app } = buildAgentApp();
     apps.push(app);
-
     const response = await app.inject({ method: "GET", url: "/v1/not-real" });
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ error: "NOT_FOUND" });
