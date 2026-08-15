@@ -159,7 +159,10 @@ describe("Phase 5C-E structured endpoint evidence reader", () => {
     const duplicateDirectory = await makeDirectory();
     const duplicatePath = await writeEvidence(duplicateDirectory, {
       ...validEvidence,
-      events: [validEvidence.events[0], { ...validEvidence.events[1], eventId: validEvidence.events[0].eventId }],
+      events: [
+        validEvidence.events[0],
+        { ...validEvidence.events[1], eventId: validEvidence.events[0]!.eventId },
+      ],
     });
     await expect(
       readEndpointEvidence({ path: duplicatePath, requiredUid: currentUid }),
