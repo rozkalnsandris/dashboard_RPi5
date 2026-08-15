@@ -50,7 +50,7 @@ export type BackupEvidenceQuery = Static<typeof BackupEvidenceQuerySchema>;
 
 const RESULTS = new Set<BackupResult>(["SUCCESS", "FAILED"]);
 const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:+-]{0,79}$/;
-const RFC3339_WITH_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+const RFC3339_WITH_ZONE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -61,12 +61,44 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
   return Object.keys(value).every((key) => allowed.has(key));
 }
 
+function isLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return isLeapYear(year) ? 29 : 28;
+  return new Set([4, 6, 9, 11]).has(month) ? 30 : 31;
+}
+
 function isTimestamp(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    RFC3339_WITH_ZONE.test(value) &&
-    Number.isFinite(Date.parse(value))
-  );
+  if (typeof value !== "string") return false;
+  const match = RFC3339_WITH_ZONE.exec(value);
+  if (match === null) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[7] === undefined ? 0 : Number(match[7]);
+  const offsetMinute = match[8] === undefined ? 0 : Number(match[8]);
+
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysInMonth(year, month) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 23 ||
+    offsetMinute > 59
+  ) {
+    return false;
+  }
+
+  return Number.isFinite(Date.parse(value));
 }
 
 function parseRun(value: unknown): BackupEvidenceRun {
