@@ -8,6 +8,7 @@ export const LogSourceIdSchema = Type.Union([
   Type.Literal("systemd:cron"),
   Type.Literal("systemd:dashboard-rpi5-agent"),
   Type.Literal("systemd:rpi5-update"),
+  Type.Literal("journal:rpi5-deploy"),
   Type.Literal("file:rpi5-backup"),
 ]);
 export type LogSourceId = Static<typeof LogSourceIdSchema>;
@@ -15,6 +16,7 @@ export type LogSourceId = Static<typeof LogSourceIdSchema>;
 export const LogSourceKindSchema = Type.Union([
   Type.Literal("DOCKER"),
   Type.Literal("SYSTEMD"),
+  Type.Literal("JOURNAL"),
   Type.Literal("FILE"),
 ]);
 export type LogSourceKind = Static<typeof LogSourceKindSchema>;
@@ -129,9 +131,10 @@ const SOURCE_IDS = new Set<LogSourceId>([
   "systemd:cron",
   "systemd:dashboard-rpi5-agent",
   "systemd:rpi5-update",
+  "journal:rpi5-deploy",
   "file:rpi5-backup",
 ]);
-const SOURCE_KINDS = new Set<LogSourceKind>(["DOCKER", "SYSTEMD", "FILE"]);
+const SOURCE_KINDS = new Set<LogSourceKind>(["DOCKER", "SYSTEMD", "JOURNAL", "FILE"]);
 const RANGE_MODES = new Set<LogRangeMode>(["TIME", "TAIL"]);
 const RANGES = new Set<LogRange>(["15m", "1h", "6h", "24h"]);
 const LEVELS = new Set<LogLevel>([
