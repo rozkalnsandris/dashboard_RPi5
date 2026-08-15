@@ -34,14 +34,28 @@ export const HistoryPointSchema = Type.Object(
 
 export type HistoryPoint = Static<typeof HistoryPointSchema>;
 
-export const HostHistorySeriesSchema = Type.Object(
+const AvailableHostHistorySeriesSchema = Type.Object(
   {
     metric: HostHistoryMetricSchema,
-    state: HistorySeriesStateSchema,
-    points: Type.Array(HistoryPointSchema, { maxItems: 337 }),
+    state: Type.Literal("AVAILABLE"),
+    points: Type.Array(HistoryPointSchema, { minItems: 1, maxItems: 337 }),
   },
   { additionalProperties: false },
 );
+
+const UnavailableHostHistorySeriesSchema = Type.Object(
+  {
+    metric: HostHistoryMetricSchema,
+    state: Type.Literal("UNAVAILABLE"),
+    points: Type.Array(HistoryPointSchema, { maxItems: 0 }),
+  },
+  { additionalProperties: false },
+);
+
+export const HostHistorySeriesSchema = Type.Union([
+  AvailableHostHistorySeriesSchema,
+  UnavailableHostHistorySeriesSchema,
+]);
 
 export type HostHistorySeries = Static<typeof HostHistorySeriesSchema>;
 
