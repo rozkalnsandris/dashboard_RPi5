@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   JOURNALCTL_PATH,
@@ -176,50 +176,66 @@ describe("log parsers", () => {
 
 describe("readLogSnapshot", () => {
   it("uses fixed Docker registration and server-derived range", async () => {
-    const readDockerLogs = vi.fn(async () =>
-      Buffer.from("2026-08-15T12:59:00Z hello\n", "utf8"),
-    );
+    const calls: Parameters<LogReadDependencies["readDockerLogs"]>[] = [];
+    const readDockerLogs: LogReadDependencies["readDockerLogs"] = async (
+      containerName,
+      sinceSeconds,
+      signal,
+    ) => {
+      calls.push([containerName, sinceSeconds, signal]);
+      return Buffer.from("2026-08-15T12:59:00Z hello\n", "utf8");
+    };
     const result = await readLogSnapshot(
       "docker:homeassistant",
       "1h",
       dependencies({ readDockerLogs }),
     );
 
-    expect(readDockerLogs).toHaveBeenCalledWith(
-      "homeassistant",
-      Math.floor(Date.parse("2026-08-15T13:00:00.000Z") / 1_000) - 3_600,
-      undefined,
-    );
+    expect(calls).toEqual([
+      [
+        "homeassistant",
+        Math.floor(Date.parse("2026-08-15T13:00:00.000Z") / 1_000) - 3_600,
+        undefined,
+      ],
+    ]);
     expect(result.source.sourceId).toBe("docker:homeassistant");
     expect(result.rangeApplied).toBe(true);
     expect(result.entries).toHaveLength(1);
   });
 
   it("uses fixed journalctl executable and registered argv", async () => {
-    const execFile = vi.fn(async () => ({ stdout: "" }));
+    const calls: Parameters<LogReadDependencies["execFile"]>[] = [];
+    const execFile: LogReadDependencies["execFile"] = async (file, args, options) => {
+      calls.push([file, args, options]);
+      return { stdout: "" };
+    };
     const result = await readLogSnapshot(
       "systemd:ssh",
       "6h",
       dependencies({ execFile }),
     );
 
-    expect(execFile).toHaveBeenCalledTimes(1);
-    expect(execFile.mock.calls[0]?.[0]).toBe(JOURNALCTL_PATH);
-    expect(execFile.mock.calls[0]?.[1]).toContain("--unit=ssh.service");
-    expect(execFile.mock.calls[0]?.[1]).toContain("--since=-6h");
-    expect(execFile.mock.calls[0]?.[2]).toMatchObject({ shell: false });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0]).toBe(JOURNALCTL_PATH);
+    expect(calls[0]?.[1]).toContain("--unit=ssh.service");
+    expect(calls[0]?.[1]).toContain("--since=-6h");
+    expect(calls[0]?.[2]).toMatchObject({ shell: false });
     expect(result.rangeApplied).toBe(true);
   });
 
   it("reads only the registered backup path and marks range as tail-only", async () => {
-    const readFileTail = vi.fn(async () => ({ text: "legacy line\n", truncated: false }));
+    const calls: Parameters<LogReadDependencies["readFileTail"]>[] = [];
+    const readFileTail: LogReadDependencies["readFileTail"] = async (path, maxBytes, signal) => {
+      calls.push([path, maxBytes, signal]);
+      return { text: "legacy line\n", truncated: false };
+    };
     const result = await readLogSnapshot(
       "file:rpi5-backup",
       "24h",
       dependencies({ readFileTail }),
     );
 
-    expect(readFileTail.mock.calls[0]?.[0]).toBe("/var/log/rpi5-backup.log");
+    expect(calls[0]?.[0]).toBe("/var/log/rpi5-backup.log");
     expect(result.rangeApplied).toBe(false);
     expect(result.entries[0]?.timestamp).toBeNull();
   });
