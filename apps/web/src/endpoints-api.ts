@@ -7,7 +7,8 @@ export async function fetchPublicEndpointStatus(signal?: AbortSignal): Promise<P
   const response = await fetch("/api/endpoints", {
     method: "GET",
     headers: { Accept: "application/json" },
-    signal,
+    cache: "no-store",
+    ...(signal === undefined ? {} : { signal }),
   });
   if (!response.ok) throw new Error("Public endpoint status unavailable");
   return parsePublicEndpointStatusSnapshot(await response.json());

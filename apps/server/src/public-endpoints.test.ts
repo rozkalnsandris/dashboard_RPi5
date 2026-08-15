@@ -1,18 +1,19 @@
+import type { EndpointEvidenceSnapshot } from "@dashboard-rpi5/contracts/endpoints";
 import { describe, expect, it } from "vitest";
 
 import { createPublicEndpointsReader, PublicEndpointsSourceUnavailableError } from "./public-endpoints.js";
 
-const evidence = {
+const evidence: EndpointEvidenceSnapshot = {
   observedAt: "2026-08-15T20:10:00.000Z",
-  schema: "dashboard-rpi5.endpoint-evidence.v1" as const,
+  schema: "dashboard-rpi5.endpoint-evidence.v1",
   events: [
     {
       eventId: "grafana-down",
       endpointId: "grafana",
       label: "Grafana",
       occurredAt: "2026-08-15T20:05:00.000Z",
-      fromState: "UP" as const,
-      toState: "DOWN" as const,
+      fromState: "UP",
+      toState: "DOWN",
       statusCode: 502,
       latencyMs: 1_240,
     },
@@ -21,8 +22,8 @@ const evidence = {
       endpointId: "tech",
       label: "Hermes Tech",
       occurredAt: "2026-08-15T20:04:00.000Z",
-      fromState: "DOWN" as const,
-      toState: "UP" as const,
+      fromState: "DOWN",
+      toState: "UP",
       statusCode: 200,
       latencyMs: 84,
     },
@@ -31,8 +32,8 @@ const evidence = {
       endpointId: "tech",
       label: "Hermes Tech",
       occurredAt: "2026-08-15T19:00:00.000Z",
-      fromState: "UP" as const,
-      toState: "DOWN" as const,
+      fromState: "UP",
+      toState: "DOWN",
       statusCode: 503,
       latencyMs: 500,
     },
@@ -77,29 +78,18 @@ describe("Phase 6B public endpoint normalization", () => {
     });
     await expect(empty()).resolves.toMatchObject({ health: "UNKNOWN", endpoints: [] });
 
+    const unknownEvent = { ...evidence.events[1]!, eventId: "tech-unknown", fromState: "UP" as const, toState: "UNKNOWN" as const };
     const unknown = createPublicEndpointsReader({
-      endpointEvidenceReader: async () => ({
-        ...evidence,
-        events: [
-          {
-            ...evidence.events[1],
-            eventId: "tech-unknown",
-            fromState: "UP" as const,
-            toState: "UNKNOWN" as const,
-          },
-        ],
-      }),
+      endpointEvidenceReader: async () => ({ ...evidence, events: [unknownEvent] }),
       now: () => new Date("2026-08-15T20:10:00.000Z"),
     });
     await expect(unknown()).resolves.toMatchObject({ health: "UNKNOWN" });
   });
 
   it("fails closed for future transitions", async () => {
+    const futureEvent = { ...evidence.events[0]!, occurredAt: "2026-08-15T20:10:01.000Z" };
     const read = createPublicEndpointsReader({
-      endpointEvidenceReader: async () => ({
-        ...evidence,
-        events: [{ ...evidence.events[0], occurredAt: "2026-08-15T20:10:01.000Z" }],
-      }),
+      endpointEvidenceReader: async () => ({ ...evidence, events: [futureEvent] }),
       now: () => new Date("2026-08-15T20:10:00.000Z"),
     });
     await expect(read()).rejects.toBeInstanceOf(PublicEndpointsSourceUnavailableError);
