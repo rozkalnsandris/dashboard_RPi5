@@ -1,0 +1,158 @@
+.activity-live-page {
+  min-height: calc(100svh - 150px);
+}
+
+.activity-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.activity-toolbar label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  color: var(--subtle);
+  font-size: .68rem;
+  font-weight: 800;
+}
+
+.activity-toolbar select {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  padding: 0 10px;
+  color: var(--text);
+  background: #090f18;
+  font: inherit;
+  font-size: .92rem;
+}
+
+.activity-status {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 10px;
+  color: var(--muted);
+  font-size: .69rem;
+}
+
+.activity-timeline--live li {
+  grid-template-columns: 112px 36px minmax(0, 1fr);
+  align-items: start;
+  padding: 12px 0;
+}
+
+.activity-timeline--live time {
+  padding-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.activity-event-body {
+  min-width: 0;
+}
+
+.activity-event-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 5px;
+  color: var(--subtle);
+  font-size: .62rem;
+}
+
+.activity-severity {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: #b8d1ff;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.activity-severity[data-severity="ATTENTION"] {
+  color: #ffd58a;
+}
+
+.activity-severity[data-severity="CRITICAL"] {
+  color: #ffb3b3;
+}
+
+.timeline-icon[data-severity="ATTENTION"] {
+  color: #ffd58a;
+  background: #241a0b;
+}
+
+.timeline-icon[data-severity="CRITICAL"] {
+  color: #ffb3b3;
+  background: #2a1114;
+}
+
+.activity-target-link {
+  display: inline-flex;
+  margin-top: 8px;
+  color: #9fc1ff;
+  font-size: .68rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.activity-target-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+@media (max-width: 560px) {
+  .activity-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .activity-timeline--live li {
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .activity-timeline--live time {
+    grid-column: 1 / -1;
+    padding-top: 0;
+  }
+
+  .activity-timeline--live .timeline-icon {
+    grid-column: 1;
+  }
+
+  .activity-event-body {
+    grid-column: 2;
+  }
+
+  .timeline-title {
+    display: grid;
+    gap: 4px;
+  }
+
+  .timeline-title span {
+    justify-self: start;
+  }
+}
+
+@media (min-width: 720px) {
+  .activity-toolbar {
+    grid-template-columns: repeat(2, minmax(200px, 280px));
+    justify-content: start;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .activity-target-link:hover {
+    text-decoration: underline;
+  }
+}
