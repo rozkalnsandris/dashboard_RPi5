@@ -88,7 +88,7 @@ describe("Phase 5A agent services Unix-socket client", () => {
   });
 
   it("bounds a stalled agent request and rejects unsafe socket configuration", async () => {
-    const socketPath = await listen((_request, _response) => {
+    const socketPath = await listen(() => {
       // Intentionally leave the response open until the client timeout destroys the request.
     });
     await expect(
