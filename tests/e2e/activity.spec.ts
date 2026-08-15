@@ -7,6 +7,7 @@ const activityPayload = {
     { source: "SYSTEMD", status: "AVAILABLE", observedAt: "2026-08-15T17:00:00.000Z" },
     { source: "BACKUP", status: "AVAILABLE", observedAt: "2026-08-15T17:00:00.000Z" },
     { source: "MAINTENANCE", status: "AVAILABLE", observedAt: "2026-08-15T17:00:00.000Z" },
+    { source: "DEPLOY", status: "AVAILABLE", observedAt: "2026-08-15T17:00:00.000Z" },
   ],
   items: [
     {
@@ -18,6 +19,17 @@ const activityPayload = {
       title: "homeassistant out of memory",
       detail: "image homeassistant/home-assistant:stable · scope local",
       target: "/docker",
+      groupCount: 1,
+    },
+    {
+      id: "deploy:verified-success",
+      source: "DEPLOY",
+      severity: "INFO",
+      kind: "DEPLOY_VERIFIED",
+      occurredAt: "2026-08-15T16:58:50.000Z",
+      title: "Deploy verified",
+      detail: "commit abcdef123456 · transaction 20260815T165850000000Z-abcdef123456",
+      target: "/logs",
       groupCount: 1,
     },
     {
@@ -67,27 +79,24 @@ const activityPayload = {
   ],
 };
 
-test("Activity renders bounded live evidence without fixture deploy or endpoint categories or page overflow", async ({ page }) => {
+test("Activity renders bounded live evidence including verified deploys without endpoint fixtures or page overflow", async ({ page }) => {
   const requestedUrls: string[] = [];
   await page.route("**/api/activity", async (route) => {
     requestedUrls.push(route.request().url());
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(activityPayload),
-    });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(activityPayload) });
   });
 
   await page.goto("/activity");
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
-  await expect(page.getByText("5 visible / 5 bounded events")).toBeVisible();
+  await expect(page.getByText("6 visible / 6 bounded events")).toBeVisible();
   await expect(page.getByText("homeassistant out of memory")).toBeVisible();
+  await expect(page.getByText("Deploy verified")).toBeVisible();
   await expect(page.getByText("Maintenance completed")).toBeVisible();
   await expect(page.getByText("Backup completed")).toBeVisible();
   await expect(page.getByText("SSH is failed")).toBeVisible();
   await expect(page.getByText("2 grouped events")).toBeVisible();
-  await expect(page.getByText(/CV production SHA verified/i)).toHaveCount(0);
   await expect(page.getByText(/public endpoints remain reachable/i)).toHaveCount(0);
+  await expect(page.getByText(/deploy failed/i)).toHaveCount(0);
 
   expect(requestedUrls.length).toBeGreaterThan(0);
   for (const url of requestedUrls) {
@@ -107,30 +116,29 @@ test("Activity source and severity filters stay client-side", async ({ page }, t
   let requests = 0;
   await page.route("**/api/activity", async (route) => {
     requests += 1;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(activityPayload),
-    });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(activityPayload) });
   });
 
   await page.goto("/activity");
   await expect(page.getByText("homeassistant out of memory")).toBeVisible();
-
   const beforeFilters = requests;
+
+  await page.getByLabel("Activity source").selectOption("DEPLOY");
+  await expect(page.getByText("Deploy verified")).toBeVisible();
+  await expect(page.getByText("Maintenance completed")).toHaveCount(0);
+  expect(requests).toBe(beforeFilters);
+
   await page.getByLabel("Activity source").selectOption("SYSTEMD");
   await expect(page.getByText("SSH is failed")).toBeVisible();
-  await expect(page.getByText("homeassistant out of memory")).toHaveCount(0);
+  await expect(page.getByText("Deploy verified")).toHaveCount(0);
   expect(requests).toBe(beforeFilters);
 
   await page.getByLabel("Activity source").selectOption("BACKUP");
   await expect(page.getByText("Backup completed")).toBeVisible();
-  await expect(page.getByText("SSH is failed")).toHaveCount(0);
   expect(requests).toBe(beforeFilters);
 
   await page.getByLabel("Activity source").selectOption("MAINTENANCE");
   await expect(page.getByText("Maintenance completed")).toBeVisible();
-  await expect(page.getByText("Backup completed")).toHaveCount(0);
   expect(requests).toBe(beforeFilters);
 
   await page.getByLabel("Activity source").selectOption("ALL");
@@ -138,6 +146,7 @@ test("Activity source and severity filters stay client-side", async ({ page }, t
   await expect(page.getByText("prometheus started")).toBeVisible();
   await expect(page.getByText("Backup completed")).toBeVisible();
   await expect(page.getByText("Maintenance completed")).toBeVisible();
+  await expect(page.getByText("Deploy verified")).toBeVisible();
   await expect(page.getByText("SSH is failed")).toHaveCount(0);
   expect(requests).toBe(beforeFilters);
 });
@@ -155,8 +164,9 @@ test("Activity keeps partial source failure explicit without hiding valid eviden
           activityPayload.sources[1],
           { source: "BACKUP", status: "UNAVAILABLE", observedAt: null },
           activityPayload.sources[3],
+          activityPayload.sources[4],
         ],
-        items: [activityPayload.items[1], activityPayload.items[3]],
+        items: [activityPayload.items[1], activityPayload.items[2], activityPayload.items[4]],
       }),
     }),
   );
@@ -164,6 +174,7 @@ test("Activity keeps partial source failure explicit without hiding valid eviden
   await page.goto("/activity");
   await expect(page.getByText("Activity is degraded")).toBeVisible();
   await expect(page.getByText(/Unavailable: Docker, Backups/)).toBeVisible();
+  await expect(page.getByText("Deploy verified")).toBeVisible();
   await expect(page.getByText("Maintenance completed")).toBeVisible();
   await expect(page.getByText("SSH is failed")).toBeVisible();
   await expect(page.getByText("Backup completed")).toHaveCount(0);
@@ -172,11 +183,7 @@ test("Activity keeps partial source failure explicit without hiding valid eviden
 test("Activity complete source failure remains unavailable, not empty", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop-1440", "One desktop project covers unavailable semantics");
   await page.route("**/api/activity", (route) =>
-    route.fulfill({
-      status: 503,
-      contentType: "application/json",
-      body: '{"error":"SOURCE_UNAVAILABLE"}',
-    }),
+    route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"SOURCE_UNAVAILABLE"}' }),
   );
 
   await page.goto("/activity");

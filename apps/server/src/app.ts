@@ -27,6 +27,7 @@ import Fastify from "fastify";
 import { isAbsolute } from "node:path";
 
 import { createAgentBackupEvidenceReader } from "./agent-backup-evidence-client.js";
+import { createAgentDeployEventsReader } from "./agent-deploy-events-client.js";
 import { createAgentDockerEventsReader } from "./agent-docker-events-client.js";
 import {
   createAgentLogsReaders,
@@ -83,6 +84,7 @@ function buildDefaultActivityReader(servicesReader: ServicesReader): ActivityRea
     servicesReader,
     backupEvidenceReader: createAgentBackupEvidenceReader(agentSocketOptions()),
     maintenanceEventsReader: createAgentMaintenanceEventsReader(agentSocketOptions()),
+    deployEventsReader: createAgentDeployEventsReader(agentSocketOptions()),
   });
 }
 

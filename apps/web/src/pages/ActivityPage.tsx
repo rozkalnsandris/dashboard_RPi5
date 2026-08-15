@@ -8,6 +8,7 @@ import {
   Archive,
   Box,
   RefreshCw,
+  Rocket,
   ServerCog,
   ShieldAlert,
   Wrench,
@@ -42,6 +43,8 @@ function sourceLabel(source: ActivitySource): string {
       return "Backups";
     case "MAINTENANCE":
       return "Maintenance";
+    case "DEPLOY":
+      return "Deploys";
   }
 }
 
@@ -55,6 +58,8 @@ function sourceIcon(source: ActivitySource) {
       return Archive;
     case "MAINTENANCE":
       return Wrench;
+    case "DEPLOY":
+      return Rocket;
   }
 }
 
@@ -91,7 +96,7 @@ export function ActivityPage() {
         <div>
           <p className="eyebrow">What changed</p>
           <h1 id="activity-page-title">Activity</h1>
-          <p>Bounded operational events from structured Docker, allowlisted service, structured backup and systemd-manager maintenance evidence. Maintenance results never depend on updater message text.</p>
+          <p>Bounded operational events from structured Docker, allowlisted service, backup, maintenance and root-authenticated deploy verification evidence. Failed deploy outcomes are never inferred from rollback-start text.</p>
         </div>
       </div>
 
@@ -108,6 +113,7 @@ export function ActivityPage() {
             <option value="SYSTEMD">Services</option>
             <option value="BACKUP">Backups</option>
             <option value="MAINTENANCE">Maintenance</option>
+            <option value="DEPLOY">Deploys</option>
           </select>
         </label>
         <label>
@@ -135,7 +141,7 @@ export function ActivityPage() {
       {sourceFailure ? (
         <div className="logs-message logs-message--warning" role="status">
           <ShieldAlert size={18} aria-hidden="true" />
-          <div><strong>Activity evidence unavailable</strong><span>Docker, service, backup and maintenance evidence sources are all unavailable.</span></div>
+          <div><strong>Activity evidence unavailable</strong><span>Docker, service, backup, maintenance and deploy evidence sources are all unavailable.</span></div>
         </div>
       ) : null}
 

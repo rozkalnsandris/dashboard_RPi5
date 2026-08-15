@@ -34,6 +34,19 @@ interface SystemdLogSourceRegistration {
   unitId: string;
 }
 
+interface JournalOrigin {
+  uid: string;
+  transport: string;
+  identifier: string;
+}
+
+interface JournalLogSourceRegistration {
+  descriptor: LogSourceDescriptor;
+  kind: "JOURNAL";
+  matches: readonly string[];
+  origin: JournalOrigin;
+}
+
 interface FileLogSourceRegistration {
   descriptor: LogSourceDescriptor;
   kind: "FILE";
@@ -43,6 +56,7 @@ interface FileLogSourceRegistration {
 type LogSourceRegistration =
   | DockerLogSourceRegistration
   | SystemdLogSourceRegistration
+  | JournalLogSourceRegistration
   | FileLogSourceRegistration;
 
 export const LOG_SOURCE_REGISTRY = Object.freeze<readonly LogSourceRegistration[]>([
@@ -115,6 +129,17 @@ export const LOG_SOURCE_REGISTRY = Object.freeze<readonly LogSourceRegistration[
     },
     kind: "SYSTEMD",
     unitId: "rpi5-update.service",
+  },
+  {
+    descriptor: {
+      sourceId: "journal:rpi5-deploy",
+      label: "RPi5 deploy",
+      kind: "JOURNAL",
+      rangeMode: "TIME",
+    },
+    kind: "JOURNAL",
+    matches: ["_UID=0", "_TRANSPORT=syslog", "SYSLOG_IDENTIFIER=rpi5-deploy"],
+    origin: { uid: "0", transport: "syslog", identifier: "rpi5-deploy" },
   },
   {
     descriptor: {
@@ -358,7 +383,18 @@ function parseJournalTimestamp(value: unknown): string | null {
   }
 }
 
-export function parseJournalJsonLines(stdout: string): { entries: LogEntry[]; truncated: boolean } {
+function matchesJournalOrigin(record: Record<string, unknown>, origin: JournalOrigin): boolean {
+  return (
+    record._UID === origin.uid &&
+    record._TRANSPORT === origin.transport &&
+    record.SYSLOG_IDENTIFIER === origin.identifier
+  );
+}
+
+export function parseJournalJsonLines(
+  stdout: string,
+  expectedOrigin?: JournalOrigin,
+): { entries: LogEntry[]; truncated: boolean } {
   if (Buffer.byteLength(stdout, "utf8") > LOG_MAX_SOURCE_BYTES) {
     throw new LogSourceUnavailableError();
   }
@@ -376,6 +412,9 @@ export function parseJournalJsonLines(stdout: string): { entries: LogEntry[]; tr
       throw new LogSourceUnavailableError();
     }
     const record = value as Record<string, unknown>;
+    if (expectedOrigin !== undefined && !matchesJournalOrigin(record, expectedOrigin)) {
+      throw new LogSourceUnavailableError();
+    }
     if (typeof record.MESSAGE !== "string" || record.MESSAGE.length === 0) continue;
     entries.push({
       timestamp: parseJournalTimestamp(record.__REALTIME_TIMESTAMP),
@@ -419,15 +458,28 @@ export function parseFileTail(text: string, tailWasTruncated: boolean): {
 
 export function buildJournalctlArgs(sourceId: LogSourceId, range: LogRange): readonly string[] {
   const registration = findRegistration(sourceId);
-  if (registration.kind !== "SYSTEMD") throw new LogSourceUnavailableError();
-  return [
+  const base = [
     "--no-pager",
     "--output=json",
-    "--output-fields=__REALTIME_TIMESTAMP,PRIORITY,MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT",
-    `--unit=${registration.unitId}`,
-    `--since=${JOURNAL_SINCE[range]}`,
-    `--lines=${LOG_MAX_ENTRIES}`,
+    "--output-fields=__REALTIME_TIMESTAMP,PRIORITY,MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT,_UID,_TRANSPORT",
   ];
+  if (registration.kind === "SYSTEMD") {
+    return [
+      ...base,
+      `--unit=${registration.unitId}`,
+      `--since=${JOURNAL_SINCE[range]}`,
+      `--lines=${LOG_MAX_ENTRIES}`,
+    ];
+  }
+  if (registration.kind === "JOURNAL") {
+    return [
+      ...base,
+      `--since=${JOURNAL_SINCE[range]}`,
+      `--lines=${LOG_MAX_ENTRIES}`,
+      ...registration.matches,
+    ];
+  }
+  throw new LogSourceUnavailableError();
 }
 
 export function buildDockerLogsPath(
@@ -587,7 +639,7 @@ export async function readLogSnapshot(
         signal,
       );
       parsed = parseDockerLogBody(body);
-    } else if (registration.kind === "SYSTEMD") {
+    } else if (registration.kind === "SYSTEMD" || registration.kind === "JOURNAL") {
       const { stdout } = await dependencies.execFile(
         JOURNALCTL_PATH,
         buildJournalctlArgs(sourceId, range),
@@ -599,7 +651,10 @@ export async function readLogSnapshot(
           ...(signal === undefined ? {} : { signal }),
         },
       );
-      parsed = parseJournalJsonLines(stdout);
+      parsed = parseJournalJsonLines(
+        stdout,
+        registration.kind === "JOURNAL" ? registration.origin : undefined,
+      );
     } else {
       const tail = await dependencies.readFileTail(registration.path, LOG_FILE_TAIL_BYTES, signal);
       parsed = parseFileTail(tail.text, tail.truncated);

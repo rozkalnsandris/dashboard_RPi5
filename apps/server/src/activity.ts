@@ -16,6 +16,10 @@ import type {
   BackupEvidenceSnapshot,
 } from "@dashboard-rpi5/contracts/backups";
 import type {
+  DeployEventsSnapshot,
+  DeployVerifiedEvent,
+} from "@dashboard-rpi5/contracts/deploy";
+import type {
   MaintenanceEvent,
   MaintenanceEventsSnapshot,
 } from "@dashboard-rpi5/contracts/maintenance";
@@ -26,6 +30,7 @@ import type {
 import { createHash } from "node:crypto";
 
 import type { BackupEvidenceReader } from "./agent-backup-evidence-client.js";
+import type { DeployEventsReader } from "./agent-deploy-events-client.js";
 import type { DockerEventsReader } from "./agent-docker-events-client.js";
 import type { MaintenanceEventsReader } from "./agent-maintenance-events-client.js";
 import type { ServicesReader } from "./agent-services-client.js";
@@ -40,6 +45,7 @@ interface ActivityDependencies {
   servicesReader: ServicesReader;
   backupEvidenceReader: BackupEvidenceReader;
   maintenanceEventsReader: MaintenanceEventsReader;
+  deployEventsReader: DeployEventsReader;
   now?: () => Date;
 }
 
@@ -267,6 +273,28 @@ export function normalizeMaintenanceActivity(
   }));
 }
 
+function deployEventId(event: DeployVerifiedEvent): string {
+  const digest = createHash("sha256").update(JSON.stringify(event)).digest("hex");
+  return `deploy:${digest}`;
+}
+
+export function normalizeDeployActivity(snapshot: DeployEventsSnapshot): ActivityItem[] {
+  return snapshot.events.map((event) => ({
+    id: deployEventId(event),
+    source: "DEPLOY",
+    severity: "INFO",
+    kind: "DEPLOY_VERIFIED",
+    occurredAt: event.occurredAt,
+    title: "Deploy verified",
+    detail: clampText(
+      `commit ${event.commit} · transaction ${event.transactionId}`,
+      320,
+    ),
+    target: "/logs",
+    groupCount: 1,
+  }));
+}
+
 function availableSource(source: ActivitySource, observedAt: string): ActivitySourceState {
   return { source, status: "AVAILABLE", observedAt };
 }
@@ -278,18 +306,21 @@ function unavailableSource(source: ActivitySource): ActivitySourceState {
 export function createActivityReader(dependencies: ActivityDependencies): ActivityReader {
   const now = dependencies.now ?? (() => new Date());
   return async () => {
-    const [dockerResult, servicesResult, backupResult, maintenanceResult] = await Promise.allSettled([
-      dependencies.dockerEventsReader(),
-      dependencies.servicesReader(),
-      dependencies.backupEvidenceReader(),
-      dependencies.maintenanceEventsReader(),
-    ]);
+    const [dockerResult, servicesResult, backupResult, maintenanceResult, deployResult] =
+      await Promise.allSettled([
+        dependencies.dockerEventsReader(),
+        dependencies.servicesReader(),
+        dependencies.backupEvidenceReader(),
+        dependencies.maintenanceEventsReader(),
+        dependencies.deployEventsReader(),
+      ]);
 
     if (
       dockerResult.status === "rejected" &&
       servicesResult.status === "rejected" &&
       backupResult.status === "rejected" &&
-      maintenanceResult.status === "rejected"
+      maintenanceResult.status === "rejected" &&
+      deployResult.status === "rejected"
     ) {
       throw new ActivitySourceUnavailableError();
     }
@@ -307,6 +338,9 @@ export function createActivityReader(dependencies: ActivityDependencies): Activi
       maintenanceResult.status === "fulfilled"
         ? availableSource("MAINTENANCE", maintenanceResult.value.observedAt)
         : unavailableSource("MAINTENANCE"),
+      deployResult.status === "fulfilled"
+        ? availableSource("DEPLOY", deployResult.value.observedAt)
+        : unavailableSource("DEPLOY"),
     ];
 
     const items = [
@@ -316,6 +350,7 @@ export function createActivityReader(dependencies: ActivityDependencies): Activi
       ...(maintenanceResult.status === "fulfilled"
         ? normalizeMaintenanceActivity(maintenanceResult.value)
         : []),
+      ...(deployResult.status === "fulfilled" ? normalizeDeployActivity(deployResult.value) : []),
     ];
 
     const uniqueItems = [...new Map(items.map((item) => [item.id, item])).values()]
@@ -325,8 +360,10 @@ export function createActivityReader(dependencies: ActivityDependencies): Activi
       })
       .slice(0, ACTIVITY_MAX_ITEMS);
 
+    const observedAt = now();
+    if (!Number.isFinite(observedAt.getTime())) throw new ActivitySourceUnavailableError();
     return {
-      observedAt: now().toISOString(),
+      observedAt: observedAt.toISOString(),
       sources,
       items: uniqueItems,
     };

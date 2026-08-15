@@ -5,6 +5,7 @@ export const ActivitySourceSchema = Type.Union([
   Type.Literal("SYSTEMD"),
   Type.Literal("BACKUP"),
   Type.Literal("MAINTENANCE"),
+  Type.Literal("DEPLOY"),
 ]);
 export type ActivitySource = Static<typeof ActivitySourceSchema>;
 
@@ -32,6 +33,7 @@ export const ActivityEventKindSchema = Type.Union([
   Type.Literal("SYSTEMD_STATE"),
   Type.Literal("BACKUP_RESULT"),
   Type.Literal("MAINTENANCE_RESULT"),
+  Type.Literal("DEPLOY_VERIFIED"),
 ]);
 export type ActivityEventKind = Static<typeof ActivityEventKindSchema>;
 
@@ -78,7 +80,7 @@ export type ActivityItem = Static<typeof ActivityItemSchema>;
 export const ActivitySnapshotSchema = Type.Object(
   {
     observedAt: Type.String({ format: "date-time" }),
-    sources: Type.Array(ActivitySourceStateSchema, { minItems: 4, maxItems: 4 }),
+    sources: Type.Array(ActivitySourceStateSchema, { minItems: 5, maxItems: 5 }),
     items: Type.Array(ActivityItemSchema, { maxItems: 256 }),
   },
   { additionalProperties: false },
@@ -99,7 +101,13 @@ export const ActivityApiErrorSchema = Type.Object(
 );
 export type ActivityApiError = Static<typeof ActivityApiErrorSchema>;
 
-const SOURCES = new Set<ActivitySource>(["DOCKER", "SYSTEMD", "BACKUP", "MAINTENANCE"]);
+const SOURCES = new Set<ActivitySource>([
+  "DOCKER",
+  "SYSTEMD",
+  "BACKUP",
+  "MAINTENANCE",
+  "DEPLOY",
+]);
 const SOURCE_STATUSES = new Set<ActivitySourceStatus>(["AVAILABLE", "UNAVAILABLE"]);
 const SEVERITIES = new Set<ActivitySeverity>(["INFO", "ATTENTION", "CRITICAL"]);
 const KINDS = new Set<ActivityEventKind>([
@@ -119,6 +127,7 @@ const KINDS = new Set<ActivityEventKind>([
   "SYSTEMD_STATE",
   "BACKUP_RESULT",
   "MAINTENANCE_RESULT",
+  "DEPLOY_VERIFIED",
 ]);
 const TARGETS = new Set<ActivityTarget>(["/docker", "/services", "/backups", "/logs"]);
 
@@ -214,7 +223,7 @@ export function parseActivitySnapshot(value: unknown): ActivitySnapshot {
     !hasOnlyKeys(value, ["observedAt", "sources", "items"]) ||
     !isIsoDate(value.observedAt) ||
     !Array.isArray(value.sources) ||
-    value.sources.length !== 4 ||
+    value.sources.length !== 5 ||
     !Array.isArray(value.items) ||
     value.items.length > 256
   ) {
@@ -223,11 +232,12 @@ export function parseActivitySnapshot(value: unknown): ActivitySnapshot {
 
   const sources = value.sources.map(parseSourceState);
   if (
-    new Set(sources.map((source) => source.source)).size !== 4 ||
+    new Set(sources.map((source) => source.source)).size !== 5 ||
     !sources.some((source) => source.source === "DOCKER") ||
     !sources.some((source) => source.source === "SYSTEMD") ||
     !sources.some((source) => source.source === "BACKUP") ||
-    !sources.some((source) => source.source === "MAINTENANCE")
+    !sources.some((source) => source.source === "MAINTENANCE") ||
+    !sources.some((source) => source.source === "DEPLOY")
   ) {
     throw new Error("Invalid activity response");
   }

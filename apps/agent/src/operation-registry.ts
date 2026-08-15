@@ -1,6 +1,7 @@
 import type { AgentError } from "@dashboard-rpi5/contracts";
 
 import { BackupSourceUnavailableError } from "./backup-evidence.js";
+import { DeploySourceUnavailableError } from "./deploy-events.js";
 import { DockerSourceUnavailableError } from "./docker-read.js";
 import { HostSourceUnavailableError } from "./host-read.js";
 import { LogSourceUnavailableError } from "./logs-read.js";
@@ -128,7 +129,8 @@ export function normalizeAgentError(error: unknown): AgentError {
     error instanceof SystemdSourceUnavailableError ||
     error instanceof LogSourceUnavailableError ||
     error instanceof BackupSourceUnavailableError ||
-    error instanceof MaintenanceSourceUnavailableError
+    error instanceof MaintenanceSourceUnavailableError ||
+    error instanceof DeploySourceUnavailableError
   ) {
     return { error: "SOURCE_UNAVAILABLE" };
   }

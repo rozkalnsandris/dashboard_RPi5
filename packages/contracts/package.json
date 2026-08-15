@@ -8,6 +8,7 @@
     "./activity": "./src/activity.ts",
     "./agent": "./src/agent.ts",
     "./backups": "./src/backups.ts",
+    "./deploy": "./src/deploy.ts",
     "./history": "./src/history.ts",
     "./logs": "./src/logs.ts",
     "./maintenance": "./src/maintenance.ts",
@@ -15,7 +16,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsup src/index.ts src/activity.ts src/agent.ts src/backups.ts src/history.ts src/logs.ts src/maintenance.ts src/services.ts --format esm --platform neutral --clean"
+    "build": "tsup src/index.ts src/activity.ts src/agent.ts src/backups.ts src/deploy.ts src/history.ts src/logs.ts src/maintenance.ts src/services.ts --format esm --platform neutral --clean"
   },
   "dependencies": {
     "@sinclair/typebox": "0.34.52"
