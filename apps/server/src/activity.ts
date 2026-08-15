@@ -14,6 +14,7 @@ import type {
   SystemdServiceSnapshot,
   SystemdServicesSnapshot,
 } from "@dashboard-rpi5/contracts/services";
+import { createHash } from "node:crypto";
 
 import type { DockerEventsReader } from "./agent-docker-events-client.js";
 import type { ServicesReader } from "./agent-services-client.js";
@@ -89,10 +90,15 @@ function dockerDetail(event: DockerRecentEvent): string {
   return clampText(evidence.join(" · "), 320);
 }
 
+function dockerEventId(event: DockerRecentEvent): string {
+  const digest = createHash("sha256").update(JSON.stringify(event)).digest("hex");
+  return `docker:${digest}`;
+}
+
 function mapDockerEvent(event: DockerRecentEvent): ActivityItem {
   const subject = clampText(event.containerName ?? event.containerId.slice(0, 12), 96);
   return {
-    id: `docker:${event.containerId}:${event.action}:${event.occurredAt}:${event.health ?? "none"}:${event.exitCode ?? "none"}`,
+    id: dockerEventId(event),
     source: "DOCKER",
     severity: dockerSeverity(event),
     kind: `DOCKER_${event.action}` as ActivityEventKind,
