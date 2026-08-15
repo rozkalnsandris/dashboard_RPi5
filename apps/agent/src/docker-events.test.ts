@@ -82,8 +82,7 @@ describe("Docker event stream decoder", () => {
 
   it("rejects malformed and oversized streams", () => {
     const malformed = new DockerEventStreamDecoder();
-    malformed.push("{not-json}\n");
-    expect(() => malformed.finish()).toThrow(DockerSourceUnavailableError);
+    expect(() => malformed.push("{not-json}\n")).toThrow(DockerSourceUnavailableError);
 
     const oversized = new DockerEventStreamDecoder();
     expect(() => oversized.push(Buffer.alloc(DOCKER_MAX_RESPONSE_BYTES + 1))).toThrow(
@@ -111,7 +110,7 @@ describe("Docker event normalization", () => {
         }),
       ),
     ).toEqual({
-      occurredAt: "2025-12-15T05:20:00.000Z",
+      occurredAt: "2025-12-15T12:00:00.000Z",
       action: "DIE",
       containerId: CONTAINER_ID,
       containerName: "homeassistant",
@@ -174,7 +173,7 @@ describe("recent Docker event snapshot", () => {
       },
     };
 
-    const now = new Date("2025-12-15T05:20:00.900Z");
+    const now = new Date("2025-12-15T12:00:00.900Z");
     const snapshot = await readRecentDockerEvents(transport, undefined, () => now);
 
     expect(isAllowedDockerEventsPath(requestedPath)).toBe(true);
@@ -196,7 +195,7 @@ describe("recent Docker event snapshot", () => {
     const snapshot = await readRecentDockerEvents(
       transport,
       undefined,
-      () => new Date("2025-12-15T05:20:00.000Z"),
+      () => new Date("2025-12-15T12:00:00.000Z"),
     );
     expect(snapshot.events).toEqual([]);
   });
