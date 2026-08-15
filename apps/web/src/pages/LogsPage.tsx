@@ -3,10 +3,11 @@ import { useMemo, useState } from "react";
 import { Button } from "react-aria-components";
 
 const logSources = [
-  { id: "docker:homeassistant", label: "homeassistant" },
-  { id: "docker:prometheus", label: "prometheus" },
-  { id: "systemd:cloudflared", label: "cloudflared" },
-  { id: "file:rpi5-backup", label: "rpi5-backup" },
+  { id: "all", label: "All registered sources", source: null },
+  { id: "docker:homeassistant", label: "homeassistant", source: "homeassistant" },
+  { id: "docker:prometheus", label: "prometheus", source: "prometheus" },
+  { id: "systemd:cloudflared", label: "cloudflared", source: "cloudflared" },
+  { id: "file:rpi5-backup", label: "rpi5-backup", source: "rpi5-backup" },
 ] as const;
 
 const fixtureLines = [
@@ -17,8 +18,10 @@ const fixtureLines = [
   { time: "14:39:11", level: "INFO", source: "homeassistant", message: "Container remains healthy in fixture mode" },
 ] as const;
 
+type SourceId = (typeof logSources)[number]["id"];
+
 export function LogsPage() {
-  const [sourceId, setSourceId] = useState<(typeof logSources)[number]["id"]>("docker:homeassistant");
+  const [sourceId, setSourceId] = useState<SourceId>("all");
   const [query, setQuery] = useState("");
   const [following, setFollowing] = useState(true);
 
@@ -26,11 +29,11 @@ export function LogsPage() {
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return fixtureLines.filter((line) => {
-      const sourceMatch = sourceId === "docker:homeassistant" ? true : line.source === source.label;
+      const sourceMatch = source.source === null || line.source === source.source;
       const textMatch = normalized.length === 0 || `${line.level} ${line.source} ${line.message}`.toLowerCase().includes(normalized);
       return sourceMatch && textMatch;
     });
-  }, [query, source.label, sourceId]);
+  }, [query, source.source]);
 
   return (
     <section className="page-stack log-page-shell" aria-labelledby="logs-title">
@@ -43,7 +46,7 @@ export function LogsPage() {
       <div className="log-toolbar" aria-label="Log filters">
         <label>
           <span>Source</span>
-          <select value={sourceId} onChange={(event) => setSourceId(event.target.value as typeof sourceId)}>
+          <select value={sourceId} onChange={(event) => setSourceId(event.target.value as SourceId)}>
             {logSources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
         </label>
