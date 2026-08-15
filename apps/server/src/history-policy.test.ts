@@ -30,11 +30,11 @@ describe("fixed PromQL registry", () => {
     expect(registry.LOAD1).toBe("avg(node_load1)");
   });
 
-  it("adds only an escaped server-side instance matcher", () => {
-    const registry = buildHostPromqlRegistry('rpi5:9100\\"primary');
+  it("adds only a server-side instance matcher", () => {
+    const registry = buildHostPromqlRegistry("rpi5:9100");
 
-    expect(registry.CPU_PERCENT).toContain('instance="rpi5:9100\\\\\\"primary"');
-    expect(registry.LOAD1).toContain('instance="rpi5:9100\\\\\\"primary"');
+    expect(registry.CPU_PERCENT).toContain('instance="rpi5:9100"');
+    expect(registry.LOAD1).toBe('avg(node_load1{instance="rpi5:9100"})');
   });
 
   it("rejects control characters in the configured instance", () => {
