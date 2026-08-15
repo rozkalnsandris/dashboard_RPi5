@@ -24,9 +24,13 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
+          cache: npm
 
-      - name: Bootstrap dependency lock
-        run: npm install --ignore-scripts
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
 
       - name: Typecheck
         run: npm run typecheck
@@ -45,12 +49,3 @@ jobs:
 
       - name: Responsive browser tests
         run: npm run test:e2e
-
-      - name: Upload bootstrap lockfile
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: phase1-bootstrap-package-lock
-          path: package-lock.json
-          if-no-files-found: ignore
-          retention-days: 3
