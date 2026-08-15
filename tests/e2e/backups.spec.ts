@@ -129,6 +129,6 @@ test("Overview keeps unavailable backup evidence unknown instead of all-clear", 
 
   await page.goto("/");
   await expect(page.getByText("Backup evidence unknown", { exact: true })).toBeVisible();
-  await expect(page.getByText(/not treated as all-clear/)).toBeVisible();
+  await expect(page.getByText("The structured backup source is unavailable; this is not treated as all-clear.", { exact: true })).toBeVisible();
   await expect(page.getByText("All clear", { exact: true })).toBeHidden();
 });

@@ -2,6 +2,7 @@ import { Static, Type } from "@sinclair/typebox";
 
 export const ENDPOINT_EVIDENCE_SCHEMA_VERSION = "dashboard-rpi5.endpoint-evidence.v1" as const;
 export const ENDPOINT_EVIDENCE_MAX_EVENTS = 64;
+export const PUBLIC_ENDPOINT_STATUS_MAX_ENDPOINTS = 8;
 
 export const EndpointStateSchema = Type.Union([
   Type.Literal("UP"),
@@ -47,6 +48,42 @@ export type EndpointEvidenceSnapshot = Static<typeof EndpointEvidenceSnapshotSch
 
 export const EndpointEvidenceQuerySchema = Type.Object({}, { additionalProperties: false });
 export type EndpointEvidenceQuery = Static<typeof EndpointEvidenceQuerySchema>;
+
+export const PublicEndpointHealthSchema = Type.Union([
+  Type.Literal("HEALTHY"),
+  Type.Literal("ATTENTION"),
+  Type.Literal("UNKNOWN"),
+]);
+export type PublicEndpointHealth = Static<typeof PublicEndpointHealthSchema>;
+
+export const PublicEndpointStatusItemSchema = Type.Object(
+  {
+    endpointId: Type.String({ minLength: 1, maxLength: 80, pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]*$" }),
+    label: Type.String({ minLength: 1, maxLength: 80 }),
+    state: EndpointStateSchema,
+    lastChangedAt: Type.String({ format: "date-time" }),
+    statusCode: Type.Union([Type.Integer({ minimum: 100, maximum: 599 }), Type.Null()]),
+    latencyMs: Type.Union([Type.Integer({ minimum: 0, maximum: 300_000 }), Type.Null()]),
+  },
+  { additionalProperties: false },
+);
+export type PublicEndpointStatusItem = Static<typeof PublicEndpointStatusItemSchema>;
+
+export const PublicEndpointStatusSnapshotSchema = Type.Object(
+  {
+    observedAt: Type.String({ format: "date-time" }),
+    health: PublicEndpointHealthSchema,
+    endpoints: Type.Array(PublicEndpointStatusItemSchema, { maxItems: PUBLIC_ENDPOINT_STATUS_MAX_ENDPOINTS }),
+  },
+  { additionalProperties: false },
+);
+export type PublicEndpointStatusSnapshot = Static<typeof PublicEndpointStatusSnapshotSchema>;
+
+export const PublicEndpointStatusQuerySchema = Type.Object({}, { additionalProperties: false });
+export const PublicEndpointStatusApiErrorSchema = Type.Object(
+  { error: Type.Union([Type.Literal("INVALID_REQUEST"), Type.Literal("SOURCE_UNAVAILABLE")]) },
+  { additionalProperties: false },
+);
 
 const STATES = new Set<EndpointState>(["UP", "DOWN", "DEGRADED", "UNKNOWN"]);
 const EVENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:+-]{0,119}$/;
@@ -109,6 +146,12 @@ function isTimestamp(value: unknown): value is string {
   }
 
   return Number.isFinite(Date.parse(value));
+}
+
+function isCanonicalTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
 
 function parseNullableInteger(
@@ -215,4 +258,73 @@ export function parseEndpointEvidenceSnapshot(value: unknown): EndpointEvidenceS
     schema: ENDPOINT_EVIDENCE_SCHEMA_VERSION,
     events: parseEvents(value.events),
   };
+}
+
+function parsePublicEndpointItem(value: unknown): PublicEndpointStatusItem {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ["endpointId", "label", "state", "lastChangedAt", "statusCode", "latencyMs"]) ||
+    typeof value.endpointId !== "string" ||
+    !ENDPOINT_ID_PATTERN.test(value.endpointId) ||
+    typeof value.label !== "string" ||
+    !isSafeLabel(value.label) ||
+    typeof value.state !== "string" ||
+    !STATES.has(value.state as EndpointState) ||
+    !isCanonicalTimestamp(value.lastChangedAt)
+  ) {
+    throw new Error("Invalid public endpoint status");
+  }
+
+  let statusCode: number | null;
+  let latencyMs: number | null;
+  try {
+    statusCode = parseNullableInteger(value.statusCode, 100, 599);
+    latencyMs = parseNullableInteger(value.latencyMs, 0, 300_000);
+  } catch {
+    throw new Error("Invalid public endpoint status");
+  }
+
+  return {
+    endpointId: value.endpointId,
+    label: value.label,
+    state: value.state as EndpointState,
+    lastChangedAt: value.lastChangedAt,
+    statusCode,
+    latencyMs,
+  };
+}
+
+function expectedPublicHealth(endpoints: readonly PublicEndpointStatusItem[]): PublicEndpointHealth {
+  if (endpoints.length === 0) return "UNKNOWN";
+  if (endpoints.some(({ state }) => state === "DOWN" || state === "DEGRADED")) return "ATTENTION";
+  if (endpoints.some(({ state }) => state === "UNKNOWN")) return "UNKNOWN";
+  return "HEALTHY";
+}
+
+export function parsePublicEndpointStatusSnapshot(value: unknown): PublicEndpointStatusSnapshot {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ["observedAt", "health", "endpoints"]) ||
+    !isCanonicalTimestamp(value.observedAt) ||
+    !["HEALTHY", "ATTENTION", "UNKNOWN"].includes(String(value.health)) ||
+    !Array.isArray(value.endpoints) ||
+    value.endpoints.length > PUBLIC_ENDPOINT_STATUS_MAX_ENDPOINTS
+  ) {
+    throw new Error("Invalid public endpoint status");
+  }
+
+  const endpoints = value.endpoints.map(parsePublicEndpointItem);
+  if (new Set(endpoints.map(({ endpointId }) => endpointId)).size !== endpoints.length) {
+    throw new Error("Invalid public endpoint status");
+  }
+
+  const observedMs = Date.parse(value.observedAt);
+  if (endpoints.some(({ lastChangedAt }) => Date.parse(lastChangedAt) > observedMs)) {
+    throw new Error("Invalid public endpoint status");
+  }
+
+  const health = expectedPublicHealth(endpoints);
+  if (value.health !== health) throw new Error("Invalid public endpoint status");
+
+  return { observedAt: value.observedAt, health, endpoints };
 }

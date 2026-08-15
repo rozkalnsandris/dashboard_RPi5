@@ -18,6 +18,7 @@ import "./logs-page.css";
 import "./activity-page.css";
 import "./backup-page.css";
 import "./backup-overview.css";
+import "./endpoint-overview.css";
 import "./reliability-states.css";
 import "./history-panel.css";
 import "./services-page.css";
