@@ -10,10 +10,10 @@ const fixture: HostHistorySnapshot = {
   windowStart: "2026-08-15T11:00:00.000Z",
   windowEnd: "2026-08-15T12:00:00.000Z",
   series: [
-    { metric: "CPU_PERCENT", state: "AVAILABLE", points: [] },
-    { metric: "MEMORY_PERCENT", state: "AVAILABLE", points: [] },
-    { metric: "ROOT_FS_PERCENT", state: "AVAILABLE", points: [] },
-    { metric: "LOAD1", state: "AVAILABLE", points: [] },
+    { metric: "CPU_PERCENT", state: "UNAVAILABLE", points: [] },
+    { metric: "MEMORY_PERCENT", state: "UNAVAILABLE", points: [] },
+    { metric: "ROOT_FS_PERCENT", state: "UNAVAILABLE", points: [] },
+    { metric: "LOAD1", state: "UNAVAILABLE", points: [] },
   ],
   grafanaHref: null,
 };
@@ -32,7 +32,7 @@ describe("GET /api/history/host", () => {
     }
   });
 
-  it("rejects unknown ranges and additional browser query fields", async () => {
+  it("rejects unknown, additional and duplicate browser query fields", async () => {
     const historyReader: HostHistoryReader = async () => fixture;
     const app = buildApp({ historyReader });
 
@@ -47,6 +47,13 @@ describe("GET /api/history/host", () => {
       });
       expect(injectedQuery.statusCode).toBe(400);
       expect(injectedQuery.json()).toEqual({ error: "INVALID_REQUEST" });
+
+      const duplicateRange = await app.inject({
+        method: "GET",
+        url: "/api/history/host?range=1h&range=24h",
+      });
+      expect(duplicateRange.statusCode).toBe(400);
+      expect(duplicateRange.json()).toEqual({ error: "INVALID_REQUEST" });
     } finally {
       await app.close();
     }
