@@ -9,6 +9,16 @@ import {
 } from "@dashboard-rpi5/contracts";
 import { AgentHealthSchema, type AgentHealth } from "@dashboard-rpi5/contracts/agent";
 import {
+  LogSnapshotSchema,
+  LogSourcesQuerySchema,
+  LogSourcesSnapshotSchema,
+  LogsQuerySchema,
+  type LogRange,
+  type LogSnapshot,
+  type LogSourceId,
+  type LogSourcesSnapshot,
+} from "@dashboard-rpi5/contracts/logs";
+import {
   SystemdServicesSnapshotSchema,
   type SystemdServicesSnapshot,
 } from "@dashboard-rpi5/contracts/services";
@@ -18,7 +28,12 @@ import Fastify from "fastify";
 import { readRecentDockerEvents } from "./docker-events.js";
 import { readDockerContainers } from "./docker-read.js";
 import { readHostSummary } from "./host-read.js";
-import { normalizeAgentError, OperationRegistry } from "./operation-registry.js";
+import { listRegisteredLogSources, readLogSnapshot } from "./logs-read.js";
+import {
+  normalizeAgentError,
+  OperationRegistry,
+  runWithTimeout,
+} from "./operation-registry.js";
 import {
   AGENT_CAPABILITIES,
   AGENT_MODE,
@@ -34,6 +49,12 @@ interface BuildAgentAppOptions {
   dockerContainersReader?: (signal: AbortSignal) => Promise<DockerContainersSnapshot>;
   dockerEventsReader?: (signal: AbortSignal) => Promise<DockerRecentEventsSnapshot>;
   servicesReader?: (signal: AbortSignal) => Promise<SystemdServicesSnapshot>;
+  logSourcesReader?: () => LogSourcesSnapshot;
+  logsReader?: (
+    sourceId: LogSourceId,
+    range: LogRange,
+    signal: AbortSignal,
+  ) => Promise<LogSnapshot>;
 }
 
 export function buildAgentApp(options: BuildAgentAppOptions = {}) {
@@ -49,6 +70,11 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
   const servicesReader =
     options.servicesReader ??
     ((signal: AbortSignal) => readSystemdServices(undefined, signal));
+  const logSourcesReader = options.logSourcesReader ?? (() => listRegisteredLogSources());
+  const logsReader =
+    options.logsReader ??
+    ((sourceId: LogSourceId, range: LogRange, signal: AbortSignal) =>
+      readLogSnapshot(sourceId, range, undefined, signal));
 
   operationRegistry.register("host.summary", hostSummaryReader);
   operationRegistry.register("docker.containers", dockerContainersReader);
@@ -59,6 +85,11 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
     logger: false,
     bodyLimit: 16 * 1024,
     requestTimeout: 5_000,
+    ajv: {
+      customOptions: {
+        removeAdditional: false,
+      },
+    },
   }).withTypeProvider<TypeBoxTypeProvider>();
 
   app.get(
@@ -138,6 +169,55 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
     },
     async (): Promise<SystemdServicesSnapshot> =>
       operationRegistry.run<SystemdServicesSnapshot>("services.status"),
+  );
+
+  app.get(
+    "/v1/logs/sources",
+    {
+      attachValidation: true,
+      schema: {
+        querystring: LogSourcesQuerySchema,
+        response: {
+          200: LogSourcesSnapshotSchema,
+          400: AgentErrorSchema,
+          503: AgentErrorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (request.validationError !== undefined) {
+        return reply.code(400).send({ error: "INVALID_OPERATION" });
+      }
+      try {
+        return logSourcesReader();
+      } catch {
+        return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
+      }
+    },
+  );
+
+  app.get(
+    "/v1/logs",
+    {
+      attachValidation: true,
+      schema: {
+        querystring: LogsQuerySchema,
+        response: {
+          200: LogSnapshotSchema,
+          400: AgentErrorSchema,
+          503: AgentErrorSchema,
+          504: AgentErrorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (request.validationError !== undefined) {
+        return reply.code(400).send({ error: "INVALID_OPERATION" });
+      }
+      return runWithTimeout((signal) =>
+        logsReader(request.query.sourceId, request.query.range, signal),
+      );
+    },
   );
 
   app.setNotFoundHandler(async (_request, reply) =>
