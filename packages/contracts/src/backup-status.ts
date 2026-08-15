@@ -83,6 +83,24 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
   return Object.keys(value).every((key) => allowed.has(key));
 }
 
+function isPolicy(value: unknown): value is BackupPolicy {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, [
+      "destinationLabel",
+      "scheduleLabel",
+      "localRetentionDays",
+      "remoteRetentionDays",
+      "freshnessBudgetHours",
+    ]) &&
+    value.destinationLabel === BACKUP_STATUS_DESTINATION_LABEL &&
+    value.scheduleLabel === BACKUP_STATUS_SCHEDULE_LABEL &&
+    value.localRetentionDays === BACKUP_STATUS_LOCAL_RETENTION_DAYS &&
+    value.remoteRetentionDays === BACKUP_STATUS_REMOTE_RETENTION_DAYS &&
+    value.freshnessBudgetHours === BACKUP_STATUS_FRESHNESS_BUDGET_HOURS
+  );
+}
+
 function isCanonicalTimestamp(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const parsed = Date.parse(value);
@@ -120,8 +138,7 @@ export function parseBackupStatusSnapshot(value: unknown): BackupStatusSnapshot 
     !isCanonicalTimestamp(value.observedAt) ||
     !["HEALTHY", "ATTENTION", "UNKNOWN"].includes(String(value.health)) ||
     !["FRESH", "STALE", "UNKNOWN"].includes(String(value.freshness)) ||
-    !isRecord(value.policy) ||
-    JSON.stringify(value.policy) !== JSON.stringify(BACKUP_STATUS_POLICY) ||
+    !isPolicy(value.policy) ||
     !Array.isArray(value.history)
   ) {
     throw new Error("Invalid backup status");
