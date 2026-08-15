@@ -48,6 +48,7 @@ const NonNegativeIntegerSchema = Type.Integer({ minimum: 0 });
 const NullableNonNegativeIntegerSchema = Type.Union([NonNegativeIntegerSchema, Type.Null()]);
 const PercentSchema = Type.Number({ minimum: 0, maximum: 100 });
 const NullablePercentSchema = Type.Union([PercentSchema, Type.Null()]);
+const DockerCpuPercentSchema = Type.Union([Type.Number({ minimum: 0 }), Type.Null()]);
 
 export const HostThrottleFlagsSchema = Type.Object(
   {
@@ -157,7 +158,7 @@ export type DockerStatsState = Static<typeof DockerStatsStateSchema>;
 
 export const DockerResourceStatsSchema = Type.Object(
   {
-    cpuPercent: NullablePercentSchema,
+    cpuPercent: DockerCpuPercentSchema,
     memoryUsedBytes: NullableNonNegativeIntegerSchema,
     memoryLimitBytes: NullableNonNegativeIntegerSchema,
     memoryPercent: NullablePercentSchema,
