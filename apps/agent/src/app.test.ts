@@ -119,27 +119,25 @@ const servicesFixture = {
   ],
 };
 
+const dockerLogSource = {
+  sourceId: "systemd:docker" as const,
+  label: "Docker Engine",
+  kind: "SYSTEMD" as const,
+  rangeMode: "TIME" as const,
+};
+const backupLogSource = {
+  sourceId: "file:rpi5-backup" as const,
+  label: "RPi5 backup",
+  kind: "FILE" as const,
+  rangeMode: "TAIL" as const,
+};
 const logSourcesFixture = {
   observedAt: "2026-08-15T13:00:00.000Z",
-  sources: [
-    {
-      sourceId: "systemd:docker" as const,
-      label: "Docker Engine",
-      kind: "SYSTEMD" as const,
-      rangeMode: "TIME" as const,
-    },
-    {
-      sourceId: "file:rpi5-backup" as const,
-      label: "RPi5 backup",
-      kind: "FILE" as const,
-      rangeMode: "TAIL" as const,
-    },
-  ],
+  sources: [dockerLogSource, backupLogSource],
 };
-
 const logsFixture = {
   observedAt: "2026-08-15T13:00:00.000Z",
-  source: logSourcesFixture.sources[0],
+  source: dockerLogSource,
   range: "1h" as const,
   rangeApplied: true,
   entries: [
