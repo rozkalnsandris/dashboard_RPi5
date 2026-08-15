@@ -180,6 +180,7 @@ export function buildApp(options: BuildAppOptions = {}) {
       },
     },
     async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
       if (request.validationError !== undefined) {
         return reply.code(400).send({ error: "INVALID_REQUEST" });
       }
@@ -205,6 +206,7 @@ export function buildApp(options: BuildAppOptions = {}) {
       },
     },
     async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
       if (request.validationError !== undefined) {
         return reply.code(400).send({ error: "INVALID_REQUEST" });
       }
