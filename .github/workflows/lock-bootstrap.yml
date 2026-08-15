@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   generate-lock:
-    if: ${{ hashFiles('package-lock.json') == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -19,6 +18,9 @@ jobs:
         with:
           ref: feat/phase1-core-ui-foundation
           persist-credentials: true
+
+      - name: Require lockfile to be absent
+        run: test ! -f package-lock.json
 
       - name: Setup Node.js 24
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
