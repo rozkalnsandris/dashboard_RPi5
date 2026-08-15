@@ -45,13 +45,17 @@ Uptime, CPU/load, RAM/swap, root filesystem, Pi temperature, decoded throttle/un
 
 First live RPi activation requires separate owner authorization.
 
-### Phase 3 — Docker read-only integration
+### Phase 3A — Docker current-state read boundary
 
-Container inventory, health/state, CPU, memory, network, block I/O, PIDs, uptime, restart count and Docker events through the local agent.
+Source-only Docker Engine adapter for container inventory, health/state, CPU, memory, network, block I/O, PIDs, uptime and restart count through a fixed Unix-socket/API allowlist. No generic Engine proxy and no mutating endpoint.
 
-No generic Engine proxy, exec, restart, stop or remove.
+First live Docker socket permission remains a separate owner gate.
 
-Docker socket permission expansion is a separate owner gate.
+### Phase 3B — Docker events
+
+Bounded, read-only container event projection for health/start/stop/restart/OOM/die/update-style operational evidence. Event filters and retention/window semantics remain server-owned and bounded.
+
+No container mutation.
 
 ### Phase 4 — Prometheus history + Grafana bridge
 
@@ -131,7 +135,8 @@ Phase 1 Docker/Logs/Terminal fixture pages
 Phase 1 accessibility + A55/PWA acceptance
 Phase 2A local agent protocol + Unix socket
 Phase 2B host health read adapter
-Phase 3 Docker read boundary
+Phase 3A Docker current-state read boundary
+Phase 3B Docker events
 ...
 ```
 
