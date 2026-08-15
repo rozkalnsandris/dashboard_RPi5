@@ -17,11 +17,11 @@ test("Logs route exposes only the fixture registered-source explorer", async ({ 
   await page.goto("/logs");
 
   await expect(page.getByRole("heading", { name: "Logs" })).toBeVisible();
-  await expect(page.getByLabel("Source")).toHaveValue("all");
+  await expect(page.getByRole("combobox", { name: "Source" })).toHaveValue("all");
   await expect(page.getByText("Fixture follow active")).toBeVisible();
   await expect(page.getByText(/browser cannot provide a filesystem path/i)).toBeVisible();
 
-  await page.getByLabel("Search").fill("backup");
+  await page.getByRole("textbox", { name: "Search" }).fill("backup");
   await expect(page.getByText(/Last fixture backup evidence remains fresh/)).toBeVisible();
   await expect(page.getByText(/Health check completed/)).toHaveCount(0);
 });
