@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildAgentApp } from "./app.js";
 import { DockerSourceUnavailableError } from "./docker-read.js";
 import { HostSourceUnavailableError } from "./host-read.js";
+import { SystemdSourceUnavailableError } from "./systemd-services.js";
 
 const apps: ReturnType<typeof buildAgentApp>["app"][] = [];
 
@@ -101,6 +102,22 @@ const dockerEventsFixture = {
   ],
 };
 
+const servicesFixture = {
+  observedAt: "2026-08-15T13:00:00.000Z",
+  services: [
+    {
+      unitId: "docker.service",
+      label: "Docker Engine",
+      loadState: "LOADED" as const,
+      activeState: "ACTIVE" as const,
+      subState: "running",
+      enablement: "ENABLED" as const,
+      restartCount: 1,
+      stateAgeSeconds: 3_600,
+    },
+  ],
+};
+
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
@@ -111,6 +128,7 @@ describe("agent health protocol", () => {
       hostSummaryReader: async () => hostSummaryFixture,
       dockerContainersReader: async () => dockerContainersFixture,
       dockerEventsReader: async () => dockerEventsFixture,
+      servicesReader: async () => servicesFixture,
     });
     apps.push(app);
 
@@ -123,12 +141,13 @@ describe("agent health protocol", () => {
       service: "dashboard-rpi5-agent",
       mode: "SOURCE_ONLY",
       protocolVersion: 1,
-      agentVersion: "0.5.0",
+      agentVersion: "0.6.0",
       capabilities: [
         "protocol.health",
         "host.summary",
         "docker.containers",
         "docker.events.recent",
+        "services.status",
       ],
     });
     expect(new Date(payload.observedAt).toISOString()).toBe(payload.observedAt);
@@ -173,6 +192,17 @@ describe("agent health protocol", () => {
     expect(response.json()).toEqual(dockerEventsFixture);
   });
 
+  it("returns the allowlisted systemd services contract", async () => {
+    const { app } = buildAgentApp({
+      servicesReader: async () => servicesFixture,
+    });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/v1/services" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(servicesFixture);
+  });
+
   it("normalizes unavailable host evidence without leaking details", async () => {
     const { app } = buildAgentApp({
       hostSummaryReader: async () => {
@@ -214,6 +244,19 @@ describe("agent health protocol", () => {
     apps.push(app);
 
     const response = await app.inject({ method: "GET", url: "/v1/docker/events/recent" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
+  });
+
+  it("normalizes unavailable systemd evidence without leaking details", async () => {
+    const { app } = buildAgentApp({
+      servicesReader: async () => {
+        throw new SystemdSourceUnavailableError();
+      },
+    });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/v1/services" });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });

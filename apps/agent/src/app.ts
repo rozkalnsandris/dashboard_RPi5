@@ -1,14 +1,17 @@
 import {
   AgentErrorSchema,
-  AgentHealthSchema,
   DockerContainersSnapshotSchema,
   DockerRecentEventsSnapshotSchema,
   HostSummarySchema,
-  type AgentHealth,
   type DockerContainersSnapshot,
   type DockerRecentEventsSnapshot,
   type HostSummary,
 } from "@dashboard-rpi5/contracts";
+import { AgentHealthSchema, type AgentHealth } from "@dashboard-rpi5/contracts/agent";
+import {
+  SystemdServicesSnapshotSchema,
+  type SystemdServicesSnapshot,
+} from "@dashboard-rpi5/contracts/services";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import Fastify from "fastify";
 
@@ -23,12 +26,14 @@ import {
   AGENT_SERVICE_NAME,
   AGENT_VERSION,
 } from "./protocol.js";
+import { readSystemdServices } from "./systemd-services.js";
 
 interface BuildAgentAppOptions {
   operationRegistry?: OperationRegistry;
   hostSummaryReader?: (signal: AbortSignal) => Promise<HostSummary>;
   dockerContainersReader?: (signal: AbortSignal) => Promise<DockerContainersSnapshot>;
   dockerEventsReader?: (signal: AbortSignal) => Promise<DockerRecentEventsSnapshot>;
+  servicesReader?: (signal: AbortSignal) => Promise<SystemdServicesSnapshot>;
 }
 
 export function buildAgentApp(options: BuildAgentAppOptions = {}) {
@@ -41,10 +46,14 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
   const dockerEventsReader =
     options.dockerEventsReader ??
     ((signal: AbortSignal) => readRecentDockerEvents(undefined, signal));
+  const servicesReader =
+    options.servicesReader ??
+    ((signal: AbortSignal) => readSystemdServices(undefined, signal));
 
   operationRegistry.register("host.summary", hostSummaryReader);
   operationRegistry.register("docker.containers", dockerContainersReader);
   operationRegistry.register("docker.events.recent", dockerEventsReader);
+  operationRegistry.register("services.status", servicesReader);
 
   const app = Fastify({
     logger: false,
@@ -114,6 +123,21 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
     },
     async (): Promise<DockerRecentEventsSnapshot> =>
       operationRegistry.run<DockerRecentEventsSnapshot>("docker.events.recent"),
+  );
+
+  app.get(
+    "/v1/services",
+    {
+      schema: {
+        response: {
+          200: SystemdServicesSnapshotSchema,
+          503: AgentErrorSchema,
+          504: AgentErrorSchema,
+        },
+      },
+    },
+    async (): Promise<SystemdServicesSnapshot> =>
+      operationRegistry.run<SystemdServicesSnapshot>("services.status"),
   );
 
   app.setNotFoundHandler(async (_request, reply) =>
