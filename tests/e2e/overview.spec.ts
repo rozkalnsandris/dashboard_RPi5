@@ -34,13 +34,14 @@ test("shell uses touch navigation on phone projects and sidebar on desktop", asy
   }
 });
 
-test("mobile More menu performs client-side route navigation", async ({ page }, testInfo) => {
+test("mobile More menu performs touch route navigation", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === "desktop-1440", "Mobile overflow menu is not rendered in the desktop shell");
   await page.goto("/");
 
-  await page.getByRole("button", { name: "More destinations" }).click();
-  await expect(page.getByRole("menu", { name: "More dashboard destinations" })).toBeVisible();
-  await page.getByRole("menuitem", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "More destinations" }).tap();
+  const settingsItem = page.getByRole("menuitem", { name: "Settings" });
+  await expect(settingsItem).toBeVisible();
+  await settingsItem.tap();
 
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
