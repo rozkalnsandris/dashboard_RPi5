@@ -223,9 +223,12 @@ export function createDockerEventsUnixTransport(): DockerEventsTransport {
               try {
                 decoder.push(chunk);
               } catch (error: unknown) {
-                req.destroy(
-                  error instanceof Error ? error : new DockerSourceUnavailableError(),
-                );
+                const normalizedError =
+                  error instanceof DockerSourceUnavailableError
+                    ? error
+                    : new DockerSourceUnavailableError();
+                fail(normalizedError);
+                req.destroy(normalizedError);
               }
             });
             response.once("error", fail);
@@ -240,7 +243,9 @@ export function createDockerEventsUnixTransport(): DockerEventsTransport {
         );
 
         req.setTimeout(DOCKER_EVENTS_REQUEST_TIMEOUT_MS, () => {
-          req.destroy(new DockerSourceUnavailableError());
+          const timeoutError = new DockerSourceUnavailableError();
+          fail(timeoutError);
+          req.destroy(timeoutError);
         });
         req.once("error", fail);
         req.end();
