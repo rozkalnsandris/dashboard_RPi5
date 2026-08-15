@@ -6,6 +6,7 @@ export const AgentCapabilitySchema = Type.Union([
   Type.Literal("docker.containers"),
   Type.Literal("docker.events.recent"),
   Type.Literal("services.status"),
+  Type.Literal("logs.read"),
 ]);
 export type AgentCapability = Static<typeof AgentCapabilitySchema>;
 
@@ -21,4 +22,5 @@ export const AgentHealthSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+export type AgentCapability = Static<typeof AgentCapabilitySchema>;
 export type AgentHealth = Static<typeof AgentHealthSchema>;
