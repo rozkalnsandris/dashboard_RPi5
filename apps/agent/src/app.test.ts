@@ -4,6 +4,7 @@ import { buildAgentApp } from "./app.js";
 import { BackupSourceUnavailableError } from "./backup-evidence.js";
 import { DeploySourceUnavailableError } from "./deploy-events.js";
 import { DockerSourceUnavailableError } from "./docker-read.js";
+import { EndpointSourceUnavailableError } from "./endpoint-evidence.js";
 import { HostSourceUnavailableError } from "./host-read.js";
 import { LogSourceUnavailableError } from "./logs-read.js";
 import { MaintenanceSourceUnavailableError } from "./maintenance-events.js";
@@ -14,7 +15,7 @@ const apps: ReturnType<typeof buildAgentApp>["app"][] = [];
 const hostSummaryFixture = {
   observedAt: "2026-08-15T13:00:00.000Z",
   uptimeSeconds: 12345.67,
-  loadAverage: { oneMinute: 0.25, fiveMinutes: 0.5, fifteenMinutes: 0.75 },
+  loadAverage: { oneMinute: 0.25, fiveMinute: 0.5, fifteenMinute: 0.75 },
   cpu: { usagePercent: 37.5, sampleWindowMs: 200 },
   memory: {
     totalBytes: 8_589_934_592,
@@ -161,6 +162,23 @@ const deployEventsFixture = {
   ],
 };
 
+const endpointEventsFixture = {
+  observedAt: "2026-08-15T13:00:00.000Z",
+  schema: "dashboard-rpi5.endpoint-evidence.v1" as const,
+  events: [
+    {
+      eventId: "tech-down-20260815T125950Z",
+      endpointId: "tech",
+      label: "Hermes Tech",
+      occurredAt: "2026-08-15T12:59:50.000Z",
+      fromState: "UP" as const,
+      toState: "DOWN" as const,
+      statusCode: 503,
+      latencyMs: 1500,
+    },
+  ],
+};
+
 const dockerLogSource = {
   sourceId: "systemd:docker" as const,
   label: "Docker Engine",
@@ -217,7 +235,7 @@ describe("agent health protocol", () => {
       service: "dashboard-rpi5-agent",
       mode: "SOURCE_ONLY",
       protocolVersion: 1,
-      agentVersion: "0.10.0",
+      agentVersion: "0.11.0",
       capabilities: [
         "protocol.health",
         "host.summary",
@@ -228,6 +246,7 @@ describe("agent health protocol", () => {
         "backups.recent",
         "maintenance.events.recent",
         "deploy.events.recent",
+        "endpoint.events.recent",
       ],
     });
     expect(new Date(payload.observedAt).toISOString()).toBe(payload.observedAt);
@@ -333,6 +352,27 @@ describe("agent health protocol", () => {
     expect(rejected.json()).toEqual({ error: "INVALID_OPERATION" });
   });
 
+  it("returns only structured endpoint transitions and rejects browser selectors", async () => {
+    const { app } = buildAgentApp({ endpointEventsReader: async () => endpointEventsFixture });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/v1/endpoints/events/recent" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(endpointEventsFixture);
+    expect(response.body).not.toContain("https://");
+    expect(response.body).not.toContain("/var/lib/");
+
+    for (const url of [
+      "/v1/endpoints/events/recent?url=https%3A%2F%2Fexample.com",
+      "/v1/endpoints/events/recent?path=%2Fetc%2Fshadow",
+      "/v1/endpoints/events/recent?endpoint=tech",
+    ]) {
+      const rejected = await app.inject({ method: "GET", url });
+      expect(rejected.statusCode).toBe(400);
+      expect(rejected.json()).toEqual({ error: "INVALID_OPERATION" });
+    }
+  });
+
   it("returns only registered log-source descriptors", async () => {
     const { app } = buildAgentApp({ logSourcesReader: () => logSourcesFixture });
     apps.push(app);
@@ -429,6 +469,14 @@ describe("agent health protocol", () => {
     const { app } = buildAgentApp({ deployEventsReader: async () => { throw new DeploySourceUnavailableError(); } });
     apps.push(app);
     const response = await app.inject({ method: "GET", url: "/v1/deploy/events/recent" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
+  });
+
+  it("normalizes unavailable endpoint evidence without leaking details", async () => {
+    const { app } = buildAgentApp({ endpointEventsReader: async () => { throw new EndpointSourceUnavailableError(); } });
+    apps.push(app);
+    const response = await app.inject({ method: "GET", url: "/v1/endpoints/events/recent" });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });
