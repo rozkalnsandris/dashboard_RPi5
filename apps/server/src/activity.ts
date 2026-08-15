@@ -16,6 +16,10 @@ import type {
   BackupEvidenceSnapshot,
 } from "@dashboard-rpi5/contracts/backups";
 import type {
+  MaintenanceEvent,
+  MaintenanceEventsSnapshot,
+} from "@dashboard-rpi5/contracts/maintenance";
+import type {
   SystemdServiceSnapshot,
   SystemdServicesSnapshot,
 } from "@dashboard-rpi5/contracts/services";
@@ -23,6 +27,7 @@ import { createHash } from "node:crypto";
 
 import type { BackupEvidenceReader } from "./agent-backup-evidence-client.js";
 import type { DockerEventsReader } from "./agent-docker-events-client.js";
+import type { MaintenanceEventsReader } from "./agent-maintenance-events-client.js";
 import type { ServicesReader } from "./agent-services-client.js";
 
 export const ACTIVITY_MAX_ITEMS = 256;
@@ -34,6 +39,7 @@ interface ActivityDependencies {
   dockerEventsReader: DockerEventsReader;
   servicesReader: ServicesReader;
   backupEvidenceReader: BackupEvidenceReader;
+  maintenanceEventsReader: MaintenanceEventsReader;
   now?: () => Date;
 }
 
@@ -168,7 +174,10 @@ function systemdSeverity(service: SystemdServiceSnapshot): ActivitySeverity {
   return "INFO";
 }
 
-function systemdOccurredAt(snapshot: SystemdServicesSnapshot, service: SystemdServiceSnapshot): string | null {
+function systemdOccurredAt(
+  snapshot: SystemdServicesSnapshot,
+  service: SystemdServiceSnapshot,
+): string | null {
   if (service.stateAgeSeconds === null) return null;
   const observedMs = Date.parse(snapshot.observedAt);
   const occurredMs = observedMs - service.stateAgeSeconds * 1_000;
@@ -231,6 +240,33 @@ export function normalizeBackupActivity(snapshot: BackupEvidenceSnapshot): Activ
   }));
 }
 
+function maintenanceEventId(event: MaintenanceEvent): string {
+  const digest = createHash("sha256").update(JSON.stringify(event)).digest("hex");
+  return `maintenance:${digest}`;
+}
+
+export function normalizeMaintenanceActivity(
+  snapshot: MaintenanceEventsSnapshot,
+): ActivityItem[] {
+  return snapshot.events.map((event) => ({
+    id: maintenanceEventId(event),
+    source: "MAINTENANCE",
+    severity: event.result === "SUCCESS" ? "INFO" : "CRITICAL",
+    kind: "MAINTENANCE_RESULT",
+    occurredAt: event.occurredAt,
+    title: event.result === "SUCCESS" ? "Maintenance completed" : "Maintenance failed",
+    detail: clampText(
+      [
+        `invocation ${event.invocationId}`,
+        event.unitResult === null ? "systemd result success" : `systemd result ${event.unitResult}`,
+      ].join(" · "),
+      320,
+    ),
+    target: "/logs",
+    groupCount: 1,
+  }));
+}
+
 function availableSource(source: ActivitySource, observedAt: string): ActivitySourceState {
   return { source, status: "AVAILABLE", observedAt };
 }
@@ -242,16 +278,18 @@ function unavailableSource(source: ActivitySource): ActivitySourceState {
 export function createActivityReader(dependencies: ActivityDependencies): ActivityReader {
   const now = dependencies.now ?? (() => new Date());
   return async () => {
-    const [dockerResult, servicesResult, backupResult] = await Promise.allSettled([
+    const [dockerResult, servicesResult, backupResult, maintenanceResult] = await Promise.allSettled([
       dependencies.dockerEventsReader(),
       dependencies.servicesReader(),
       dependencies.backupEvidenceReader(),
+      dependencies.maintenanceEventsReader(),
     ]);
 
     if (
       dockerResult.status === "rejected" &&
       servicesResult.status === "rejected" &&
-      backupResult.status === "rejected"
+      backupResult.status === "rejected" &&
+      maintenanceResult.status === "rejected"
     ) {
       throw new ActivitySourceUnavailableError();
     }
@@ -266,12 +304,18 @@ export function createActivityReader(dependencies: ActivityDependencies): Activi
       backupResult.status === "fulfilled"
         ? availableSource("BACKUP", backupResult.value.observedAt)
         : unavailableSource("BACKUP"),
+      maintenanceResult.status === "fulfilled"
+        ? availableSource("MAINTENANCE", maintenanceResult.value.observedAt)
+        : unavailableSource("MAINTENANCE"),
     ];
 
     const items = [
       ...(dockerResult.status === "fulfilled" ? normalizeDockerActivity(dockerResult.value) : []),
       ...(servicesResult.status === "fulfilled" ? normalizeSystemdActivity(servicesResult.value) : []),
       ...(backupResult.status === "fulfilled" ? normalizeBackupActivity(backupResult.value) : []),
+      ...(maintenanceResult.status === "fulfilled"
+        ? normalizeMaintenanceActivity(maintenanceResult.value)
+        : []),
     ];
 
     const uniqueItems = [...new Map(items.map((item) => [item.id, item])).values()]
