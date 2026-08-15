@@ -51,7 +51,6 @@ export type EndpointEvidenceQuery = Static<typeof EndpointEvidenceQuerySchema>;
 const STATES = new Set<EndpointState>(["UP", "DOWN", "DEGRADED", "UNKNOWN"]);
 const EVENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:+-]{0,119}$/;
 const ENDPOINT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
-const LABEL_PATTERN = /^[^\u0000-\u001F\u007F]{1,80}$/u;
 const RFC3339_WITH_ZONE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -61,6 +60,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
   const allowed = new Set(keys);
   return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function isSafeLabel(value: string): boolean {
+  if (value.length < 1 || value.length > 80 || value.trim() !== value) return false;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint === undefined || codePoint < 0x20 || codePoint === 0x7f) return false;
+  }
+  return true;
 }
 
 function isLeapYear(year: number): boolean {
@@ -138,8 +146,7 @@ function parseEvent(value: unknown): EndpointEvidenceEvent {
     typeof value.endpointId !== "string" ||
     !ENDPOINT_ID_PATTERN.test(value.endpointId) ||
     typeof value.label !== "string" ||
-    !LABEL_PATTERN.test(value.label) ||
-    value.label.trim() !== value.label ||
+    !isSafeLabel(value.label) ||
     !isTimestamp(value.occurredAt) ||
     typeof value.fromState !== "string" ||
     !STATES.has(value.fromState as EndpointState) ||
