@@ -11,6 +11,6 @@
     "build": "tsup src/index.ts --format esm --platform neutral --clean"
   },
   "dependencies": {
-    "@sinclair/typebox": "latest"
+    "@sinclair/typebox": "0.34.52"
   }
 }
