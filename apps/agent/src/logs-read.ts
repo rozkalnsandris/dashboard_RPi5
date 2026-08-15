@@ -34,6 +34,12 @@ interface SystemdLogSourceRegistration {
   unitId: string;
 }
 
+interface JournalLogSourceRegistration {
+  descriptor: LogSourceDescriptor;
+  kind: "JOURNAL";
+  matches: readonly string[];
+}
+
 interface FileLogSourceRegistration {
   descriptor: LogSourceDescriptor;
   kind: "FILE";
@@ -43,6 +49,7 @@ interface FileLogSourceRegistration {
 type LogSourceRegistration =
   | DockerLogSourceRegistration
   | SystemdLogSourceRegistration
+  | JournalLogSourceRegistration
   | FileLogSourceRegistration;
 
 export const LOG_SOURCE_REGISTRY = Object.freeze<readonly LogSourceRegistration[]>([
@@ -115,6 +122,16 @@ export const LOG_SOURCE_REGISTRY = Object.freeze<readonly LogSourceRegistration[
     },
     kind: "SYSTEMD",
     unitId: "rpi5-update.service",
+  },
+  {
+    descriptor: {
+      sourceId: "journal:rpi5-deploy",
+      label: "RPi5 deploy",
+      kind: "JOURNAL",
+      rangeMode: "TIME",
+    },
+    kind: "JOURNAL",
+    matches: ["_UID=0", "_TRANSPORT=syslog", "SYSLOG_IDENTIFIER=rpi5-deploy"],
   },
   {
     descriptor: {
@@ -419,15 +436,28 @@ export function parseFileTail(text: string, tailWasTruncated: boolean): {
 
 export function buildJournalctlArgs(sourceId: LogSourceId, range: LogRange): readonly string[] {
   const registration = findRegistration(sourceId);
-  if (registration.kind !== "SYSTEMD") throw new LogSourceUnavailableError();
-  return [
+  const base = [
     "--no-pager",
     "--output=json",
-    "--output-fields=__REALTIME_TIMESTAMP,PRIORITY,MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT",
-    `--unit=${registration.unitId}`,
-    `--since=${JOURNAL_SINCE[range]}`,
-    `--lines=${LOG_MAX_ENTRIES}`,
+    "--output-fields=__REALTIME_TIMESTAMP,PRIORITY,MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT,_UID,_TRANSPORT",
   ];
+  if (registration.kind === "SYSTEMD") {
+    return [
+      ...base,
+      `--unit=${registration.unitId}`,
+      `--since=${JOURNAL_SINCE[range]}`,
+      `--lines=${LOG_MAX_ENTRIES}`,
+    ];
+  }
+  if (registration.kind === "JOURNAL") {
+    return [
+      ...base,
+      `--since=${JOURNAL_SINCE[range]}`,
+      `--lines=${LOG_MAX_ENTRIES}`,
+      ...registration.matches,
+    ];
+  }
+  throw new LogSourceUnavailableError();
 }
 
 export function buildDockerLogsPath(
@@ -587,7 +617,7 @@ export async function readLogSnapshot(
         signal,
       );
       parsed = parseDockerLogBody(body);
-    } else if (registration.kind === "SYSTEMD") {
+    } else if (registration.kind === "SYSTEMD" || registration.kind === "JOURNAL") {
       const { stdout } = await dependencies.execFile(
         JOURNALCTL_PATH,
         buildJournalctlArgs(sourceId, range),
