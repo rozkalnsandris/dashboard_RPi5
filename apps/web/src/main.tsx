@@ -5,7 +5,11 @@ import { createBrowserRouter } from "react-router";
 import { RouterProvider } from "react-router/dom";
 
 import { AppShell, DockerPage, OverviewPage, PlaceholderPage, RouteErrorPage } from "./App";
+import { ActivityPage } from "./pages/ActivityPage";
+import { LogsPage } from "./pages/LogsPage";
+import { TerminalPage } from "./pages/TerminalPage";
 import "./styles.css";
+import "./phase1-pages.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,9 +30,9 @@ const router = createBrowserRouter([
       { index: true, element: <OverviewPage /> },
       { path: "docker", element: <DockerPage /> },
       { path: "services", element: <PlaceholderPage /> },
-      { path: "logs", element: <PlaceholderPage /> },
-      { path: "terminal", element: <PlaceholderPage /> },
-      { path: "activity", element: <PlaceholderPage /> },
+      { path: "logs", element: <LogsPage /> },
+      { path: "terminal", element: <TerminalPage /> },
+      { path: "activity", element: <ActivityPage /> },
       { path: "backups", element: <PlaceholderPage /> },
       { path: "deployments", element: <PlaceholderPage /> },
       { path: "settings", element: <PlaceholderPage /> },
