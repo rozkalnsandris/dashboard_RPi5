@@ -22,9 +22,7 @@ function dockerFrame(stream: 1 | 2, payload: string): Buffer {
   return Buffer.concat([header, body]);
 }
 
-function dependencies(
-  overrides: Partial<LogReadDependencies> = {},
-): LogReadDependencies {
+function dependencies(overrides: Partial<LogReadDependencies> = {}): LogReadDependencies {
   return {
     now: () => new Date("2026-08-15T13:00:00.000Z"),
     execFile: async () => ({ stdout: "" }),
@@ -33,6 +31,9 @@ function dependencies(
     ...overrides,
   };
 }
+
+const JOURNAL_FIELDS =
+  "--output-fields=__REALTIME_TIMESTAMP,PRIORITY,MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT,_UID,_TRANSPORT";
 
 describe("registered log source boundary", () => {
   it("returns only stable browser-safe descriptors", () => {
@@ -45,18 +46,20 @@ describe("registered log source boundary", () => {
       "systemd:cron",
       "systemd:dashboard-rpi5-agent",
       "systemd:rpi5-update",
+      "journal:rpi5-deploy",
       "file:rpi5-backup",
     ]);
     expect(JSON.stringify(snapshot)).not.toContain("/var/log/");
     expect(JSON.stringify(snapshot)).not.toContain("docker.service");
     expect(JSON.stringify(snapshot)).not.toContain("rpi5-update.service");
+    expect(JSON.stringify(snapshot)).not.toContain("_UID=0");
   });
 
-  it("builds journalctl argv only for registered systemd IDs", () => {
+  it("builds journalctl argv only for registered systemd or fixed journal IDs", () => {
     expect(buildJournalctlArgs("systemd:docker", "1h")).toEqual([
       "--no-pager",
       "--output=json",
-      "--output-fields=__REALTIME_TIMESTAMP,PRIORITY,MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT",
+      JOURNAL_FIELDS,
       "--unit=docker.service",
       "--since=-1h",
       `--lines=${LOG_MAX_ENTRIES}`,
@@ -64,10 +67,20 @@ describe("registered log source boundary", () => {
     expect(buildJournalctlArgs("systemd:rpi5-update", "24h")).toEqual([
       "--no-pager",
       "--output=json",
-      "--output-fields=__REALTIME_TIMESTAMP,PRIORITY,MESSAGE,SYSLOG_IDENTIFIER,_SYSTEMD_UNIT",
+      JOURNAL_FIELDS,
       "--unit=rpi5-update.service",
       "--since=-24h",
       `--lines=${LOG_MAX_ENTRIES}`,
+    ]);
+    expect(buildJournalctlArgs("journal:rpi5-deploy", "24h")).toEqual([
+      "--no-pager",
+      "--output=json",
+      JOURNAL_FIELDS,
+      "--since=-24h",
+      `--lines=${LOG_MAX_ENTRIES}`,
+      "_UID=0",
+      "_TRANSPORT=syslog",
+      "SYSLOG_IDENTIFIER=rpi5-deploy",
     ]);
     expect(() => buildJournalctlArgs("docker:homeassistant", "1h")).toThrow(
       LogSourceUnavailableError,
@@ -220,17 +233,19 @@ describe("readLogSnapshot", () => {
       return { stdout: "" };
     };
     const result = await readLogSnapshot(
-      "systemd:rpi5-update",
+      "journal:rpi5-deploy",
       "6h",
       dependencies({ execFile }),
     );
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.[0]).toBe(JOURNALCTL_PATH);
-    expect(calls[0]?.[1]).toContain("--unit=rpi5-update.service");
+    expect(calls[0]?.[1]).toContain("_UID=0");
+    expect(calls[0]?.[1]).toContain("_TRANSPORT=syslog");
+    expect(calls[0]?.[1]).toContain("SYSLOG_IDENTIFIER=rpi5-deploy");
     expect(calls[0]?.[1]).toContain("--since=-6h");
     expect(calls[0]?.[2]).toMatchObject({ shell: false });
-    expect(result.source.sourceId).toBe("systemd:rpi5-update");
+    expect(result.source.sourceId).toBe("journal:rpi5-deploy");
     expect(result.rangeApplied).toBe(true);
   });
 
