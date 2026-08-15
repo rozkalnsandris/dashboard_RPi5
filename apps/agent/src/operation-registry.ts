@@ -2,6 +2,7 @@ import type { AgentError } from "@dashboard-rpi5/contracts";
 
 import { DockerSourceUnavailableError } from "./docker-read.js";
 import { HostSourceUnavailableError } from "./host-read.js";
+import { LogSourceUnavailableError } from "./logs-read.js";
 import {
   DEFAULT_OPERATION_TIMEOUT_MS,
   MAX_OPERATION_TIMEOUT_MS,
@@ -122,7 +123,8 @@ export function normalizeAgentError(error: unknown): AgentError {
   if (
     error instanceof HostSourceUnavailableError ||
     error instanceof DockerSourceUnavailableError ||
-    error instanceof SystemdSourceUnavailableError
+    error instanceof SystemdSourceUnavailableError ||
+    error instanceof LogSourceUnavailableError
   ) {
     return { error: "SOURCE_UNAVAILABLE" };
   }
