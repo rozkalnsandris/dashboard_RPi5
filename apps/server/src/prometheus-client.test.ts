@@ -82,7 +82,7 @@ describe("Prometheus HTTP transport", () => {
     vi.useFakeTimers();
     vi.stubGlobal(
       "fetch",
-      vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+      vi.fn((_input: unknown, init?: RequestInit) =>
         new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener(
             "abort",
