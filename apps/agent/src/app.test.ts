@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildAgentApp } from "./app.js";
 import { DockerSourceUnavailableError } from "./docker-read.js";
 import { HostSourceUnavailableError } from "./host-read.js";
+import { LogSourceUnavailableError } from "./logs-read.js";
 import { SystemdSourceUnavailableError } from "./systemd-services.js";
 
 const apps: ReturnType<typeof buildAgentApp>["app"][] = [];
@@ -118,6 +119,39 @@ const servicesFixture = {
   ],
 };
 
+const dockerLogSource = {
+  sourceId: "systemd:docker" as const,
+  label: "Docker Engine",
+  kind: "SYSTEMD" as const,
+  rangeMode: "TIME" as const,
+};
+const backupLogSource = {
+  sourceId: "file:rpi5-backup" as const,
+  label: "RPi5 backup",
+  kind: "FILE" as const,
+  rangeMode: "TAIL" as const,
+};
+const logSourcesFixture = {
+  observedAt: "2026-08-15T13:00:00.000Z",
+  sources: [dockerLogSource, backupLogSource],
+};
+const logsFixture = {
+  observedAt: "2026-08-15T13:00:00.000Z",
+  source: dockerLogSource,
+  range: "1h" as const,
+  rangeApplied: true,
+  entries: [
+    {
+      sequence: 0,
+      timestamp: "2026-08-15T12:59:00.000Z",
+      level: "INFO" as const,
+      stream: "JOURNAL" as const,
+      message: "Docker daemon ready",
+    },
+  ],
+  truncated: false,
+};
+
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
@@ -141,13 +175,14 @@ describe("agent health protocol", () => {
       service: "dashboard-rpi5-agent",
       mode: "SOURCE_ONLY",
       protocolVersion: 1,
-      agentVersion: "0.6.0",
+      agentVersion: "0.7.0",
       capabilities: [
         "protocol.health",
         "host.summary",
         "docker.containers",
         "docker.events.recent",
         "services.status",
+        "logs.read",
       ],
     });
     expect(new Date(payload.observedAt).toISOString()).toBe(payload.observedAt);
@@ -193,14 +228,56 @@ describe("agent health protocol", () => {
   });
 
   it("returns the allowlisted systemd services contract", async () => {
-    const { app } = buildAgentApp({
-      servicesReader: async () => servicesFixture,
-    });
+    const { app } = buildAgentApp({ servicesReader: async () => servicesFixture });
     apps.push(app);
 
     const response = await app.inject({ method: "GET", url: "/v1/services" });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual(servicesFixture);
+  });
+
+  it("returns only registered log-source descriptors", async () => {
+    const { app } = buildAgentApp({ logSourcesReader: () => logSourcesFixture });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/v1/logs/sources" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(logSourcesFixture);
+    expect(response.body).not.toContain("/var/log/");
+    expect(response.body).not.toContain(".service\"");
+  });
+
+  it("returns a bounded log snapshot only for validated source and range enums", async () => {
+    const calls: unknown[][] = [];
+    const { app } = buildAgentApp({
+      logsReader: async (sourceId, range, signal) => {
+        calls.push([sourceId, range, signal.aborted]);
+        return logsFixture;
+      },
+    });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/logs?sourceId=systemd%3Adocker&range=1h",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(logsFixture);
+    expect(calls).toEqual([["systemd:docker", "1h", false]]);
+
+    const unknown = await app.inject({
+      method: "GET",
+      url: "/v1/logs?sourceId=systemd%3Anot-real&range=1h",
+    });
+    expect(unknown.statusCode).toBe(400);
+    expect(unknown.json()).toEqual({ error: "INVALID_OPERATION" });
+
+    const extra = await app.inject({
+      method: "GET",
+      url: "/v1/logs?sourceId=systemd%3Adocker&range=1h&path=%2Fetc%2Fshadow",
+    });
+    expect(extra.statusCode).toBe(400);
+    expect(extra.json()).toEqual({ error: "INVALID_OPERATION" });
   });
 
   it("normalizes unavailable host evidence without leaking details", async () => {
@@ -257,6 +334,22 @@ describe("agent health protocol", () => {
     apps.push(app);
 
     const response = await app.inject({ method: "GET", url: "/v1/services" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
+  });
+
+  it("normalizes unavailable log evidence without leaking details", async () => {
+    const { app } = buildAgentApp({
+      logsReader: async () => {
+        throw new LogSourceUnavailableError();
+      },
+    });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/logs?sourceId=systemd%3Adocker&range=1h",
+    });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });

@@ -20,6 +20,13 @@ export default [
     },
   },
   {
+    files: ["apps/agent/src/logs-read.ts"],
+    rules: {
+      // The log sanitizer intentionally matches non-printing control bytes before UI rendering.
+      "no-control-regex": "off",
+    },
+  },
+  {
     files: ["apps/web/**/*.{ts,tsx}"],
     plugins: {
       "react-hooks": reactHooks,

@@ -53,17 +53,59 @@ test("keyboard reaches the skip link first", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Skip to main content" })).toBeFocused();
 });
 
-test("Logs route exposes only the fixture registered-source explorer", async ({ page }) => {
+test("Logs route exposes only the registered-source explorer", async ({ page }) => {
+  const sources = {
+    observedAt: "2026-08-15T16:00:00.000Z",
+    sources: [
+      {
+        sourceId: "systemd:docker",
+        label: "Docker Engine",
+        kind: "SYSTEMD",
+        rangeMode: "TIME",
+      },
+    ],
+  };
+  const logs = {
+    observedAt: "2026-08-15T16:00:00.000Z",
+    source: sources.sources[0],
+    range: "1h",
+    rangeApplied: true,
+    entries: [
+      {
+        sequence: 0,
+        timestamp: "2026-08-15T15:59:00.000Z",
+        level: "INFO",
+        stream: "JOURNAL",
+        message: "Docker health check completed",
+      },
+      {
+        sequence: 1,
+        timestamp: "2026-08-15T15:59:30.000Z",
+        level: "WARN",
+        stream: "JOURNAL",
+        message: "Backup handoff waiting for evidence",
+      },
+    ],
+    truncated: false,
+  };
+
+  await page.route("**/api/logs/sources", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(sources) }),
+  );
+  await page.route("**/api/logs?*", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(logs) }),
+  );
+
   await page.goto("/logs");
 
   await expect(page.getByRole("heading", { name: "Logs" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Source" })).toHaveValue("all");
-  await expect(page.getByText("Fixture follow active")).toBeVisible();
-  await expect(page.getByText(/browser cannot provide a filesystem path/i)).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Source" })).toHaveValue("systemd:docker");
+  await expect(page.getByText("Live · 2s visible refresh")).toBeVisible();
+  await expect(page.getByText(/Paths, units and container selectors stay server-owned/i)).toBeVisible();
 
-  await page.getByRole("textbox", { name: "Search" }).fill("backup");
-  await expect(page.getByText(/Last fixture backup evidence remains fresh/)).toBeVisible();
-  await expect(page.getByText(/Health check completed/)).toHaveCount(0);
+  await page.getByPlaceholder("Search logs").fill("backup");
+  await expect(page.getByText("Backup handoff waiting for evidence")).toBeVisible();
+  await expect(page.getByText("Docker health check completed")).toHaveCount(0);
 });
 
 test("Terminal route runs fixture Quick Commands without exposing a PTY", async ({ page }) => {
