@@ -13,9 +13,24 @@ test("overview renders the fixture health shell without page overflow", async ({
   expect(hasHorizontalOverflow).toBe(false);
 });
 
-test("primary navigation reaches the fixture Logs route", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("link", { name: "Logs" }).first().click();
+test("Logs route exposes only the fixture registered-source explorer", async ({ page }) => {
+  await page.goto("/logs");
+
   await expect(page.getByRole("heading", { name: "Logs" })).toBeVisible();
-  await expect(page.getByText(/No log source is connected yet/)).toBeVisible();
+  await expect(page.getByLabel("Source")).toHaveValue("all");
+  await expect(page.getByText("Fixture follow active")).toBeVisible();
+  await expect(page.getByText(/browser cannot provide a filesystem path/i)).toBeVisible();
+
+  await page.getByLabel("Search").fill("backup");
+  await expect(page.getByText(/Last fixture backup evidence remains fresh/)).toBeVisible();
+  await expect(page.getByText(/Health check completed/)).toHaveCount(0);
+});
+
+test("Terminal route runs fixture Quick Commands without exposing a PTY", async ({ page }) => {
+  await page.goto("/terminal");
+
+  await expect(page.getByRole("heading", { name: "Terminal" })).toBeVisible();
+  await expect(page.getByText("Full terminal locked.")).toBeVisible();
+  await page.getByRole("button", { name: /Temperature \+ throttle/ }).click();
+  await expect(page.getByText(/43°C · no throttle or under-voltage flags/)).toBeVisible();
 });
