@@ -4,14 +4,16 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter } from "react-router";
 import { RouterProvider } from "react-router/dom";
 
-import { AppShell, DockerPage, OverviewPage, PlaceholderPage, RouteErrorPage } from "./App";
+import { AppShell, DockerPage, PlaceholderPage, RouteErrorPage } from "./App";
 import { ActivityPage } from "./pages/ActivityPage";
 import { LogsPage } from "./pages/LogsPage";
+import { OverviewHistoryPage } from "./pages/OverviewHistoryPage";
 import { ReliabilityStatesPage } from "./pages/ReliabilityStatesPage";
 import { TerminalPage } from "./pages/TerminalPage";
 import "./styles.css";
 import "./phase1-pages.css";
 import "./reliability-states.css";
+import "./history-panel.css";
 import "./input-mode.css";
 import "./navigation.css";
 
@@ -31,7 +33,7 @@ const router = createBrowserRouter([
     element: <AppShell />,
     errorElement: <RouteErrorPage />,
     children: [
-      { index: true, element: <OverviewPage /> },
+      { index: true, element: <OverviewHistoryPage /> },
       { path: "docker", element: <DockerPage /> },
       { path: "services", element: <PlaceholderPage /> },
       { path: "logs", element: <LogsPage /> },
