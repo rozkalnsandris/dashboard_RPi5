@@ -51,6 +51,7 @@ describe("Phase 5B logs dashboard API", () => {
 
     const sourceResponse = await app.inject({ method: "GET", url: "/api/logs/sources" });
     expect(sourceResponse.statusCode).toBe(200);
+    expect(sourceResponse.headers["cache-control"]).toBe("no-store");
     expect(sourceResponse.json()).toEqual(sources);
 
     const logsResponse = await app.inject({
@@ -58,6 +59,7 @@ describe("Phase 5B logs dashboard API", () => {
       url: "/api/logs?sourceId=systemd%3Adocker&range=1h",
     });
     expect(logsResponse.statusCode).toBe(200);
+    expect(logsResponse.headers["cache-control"]).toBe("no-store");
     expect(logsResponse.json()).toEqual(snapshot);
     expect(calls).toEqual([["systemd:docker", "1h"]]);
   });
@@ -77,6 +79,7 @@ describe("Phase 5B logs dashboard API", () => {
     ]) {
       const response = await app.inject({ method: "GET", url });
       expect(response.statusCode).toBe(400);
+      expect(response.headers["cache-control"]).toBe("no-store");
       expect(response.json()).toEqual({ error: "INVALID_REQUEST" });
     }
   });
@@ -94,6 +97,7 @@ describe("Phase 5B logs dashboard API", () => {
 
     const sourceResponse = await app.inject({ method: "GET", url: "/api/logs/sources" });
     expect(sourceResponse.statusCode).toBe(503);
+    expect(sourceResponse.headers["cache-control"]).toBe("no-store");
     expect(sourceResponse.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
 
     const logsResponse = await app.inject({
@@ -101,6 +105,7 @@ describe("Phase 5B logs dashboard API", () => {
       url: "/api/logs?sourceId=systemd%3Adocker&range=1h",
     });
     expect(logsResponse.statusCode).toBe(503);
+    expect(logsResponse.headers["cache-control"]).toBe("no-store");
     expect(logsResponse.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });
 });
