@@ -191,7 +191,6 @@ async function readDockerEventsFromAgent(
 ): Promise<DockerRecentEventsSnapshot> {
   return new Promise((resolve, reject) => {
     let settled = false;
-    let deadline: NodeJS.Timeout;
     const finish = (callback: () => void) => {
       if (settled) return;
       settled = true;
@@ -242,7 +241,7 @@ async function readDockerEventsFromAgent(
       },
     );
 
-    deadline = setTimeout(() => {
+    const deadline = setTimeout(() => {
       req.destroy();
       finish(() => reject(new AgentDockerEventsSourceError()));
     }, timeoutMs);
