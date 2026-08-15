@@ -4,9 +4,10 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter } from "react-router";
 import { RouterProvider } from "react-router/dom";
 
-import { AppShell, DockerPage, PlaceholderPage, RouteErrorPage } from "./App";
+import { AppShell, DockerPage, RouteErrorPage } from "./App";
 import { ActivityPage } from "./pages/ActivityPage";
 import { BackupsPage } from "./pages/BackupsPage";
+import { DeploymentsPage } from "./pages/DeploymentsPage";
 import { LogsPage } from "./pages/LogsPage";
 import { OverviewHistoryPage } from "./pages/OverviewHistoryPage";
 import { ReliabilityStatesPage } from "./pages/ReliabilityStatesPage";
@@ -19,6 +20,7 @@ import "./activity-page.css";
 import "./backup-page.css";
 import "./backup-overview.css";
 import "./endpoint-overview.css";
+import "./deployments-page.css";
 import "./reliability-states.css";
 import "./history-panel.css";
 import "./services-page.css";
@@ -48,7 +50,7 @@ const router = createBrowserRouter([
       { path: "terminal", element: <TerminalPage /> },
       { path: "activity", element: <ActivityPage /> },
       { path: "backups", element: <BackupsPage /> },
-      { path: "deployments", element: <PlaceholderPage /> },
+      { path: "deployments", element: <DeploymentsPage /> },
       { path: "settings", element: <ReliabilityStatesPage /> },
     ],
   },
