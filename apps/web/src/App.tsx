@@ -29,7 +29,7 @@ import {
   Outlet,
   useLocation,
   useRouteError,
-} from "react-router-dom";
+} from "react-router";
 
 import { activityFixture, containerFixtures, systemFixture } from "./fixtures";
 
