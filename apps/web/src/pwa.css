@@ -1,0 +1,47 @@
+.offline-banner {
+  position: fixed;
+  z-index: 120;
+  top: max(8px, env(safe-area-inset-top));
+  left: 50%;
+  width: min(calc(100% - 24px), 560px);
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 14px;
+  border: 1px solid #6e4d17;
+  border-radius: 14px;
+  background: #241706;
+  color: #f8ddb0;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .34);
+  transform: translateX(-50%);
+  font-size: .78rem;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.offline-banner strong { color: #ffd488; }
+
+@media (display-mode: standalone) {
+  .app-shell {
+    min-height: 100dvh;
+  }
+
+  .workspace-header {
+    padding-top: calc(8px + max(var(--safe-top), 4px));
+  }
+
+  .mobile-nav {
+    padding-bottom: calc(6px + max(var(--safe-bottom), 4px));
+  }
+}
+
+@media (max-width: 420px) {
+  .offline-banner {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+  }
+}
