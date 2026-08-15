@@ -11,6 +11,7 @@ export async function fetchLogSources(signal?: AbortSignal): Promise<LogSourcesS
   const response = await fetch("/api/logs/sources", {
     method: "GET",
     headers: { Accept: "application/json" },
+    cache: "no-store",
     ...(signal === undefined ? {} : { signal }),
   });
   if (!response.ok) throw new Error("Log sources unavailable");
@@ -26,6 +27,7 @@ export async function fetchLogs(
   const response = await fetch(`/api/logs?${query}`, {
     method: "GET",
     headers: { Accept: "application/json" },
+    cache: "no-store",
     ...(signal === undefined ? {} : { signal }),
   });
   if (!response.ok) throw new Error("Logs unavailable");
