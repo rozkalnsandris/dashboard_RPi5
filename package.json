@@ -24,6 +24,7 @@
   "devDependencies": {
     "@eslint/js": "latest",
     "@playwright/test": "latest",
+    "@types/node": "latest",
     "eslint": "latest",
     "eslint-plugin-react-hooks": "latest",
     "eslint-plugin-react-refresh": "latest",
