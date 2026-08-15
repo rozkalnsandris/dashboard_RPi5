@@ -69,7 +69,12 @@ describe("startAgent", () => {
           service: "dashboard-rpi5-agent",
           mode: "SOURCE_ONLY",
           protocolVersion: 1,
-          capabilities: ["protocol.health", "host.summary", "docker.containers"],
+          capabilities: [
+            "protocol.health",
+            "host.summary",
+            "docker.containers",
+            "docker.events.recent",
+          ],
         });
       } finally {
         await running.app.close();
