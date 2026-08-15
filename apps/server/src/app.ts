@@ -1,15 +1,41 @@
 import { ApiHealthSchema, type ApiHealth } from "@dashboard-rpi5/contracts";
+import {
+  DashboardApiErrorSchema,
+  HostHistoryQuerySchema,
+  HostHistorySnapshotSchema,
+} from "@dashboard-rpi5/contracts/history";
 import fastifyStatic from "@fastify/static";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import Fastify from "fastify";
 import { isAbsolute } from "node:path";
 
+import { createHostHistoryReader, type HostHistoryReader } from "./host-history.js";
+
 interface BuildAppOptions {
   staticRoot?: string;
+  historyReader?: HostHistoryReader;
+}
+
+function buildDefaultHistoryReader(): HostHistoryReader {
+  return createHostHistoryReader({
+    ...(process.env.DASHBOARD_PROMETHEUS_URL === undefined
+      ? {}
+      : { prometheusBaseUrl: process.env.DASHBOARD_PROMETHEUS_URL }),
+    ...(process.env.DASHBOARD_PROMETHEUS_NODE_INSTANCE === undefined
+      ? {}
+      : { nodeInstance: process.env.DASHBOARD_PROMETHEUS_NODE_INSTANCE }),
+    ...(process.env.DASHBOARD_GRAFANA_URL === undefined
+      ? {}
+      : { grafanaBaseUrl: process.env.DASHBOARD_GRAFANA_URL }),
+    ...(process.env.DASHBOARD_GRAFANA_HOST_DASHBOARD_PATH === undefined
+      ? {}
+      : { grafanaDashboardPath: process.env.DASHBOARD_GRAFANA_HOST_DASHBOARD_PATH }),
+  });
 }
 
 export function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({ logger: false }).withTypeProvider<TypeBoxTypeProvider>();
+  const historyReader = options.historyReader ?? buildDefaultHistoryReader();
 
   app.get(
     "/api/health",
@@ -26,6 +52,32 @@ export function buildApp(options: BuildAppOptions = {}) {
       mode: "fixture",
       observedAt: new Date().toISOString(),
     }),
+  );
+
+  app.get(
+    "/api/history/host",
+    {
+      attachValidation: true,
+      schema: {
+        querystring: HostHistoryQuerySchema,
+        response: {
+          200: HostHistorySnapshotSchema,
+          400: DashboardApiErrorSchema,
+          503: DashboardApiErrorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (request.validationError !== undefined) {
+        return reply.code(400).send({ error: "INVALID_REQUEST" });
+      }
+
+      try {
+        return await historyReader(request.query.range);
+      } catch {
+        return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
+      }
+    },
   );
 
   if (options.staticRoot !== undefined) {
