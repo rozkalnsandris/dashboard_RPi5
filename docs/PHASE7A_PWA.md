@@ -15,9 +15,12 @@ This phase is source-only. It does not deploy or activate anything on `dash.rozk
 
 - `display: standalone`;
 - dark theme/background;
-- 192×192 icon;
-- 512×512 icon;
-- separate 512×512 `maskable` icon.
+- raster 192×192 PNG fallback;
+- raster 512×512 PNG fallback;
+- separate raster 512×512 `maskable` PNG;
+- an optional 512×512 SVG icon for Chromium-class vector support.
+
+The raster fallbacks are deliberate: Chromium supports SVG manifest icons, but current Google guidance recommends a raster fallback for browsers that do not support SVG manifest icons consistently.
 
 The important `R5` mark stays in the center of the maskable asset so platform masks may remove outer decoration without removing the identity mark.
 
@@ -28,7 +31,7 @@ The important `R5` mark stays in the center of the maskable asset so platform ma
 ### Persistent cache may contain only
 
 - the dedicated `offline.html` fallback;
-- the manifest and reviewed icon assets;
+- the manifest and reviewed raster icon assets;
 - same-origin requests whose browser destination is `script`, `style`, `font`, or `image`.
 
 Successful Vite JS/CSS assets are content-hashed, so cache-first reuse does not make operational evidence stale.
@@ -64,13 +67,13 @@ The viewport contract remains zoomable and keeps `viewport-fit=cover` plus `inte
 Browser coverage verifies:
 
 - manifest link and identity;
-- 192/512 and maskable icon entries;
+- raster 192/512 and maskable PNG entries;
 - all declared icon resources are served;
 - zoom is not disabled;
 - offline status is explicit without horizontal overflow;
 - the production service worker activates under preview;
 - `/api/*` never enters the dashboard cache;
-- a content-hashed JS asset may enter the static cache;
+- a same-origin runtime image may enter the static cache;
 - offline navigation returns the dedicated offline document rather than stale dashboard HTML.
 
 The existing Playwright project matrix continues to cover 320 CSS px, A55-class portrait/landscape, other compact phones and desktop.
