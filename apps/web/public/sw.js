@@ -3,10 +3,9 @@ const CACHE_NAME = `${CACHE_PREFIX}v1`;
 const PRECACHE_URLS = [
   "/offline.html",
   "/manifest.webmanifest",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "/icons/icon-maskable-512.png",
-  "/icons/apple-touch-icon.png",
+  "/icons/icon-192.svg",
+  "/icons/icon-512.svg",
+  "/icons/icon-maskable-512.svg",
 ];
 const STATIC_DESTINATIONS = new Set(["script", "style", "font", "image"]);
 
