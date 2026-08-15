@@ -10,6 +10,11 @@ import {
   BackupStatusSnapshotSchema,
 } from "@dashboard-rpi5/contracts/backup-status";
 import {
+  DeploymentStatusApiErrorSchema,
+  DeploymentStatusQuerySchema,
+  DeploymentStatusSnapshotSchema,
+} from "@dashboard-rpi5/contracts/deployment-status";
+import {
   PublicEndpointStatusApiErrorSchema,
   PublicEndpointStatusQuerySchema,
   PublicEndpointStatusSnapshotSchema,
@@ -52,6 +57,11 @@ import {
 } from "./agent-services-client.js";
 import { createActivityReader, type ActivityReader } from "./activity.js";
 import { createBackupStatusReader, type BackupStatusReader } from "./backup-status.js";
+import {
+  createDeploymentStatusReader,
+  type DeploymentStatusReader,
+} from "./deployment-status.js";
+import { createGithubRpi5MainReader } from "./github-rpi5-main-client.js";
 import { createHostHistoryReader, type HostHistoryReader } from "./host-history.js";
 import { createPublicEndpointsReader, type PublicEndpointsReader } from "./public-endpoints.js";
 
@@ -61,6 +71,7 @@ interface BuildAppOptions {
   servicesReader?: ServicesReader;
   activityReader?: ActivityReader;
   backupStatusReader?: BackupStatusReader;
+  deploymentStatusReader?: DeploymentStatusReader;
   publicEndpointsReader?: PublicEndpointsReader;
   logSourcesReader?: LogSourcesReader;
   logsReader?: LogsReader;
@@ -110,6 +121,13 @@ function buildDefaultBackupStatusReader(): BackupStatusReader {
   });
 }
 
+function buildDefaultDeploymentStatusReader(): DeploymentStatusReader {
+  return createDeploymentStatusReader({
+    deployEventsReader: createAgentDeployEventsReader(agentSocketOptions()),
+    githubMainReader: createGithubRpi5MainReader(),
+  });
+}
+
 function buildDefaultPublicEndpointsReader(): PublicEndpointsReader {
   return createPublicEndpointsReader({
     endpointEvidenceReader: createAgentEndpointEvidenceReader(agentSocketOptions()),
@@ -136,6 +154,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   const servicesReader = options.servicesReader ?? buildDefaultServicesReader();
   const activityReader = options.activityReader ?? buildDefaultActivityReader(servicesReader);
   const backupStatusReader = options.backupStatusReader ?? buildDefaultBackupStatusReader();
+  const deploymentStatusReader = options.deploymentStatusReader ?? buildDefaultDeploymentStatusReader();
   const publicEndpointsReader = options.publicEndpointsReader ?? buildDefaultPublicEndpointsReader();
   const defaultLogsReaders =
     options.logSourcesReader === undefined || options.logsReader === undefined
@@ -237,6 +256,33 @@ export function buildApp(options: BuildAppOptions = {}) {
 
       try {
         return await backupStatusReader();
+      } catch {
+        return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/deployments",
+    {
+      attachValidation: true,
+      schema: {
+        querystring: DeploymentStatusQuerySchema,
+        response: {
+          200: DeploymentStatusSnapshotSchema,
+          400: DeploymentStatusApiErrorSchema,
+          503: DeploymentStatusApiErrorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      if (request.validationError !== undefined) {
+        return reply.code(400).send({ error: "INVALID_REQUEST" });
+      }
+
+      try {
+        return await deploymentStatusReader();
       } catch {
         return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
       }
