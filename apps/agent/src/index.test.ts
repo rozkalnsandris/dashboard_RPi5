@@ -75,6 +75,7 @@ describe("startAgent", () => {
             "docker.containers",
             "docker.events.recent",
             "services.status",
+            "logs.read",
           ],
         });
       } finally {
