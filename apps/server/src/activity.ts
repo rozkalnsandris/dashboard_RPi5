@@ -8,14 +8,20 @@ import type {
   ActivityItem,
   ActivitySeverity,
   ActivitySnapshot,
+  ActivitySource,
   ActivitySourceState,
 } from "@dashboard-rpi5/contracts/activity";
+import type {
+  BackupEvidenceRun,
+  BackupEvidenceSnapshot,
+} from "@dashboard-rpi5/contracts/backups";
 import type {
   SystemdServiceSnapshot,
   SystemdServicesSnapshot,
 } from "@dashboard-rpi5/contracts/services";
 import { createHash } from "node:crypto";
 
+import type { BackupEvidenceReader } from "./agent-backup-evidence-client.js";
 import type { DockerEventsReader } from "./agent-docker-events-client.js";
 import type { ServicesReader } from "./agent-services-client.js";
 
@@ -27,6 +33,7 @@ export type ActivityReader = () => Promise<ActivitySnapshot>;
 interface ActivityDependencies {
   dockerEventsReader: DockerEventsReader;
   servicesReader: ServicesReader;
+  backupEvidenceReader: BackupEvidenceReader;
   now?: () => Date;
 }
 
@@ -197,23 +204,55 @@ export function normalizeSystemdActivity(snapshot: SystemdServicesSnapshot): Act
   return items;
 }
 
-function availableSource(source: "DOCKER" | "SYSTEMD", observedAt: string): ActivitySourceState {
+function backupEventId(run: BackupEvidenceRun): string {
+  const digest = createHash("sha256").update(JSON.stringify(run)).digest("hex");
+  return `backup:${digest}`;
+}
+
+export function normalizeBackupActivity(snapshot: BackupEvidenceSnapshot): ActivityItem[] {
+  return snapshot.runs.map((run) => ({
+    id: backupEventId(run),
+    source: "BACKUP",
+    severity: run.result === "SUCCESS" ? "INFO" : "CRITICAL",
+    kind: "BACKUP_RESULT",
+    occurredAt: run.completedAt,
+    title: run.result === "SUCCESS" ? "Backup completed" : "Backup failed",
+    detail: clampText(
+      [
+        `run ${run.runId}`,
+        `duration ${run.durationSeconds}s`,
+        run.sizeBytes === null ? "size unavailable" : `size ${run.sizeBytes} bytes`,
+        `exit ${run.exitCode}`,
+      ].join(" · "),
+      320,
+    ),
+    target: "/backups",
+    groupCount: 1,
+  }));
+}
+
+function availableSource(source: ActivitySource, observedAt: string): ActivitySourceState {
   return { source, status: "AVAILABLE", observedAt };
 }
 
-function unavailableSource(source: "DOCKER" | "SYSTEMD"): ActivitySourceState {
+function unavailableSource(source: ActivitySource): ActivitySourceState {
   return { source, status: "UNAVAILABLE", observedAt: null };
 }
 
 export function createActivityReader(dependencies: ActivityDependencies): ActivityReader {
   const now = dependencies.now ?? (() => new Date());
   return async () => {
-    const [dockerResult, servicesResult] = await Promise.allSettled([
+    const [dockerResult, servicesResult, backupResult] = await Promise.allSettled([
       dependencies.dockerEventsReader(),
       dependencies.servicesReader(),
+      dependencies.backupEvidenceReader(),
     ]);
 
-    if (dockerResult.status === "rejected" && servicesResult.status === "rejected") {
+    if (
+      dockerResult.status === "rejected" &&
+      servicesResult.status === "rejected" &&
+      backupResult.status === "rejected"
+    ) {
       throw new ActivitySourceUnavailableError();
     }
 
@@ -224,11 +263,15 @@ export function createActivityReader(dependencies: ActivityDependencies): Activi
       servicesResult.status === "fulfilled"
         ? availableSource("SYSTEMD", servicesResult.value.observedAt)
         : unavailableSource("SYSTEMD"),
+      backupResult.status === "fulfilled"
+        ? availableSource("BACKUP", backupResult.value.observedAt)
+        : unavailableSource("BACKUP"),
     ];
 
     const items = [
       ...(dockerResult.status === "fulfilled" ? normalizeDockerActivity(dockerResult.value) : []),
       ...(servicesResult.status === "fulfilled" ? normalizeSystemdActivity(servicesResult.value) : []),
+      ...(backupResult.status === "fulfilled" ? normalizeBackupActivity(backupResult.value) : []),
     ];
 
     const uniqueItems = [...new Map(items.map((item) => [item.id, item])).values()]
