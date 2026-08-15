@@ -150,7 +150,11 @@ export function createAgentLogsReaders(options: AgentLogsClientOptions = {}): {
         maxBytes,
       );
       try {
-        return parseLogSnapshot(value);
+        const snapshot = parseLogSnapshot(value);
+        if (snapshot.source.sourceId !== sourceId || snapshot.range !== range) {
+          throw new AgentLogsSourceError();
+        }
+        return snapshot;
       } catch {
         throw new AgentLogsSourceError();
       }
