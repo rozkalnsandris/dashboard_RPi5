@@ -103,7 +103,7 @@ test("Overview keeps unavailable endpoint source unknown instead of all-clear", 
 
   await page.goto("/");
   await expect(page.getByText("Public endpoint evidence unknown", { exact: true })).toBeVisible();
-  await expect(page.getByText(/not treated as all-clear/)).toBeVisible();
+  await expect(page.getByText("The structured endpoint source is unavailable; this is not treated as all-clear.", { exact: true })).toBeVisible();
   await expect(page.getByText("All clear", { exact: true })).toBeHidden();
 });
 
