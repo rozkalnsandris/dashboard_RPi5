@@ -1,0 +1,29 @@
+{
+  "name": "@dashboard-rpi5/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@dashboard-rpi5/contracts": "*",
+    "@tanstack/react-query": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-aria-components": "latest",
+    "react-dom": "latest",
+    "react-router-dom": "latest"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "tailwindcss": "latest",
+    "vite": "latest"
+  }
+}
