@@ -10,6 +10,7 @@ export const AgentCapabilitySchema = Type.Union([
   Type.Literal("backups.recent"),
   Type.Literal("maintenance.events.recent"),
   Type.Literal("deploy.events.recent"),
+  Type.Literal("endpoint.events.recent"),
 ]);
 export type AgentCapability = Static<typeof AgentCapabilitySchema>;
 

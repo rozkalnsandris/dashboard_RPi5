@@ -1,6 +1,7 @@
 import type { DockerRecentEventsSnapshot } from "@dashboard-rpi5/contracts";
 import type { BackupEvidenceSnapshot } from "@dashboard-rpi5/contracts/backups";
 import type { DeployEventsSnapshot } from "@dashboard-rpi5/contracts/deploy";
+import type { EndpointEvidenceSnapshot } from "@dashboard-rpi5/contracts/endpoints";
 import type { MaintenanceEventsSnapshot } from "@dashboard-rpi5/contracts/maintenance";
 import type { SystemdServicesSnapshot } from "@dashboard-rpi5/contracts/services";
 import { describe, expect, it } from "vitest";
@@ -11,6 +12,7 @@ import {
   normalizeBackupActivity,
   normalizeDeployActivity,
   normalizeDockerActivity,
+  normalizeEndpointActivity,
   normalizeMaintenanceActivity,
   normalizeSystemdActivity,
 } from "./activity.js";
@@ -149,7 +151,34 @@ const deploySnapshot: DeployEventsSnapshot = {
   ],
 };
 
-describe("Phase 5C-D activity normalization", () => {
+const endpointSnapshot: EndpointEvidenceSnapshot = {
+  observedAt: "2026-08-15T17:00:03.000Z",
+  schema: "dashboard-rpi5.endpoint-evidence.v1",
+  events: [
+    {
+      eventId: "tech-down-20260815T165957Z",
+      endpointId: "tech",
+      label: "Hermes Tech",
+      occurredAt: "2026-08-15T16:59:57.000Z",
+      fromState: "UP",
+      toState: "DOWN",
+      statusCode: 503,
+      latencyMs: 1500,
+    },
+    {
+      eventId: "cv-up-20260815T165940Z",
+      endpointId: "cv",
+      label: "CV",
+      occurredAt: "2026-08-15T16:59:40.000Z",
+      fromState: "UNKNOWN",
+      toState: "UP",
+      statusCode: 200,
+      latencyMs: 82,
+    },
+  ],
+};
+
+describe("Phase 5C-E activity normalization", () => {
   it("groups only matching Docker bursts and maps deterministic severity", () => {
     const items = normalizeDockerActivity(dockerSnapshot);
     expect(items).toHaveLength(2);
@@ -242,7 +271,54 @@ describe("Phase 5C-D activity normalization", () => {
     });
   });
 
-  it("returns a newest-first timeline with explicit five-source degradation", async () => {
+  it("maps only normalized endpoint transitions without exposing a raw URL", () => {
+    const items = normalizeEndpointActivity(endpointSnapshot);
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({
+      id: "endpoint:tech-down-20260815T165957Z",
+      source: "ENDPOINT",
+      severity: "CRITICAL",
+      kind: "ENDPOINT_STATE",
+      occurredAt: "2026-08-15T16:59:57.000Z",
+      title: "Hermes Tech is down",
+      detail: "endpoint tech · up → down · status 503 · latency 1500ms",
+      target: "/",
+      groupCount: 1,
+    });
+    expect(items[1]).toMatchObject({
+      source: "ENDPOINT",
+      severity: "INFO",
+      title: "CV is up",
+    });
+    expect(JSON.stringify(items)).not.toContain("https://");
+  });
+
+  it("maps DEGRADED and UNKNOWN endpoint transitions to attention", () => {
+    const snapshot: EndpointEvidenceSnapshot = {
+      observedAt: endpointSnapshot.observedAt,
+      schema: endpointSnapshot.schema,
+      events: [
+        {
+          ...endpointSnapshot.events[0]!,
+          eventId: "degraded",
+          fromState: "UP",
+          toState: "DEGRADED",
+        },
+        {
+          ...endpointSnapshot.events[1]!,
+          eventId: "unknown",
+          fromState: "UP",
+          toState: "UNKNOWN",
+        },
+      ],
+    };
+    expect(normalizeEndpointActivity(snapshot).map((item) => item.severity)).toEqual([
+      "ATTENTION",
+      "ATTENTION",
+    ]);
+  });
+
+  it("returns a newest-first timeline with explicit six-source degradation", async () => {
     const reader = createActivityReader({
       dockerEventsReader: async () => {
         throw new Error("private Docker detail");
@@ -251,6 +327,7 @@ describe("Phase 5C-D activity normalization", () => {
       backupEvidenceReader: async () => backupSnapshot,
       maintenanceEventsReader: async () => maintenanceSnapshot,
       deployEventsReader: async () => deploySnapshot,
+      endpointEvidenceReader: async () => endpointSnapshot,
       now: () => new Date("2026-08-15T17:00:05.000Z"),
     });
 
@@ -261,11 +338,36 @@ describe("Phase 5C-D activity normalization", () => {
       { source: "BACKUP", status: "AVAILABLE", observedAt: backupSnapshot.observedAt },
       { source: "MAINTENANCE", status: "AVAILABLE", observedAt: maintenanceSnapshot.observedAt },
       { source: "DEPLOY", status: "AVAILABLE", observedAt: deploySnapshot.observedAt },
+      { source: "ENDPOINT", status: "AVAILABLE", observedAt: endpointSnapshot.observedAt },
     ]);
-    expect(snapshot.items[0]).toMatchObject({ source: "DEPLOY", occurredAt: "2026-08-15T16:59:55.000Z" });
+    expect(snapshot.items[0]).toMatchObject({
+      source: "ENDPOINT",
+      occurredAt: "2026-08-15T16:59:57.000Z",
+    });
   });
 
-  it("keeps deploy source failure explicit while other evidence remains usable", async () => {
+  it("keeps endpoint source failure explicit while other evidence remains usable", async () => {
+    const reader = createActivityReader({
+      dockerEventsReader: async () => dockerSnapshot,
+      servicesReader: async () => servicesSnapshot,
+      backupEvidenceReader: async () => backupSnapshot,
+      maintenanceEventsReader: async () => maintenanceSnapshot,
+      deployEventsReader: async () => deploySnapshot,
+      endpointEvidenceReader: async () => {
+        throw new Error("producer unavailable");
+      },
+    });
+    const snapshot = await reader();
+    expect(snapshot.sources[5]).toEqual({
+      source: "ENDPOINT",
+      status: "UNAVAILABLE",
+      observedAt: null,
+    });
+    expect(snapshot.items.some((item) => item.source === "ENDPOINT")).toBe(false);
+    expect(snapshot.items.some((item) => item.source === "DEPLOY")).toBe(true);
+  });
+
+  it("keeps deploy source failure explicit while endpoint evidence remains usable", async () => {
     const reader = createActivityReader({
       dockerEventsReader: async () => dockerSnapshot,
       servicesReader: async () => servicesSnapshot,
@@ -274,11 +376,12 @@ describe("Phase 5C-D activity normalization", () => {
       deployEventsReader: async () => {
         throw new Error("journal permission unavailable");
       },
+      endpointEvidenceReader: async () => endpointSnapshot,
     });
     const snapshot = await reader();
     expect(snapshot.sources[4]).toEqual({ source: "DEPLOY", status: "UNAVAILABLE", observedAt: null });
     expect(snapshot.items.some((item) => item.source === "DEPLOY")).toBe(false);
-    expect(snapshot.items.some((item) => item.source === "MAINTENANCE")).toBe(true);
+    expect(snapshot.items.some((item) => item.source === "ENDPOINT")).toBe(true);
   });
 
   it("fails closed only when every authoritative source is unavailable", async () => {
@@ -291,6 +394,7 @@ describe("Phase 5C-D activity normalization", () => {
       backupEvidenceReader: fail,
       maintenanceEventsReader: fail,
       deployEventsReader: fail,
+      endpointEvidenceReader: fail,
     });
     await expect(reader()).rejects.toBeInstanceOf(ActivitySourceUnavailableError);
   });

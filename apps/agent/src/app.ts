@@ -19,6 +19,11 @@ import {
   type DeployEventsSnapshot,
 } from "@dashboard-rpi5/contracts/deploy";
 import {
+  EndpointEvidenceQuerySchema,
+  EndpointEvidenceSnapshotSchema,
+  type EndpointEvidenceSnapshot,
+} from "@dashboard-rpi5/contracts/endpoints";
+import {
   LogSnapshotSchema,
   LogSourcesQuerySchema,
   LogSourcesSnapshotSchema,
@@ -44,6 +49,7 @@ import { readBackupEvidence } from "./backup-evidence.js";
 import { readRecentDeployEvents } from "./deploy-events.js";
 import { readRecentDockerEvents } from "./docker-events.js";
 import { readDockerContainers } from "./docker-read.js";
+import { readEndpointEvidence } from "./endpoint-evidence.js";
 import { readHostSummary } from "./host-read.js";
 import { listRegisteredLogSources, readLogSnapshot } from "./logs-read.js";
 import { readRecentMaintenanceEvents } from "./maintenance-events.js";
@@ -70,6 +76,7 @@ interface BuildAgentAppOptions {
   backupReader?: (signal: AbortSignal) => Promise<BackupEvidenceSnapshot>;
   maintenanceEventsReader?: (signal: AbortSignal) => Promise<MaintenanceEventsSnapshot>;
   deployEventsReader?: (signal: AbortSignal) => Promise<DeployEventsSnapshot>;
+  endpointEventsReader?: (signal: AbortSignal) => Promise<EndpointEvidenceSnapshot>;
   logSourcesReader?: () => LogSourcesSnapshot;
   logsReader?: (
     sourceId: LogSourceId,
@@ -99,6 +106,9 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
   const deployEventsReader =
     options.deployEventsReader ??
     ((signal: AbortSignal) => readRecentDeployEvents(undefined, signal));
+  const endpointEventsReader =
+    options.endpointEventsReader ??
+    ((signal: AbortSignal) => readEndpointEvidence(undefined, signal));
   const logSourcesReader = options.logSourcesReader ?? (() => listRegisteredLogSources());
   const logsReader =
     options.logsReader ??
@@ -112,6 +122,7 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
   operationRegistry.register("backups.recent", backupReader);
   operationRegistry.register("maintenance.events.recent", maintenanceEventsReader);
   operationRegistry.register("deploy.events.recent", deployEventsReader);
+  operationRegistry.register("endpoint.events.recent", endpointEventsReader);
 
   const app = Fastify({
     logger: false,
@@ -266,6 +277,28 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
         return reply.code(400).send({ error: "INVALID_OPERATION" });
       }
       return operationRegistry.run<DeployEventsSnapshot>("deploy.events.recent");
+    },
+  );
+
+  app.get(
+    "/v1/endpoints/events/recent",
+    {
+      attachValidation: true,
+      schema: {
+        querystring: EndpointEvidenceQuerySchema,
+        response: {
+          200: EndpointEvidenceSnapshotSchema,
+          400: AgentErrorSchema,
+          503: AgentErrorSchema,
+          504: AgentErrorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (request.validationError !== undefined) {
+        return reply.code(400).send({ error: "INVALID_OPERATION" });
+      }
+      return operationRegistry.run<EndpointEvidenceSnapshot>("endpoint.events.recent");
     },
   );
 

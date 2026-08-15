@@ -20,6 +20,11 @@ import type {
   DeployVerifiedEvent,
 } from "@dashboard-rpi5/contracts/deploy";
 import type {
+  EndpointEvidenceEvent,
+  EndpointEvidenceSnapshot,
+  EndpointState,
+} from "@dashboard-rpi5/contracts/endpoints";
+import type {
   MaintenanceEvent,
   MaintenanceEventsSnapshot,
 } from "@dashboard-rpi5/contracts/maintenance";
@@ -32,6 +37,7 @@ import { createHash } from "node:crypto";
 import type { BackupEvidenceReader } from "./agent-backup-evidence-client.js";
 import type { DeployEventsReader } from "./agent-deploy-events-client.js";
 import type { DockerEventsReader } from "./agent-docker-events-client.js";
+import type { EndpointEvidenceReader } from "./agent-endpoint-evidence-client.js";
 import type { MaintenanceEventsReader } from "./agent-maintenance-events-client.js";
 import type { ServicesReader } from "./agent-services-client.js";
 
@@ -46,6 +52,7 @@ interface ActivityDependencies {
   backupEvidenceReader: BackupEvidenceReader;
   maintenanceEventsReader: MaintenanceEventsReader;
   deployEventsReader: DeployEventsReader;
+  endpointEvidenceReader: EndpointEvidenceReader;
   now?: () => Date;
 }
 
@@ -295,6 +302,39 @@ export function normalizeDeployActivity(snapshot: DeployEventsSnapshot): Activit
   }));
 }
 
+function endpointSeverity(state: EndpointState): ActivitySeverity {
+  if (state === "DOWN") return "CRITICAL";
+  if (state === "DEGRADED" || state === "UNKNOWN") return "ATTENTION";
+  return "INFO";
+}
+
+function endpointEventId(event: EndpointEvidenceEvent): string {
+  return `endpoint:${event.eventId}`;
+}
+
+export function normalizeEndpointActivity(snapshot: EndpointEvidenceSnapshot): ActivityItem[] {
+  return snapshot.events.map((event) => {
+    const details = [
+      `endpoint ${event.endpointId}`,
+      `${event.fromState.toLowerCase()} → ${event.toState.toLowerCase()}`,
+      event.statusCode === null ? null : `status ${event.statusCode}`,
+      event.latencyMs === null ? null : `latency ${event.latencyMs}ms`,
+    ].filter((part): part is string => part !== null);
+
+    return {
+      id: endpointEventId(event),
+      source: "ENDPOINT",
+      severity: endpointSeverity(event.toState),
+      kind: "ENDPOINT_STATE",
+      occurredAt: event.occurredAt,
+      title: clampText(`${event.label} is ${event.toState.toLowerCase()}`, 160),
+      detail: clampText(details.join(" · "), 320),
+      target: "/",
+      groupCount: 1,
+    };
+  });
+}
+
 function availableSource(source: ActivitySource, observedAt: string): ActivitySourceState {
   return { source, status: "AVAILABLE", observedAt };
 }
@@ -306,21 +346,29 @@ function unavailableSource(source: ActivitySource): ActivitySourceState {
 export function createActivityReader(dependencies: ActivityDependencies): ActivityReader {
   const now = dependencies.now ?? (() => new Date());
   return async () => {
-    const [dockerResult, servicesResult, backupResult, maintenanceResult, deployResult] =
-      await Promise.allSettled([
-        dependencies.dockerEventsReader(),
-        dependencies.servicesReader(),
-        dependencies.backupEvidenceReader(),
-        dependencies.maintenanceEventsReader(),
-        dependencies.deployEventsReader(),
-      ]);
+    const [
+      dockerResult,
+      servicesResult,
+      backupResult,
+      maintenanceResult,
+      deployResult,
+      endpointResult,
+    ] = await Promise.allSettled([
+      dependencies.dockerEventsReader(),
+      dependencies.servicesReader(),
+      dependencies.backupEvidenceReader(),
+      dependencies.maintenanceEventsReader(),
+      dependencies.deployEventsReader(),
+      dependencies.endpointEvidenceReader(),
+    ]);
 
     if (
       dockerResult.status === "rejected" &&
       servicesResult.status === "rejected" &&
       backupResult.status === "rejected" &&
       maintenanceResult.status === "rejected" &&
-      deployResult.status === "rejected"
+      deployResult.status === "rejected" &&
+      endpointResult.status === "rejected"
     ) {
       throw new ActivitySourceUnavailableError();
     }
@@ -341,6 +389,9 @@ export function createActivityReader(dependencies: ActivityDependencies): Activi
       deployResult.status === "fulfilled"
         ? availableSource("DEPLOY", deployResult.value.observedAt)
         : unavailableSource("DEPLOY"),
+      endpointResult.status === "fulfilled"
+        ? availableSource("ENDPOINT", endpointResult.value.observedAt)
+        : unavailableSource("ENDPOINT"),
     ];
 
     const items = [
@@ -351,6 +402,9 @@ export function createActivityReader(dependencies: ActivityDependencies): Activi
         ? normalizeMaintenanceActivity(maintenanceResult.value)
         : []),
       ...(deployResult.status === "fulfilled" ? normalizeDeployActivity(deployResult.value) : []),
+      ...(endpointResult.status === "fulfilled"
+        ? normalizeEndpointActivity(endpointResult.value)
+        : []),
     ];
 
     const uniqueItems = [...new Map(items.map((item) => [item.id, item])).values()]
