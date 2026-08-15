@@ -1,24 +1,23 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
+import type { LogsReader } from "./agent-logs-client.js";
 import { buildApp } from "./app.js";
 
 const apps: ReturnType<typeof buildApp>[] = [];
 
+const dockerLogSource = {
+  sourceId: "systemd:docker" as const,
+  label: "Docker Engine",
+  kind: "SYSTEMD" as const,
+  rangeMode: "TIME" as const,
+};
 const sources = {
   observedAt: "2026-08-15T15:00:00.000Z",
-  sources: [
-    {
-      sourceId: "systemd:docker" as const,
-      label: "Docker Engine",
-      kind: "SYSTEMD" as const,
-      rangeMode: "TIME" as const,
-    },
-  ],
+  sources: [dockerLogSource],
 };
-
 const snapshot = {
   observedAt: "2026-08-15T15:00:00.000Z",
-  source: sources.sources[0],
+  source: dockerLogSource,
   range: "1h" as const,
   rangeApplied: true,
   entries: [
@@ -39,7 +38,11 @@ afterEach(async () => {
 
 describe("Phase 5B logs dashboard API", () => {
   it("returns registered sources and forwards only validated source/range enums", async () => {
-    const logsReader = vi.fn(async () => snapshot);
+    const calls: Parameters<LogsReader>[] = [];
+    const logsReader: LogsReader = async (sourceId, range) => {
+      calls.push([sourceId, range]);
+      return snapshot;
+    };
     const app = buildApp({
       logSourcesReader: async () => sources,
       logsReader,
@@ -56,7 +59,7 @@ describe("Phase 5B logs dashboard API", () => {
     });
     expect(logsResponse.statusCode).toBe(200);
     expect(logsResponse.json()).toEqual(snapshot);
-    expect(logsReader).toHaveBeenCalledWith("systemd:docker", "1h");
+    expect(calls).toEqual([["systemd:docker", "1h"]]);
   });
 
   it("rejects unknown source/range and every extra browser selector", async () => {
