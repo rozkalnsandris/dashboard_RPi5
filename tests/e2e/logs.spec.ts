@@ -60,7 +60,7 @@ test("Logs renders bounded registered-source evidence without horizontal page ov
   await page.goto("/logs");
 
   await expect(page.getByRole("heading", { name: "Logs" })).toBeVisible();
-  await expect(page.getByText("Docker Engine").first()).toBeVisible();
+  await expect(page.getByLabel("Source")).toHaveValue("systemd:docker");
   await expect(page.getByText("2 visible / 2 bounded lines")).toBeVisible();
   await expect(page.getByText("<script>window.__logXss = true</script>", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as Window & { __logXss?: boolean }).__logXss)).toBeUndefined();
@@ -123,4 +123,5 @@ test("Logs source failure remains explicit", async ({ page }, testInfo) => {
   await page.goto("/logs");
   await expect(page.getByText("Log evidence unavailable")).toBeVisible();
   await expect(page.getByText(/No missing source is represented as an empty healthy stream/)).toBeVisible();
+  await expect(page.getByText("Loading registered logs…")).toHaveCount(0);
 });
