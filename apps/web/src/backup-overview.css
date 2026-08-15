@@ -1,0 +1,84 @@
+.backup-overview-card {
+  min-width: 0;
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.backup-overview-card > svg {
+  color: #aebed3;
+}
+
+.backup-overview-card[data-health="HEALTHY"] {
+  border-color: #28563c;
+  background: linear-gradient(120deg, rgba(66, 215, 125, .07), transparent 62%), var(--surface-1);
+}
+
+.backup-overview-card[data-health="HEALTHY"] > svg {
+  color: #bff7d2;
+}
+
+.backup-overview-card[data-health="ATTENTION"] {
+  border-color: #6f5123;
+  background: linear-gradient(120deg, rgba(240, 173, 50, .09), transparent 62%), var(--surface-1);
+}
+
+.backup-overview-card[data-health="ATTENTION"] > svg {
+  color: #ffd58a;
+}
+
+.backup-overview-card div {
+  min-width: 0;
+}
+
+.backup-overview-card strong,
+.backup-overview-card span {
+  display: block;
+}
+
+.backup-overview-card strong {
+  font-size: .84rem;
+}
+
+.backup-overview-card span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: .72rem;
+  line-height: 1.4;
+}
+
+.backup-overview-card a {
+  grid-column: 1 / -1;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  color: #a9c1ff;
+  font-size: .73rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+@media (min-width: 640px) {
+  .backup-overview-card {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .backup-overview-card a {
+    grid-column: auto;
+    min-height: 48px;
+    padding: 0 4px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .backup-overview-card a:hover {
+    text-decoration: underline;
+  }
+}
