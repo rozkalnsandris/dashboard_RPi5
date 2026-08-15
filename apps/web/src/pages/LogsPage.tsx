@@ -138,6 +138,9 @@ export function LogsPage() {
     (sourcesQuery.isError && sourcesQuery.data === undefined) ||
     (logsQuery.isError && logsQuery.data === undefined);
   const degraded = logsQuery.isRefetchError && logsQuery.data !== undefined;
+  const isLoading =
+    sourcesQuery.isPending ||
+    (resolvedSourceId !== null && logsQuery.isPending);
 
   return (
     <section className="page-stack log-page-shell logs-live-page" aria-labelledby="logs-title">
@@ -245,7 +248,7 @@ export function LogsPage() {
         </div>
       ) : null}
 
-      {logsQuery.isPending || sourcesQuery.isPending ? (
+      {isLoading && !sourceFailure ? (
         <div className="logs-message" role="status">
           <RefreshCw size={18} aria-hidden="true" />
           <div><strong>Loading registered logs…</strong><span>Waiting for bounded local-agent evidence.</span></div>
