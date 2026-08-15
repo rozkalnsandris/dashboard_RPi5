@@ -10,6 +10,11 @@ import {
   BackupStatusSnapshotSchema,
 } from "@dashboard-rpi5/contracts/backup-status";
 import {
+  PublicEndpointStatusApiErrorSchema,
+  PublicEndpointStatusQuerySchema,
+  PublicEndpointStatusSnapshotSchema,
+} from "@dashboard-rpi5/contracts/endpoints";
+import {
   DashboardApiErrorSchema,
   HostHistoryQuerySchema,
   HostHistorySnapshotSchema,
@@ -48,6 +53,7 @@ import {
 import { createActivityReader, type ActivityReader } from "./activity.js";
 import { createBackupStatusReader, type BackupStatusReader } from "./backup-status.js";
 import { createHostHistoryReader, type HostHistoryReader } from "./host-history.js";
+import { createPublicEndpointsReader, type PublicEndpointsReader } from "./public-endpoints.js";
 
 interface BuildAppOptions {
   staticRoot?: string;
@@ -55,6 +61,7 @@ interface BuildAppOptions {
   servicesReader?: ServicesReader;
   activityReader?: ActivityReader;
   backupStatusReader?: BackupStatusReader;
+  publicEndpointsReader?: PublicEndpointsReader;
   logSourcesReader?: LogSourcesReader;
   logsReader?: LogsReader;
 }
@@ -103,6 +110,12 @@ function buildDefaultBackupStatusReader(): BackupStatusReader {
   });
 }
 
+function buildDefaultPublicEndpointsReader(): PublicEndpointsReader {
+  return createPublicEndpointsReader({
+    endpointEvidenceReader: createAgentEndpointEvidenceReader(agentSocketOptions()),
+  });
+}
+
 function buildDefaultLogsReaders(): {
   readSources: LogSourcesReader;
   readLogs: LogsReader;
@@ -123,6 +136,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   const servicesReader = options.servicesReader ?? buildDefaultServicesReader();
   const activityReader = options.activityReader ?? buildDefaultActivityReader(servicesReader);
   const backupStatusReader = options.backupStatusReader ?? buildDefaultBackupStatusReader();
+  const publicEndpointsReader = options.publicEndpointsReader ?? buildDefaultPublicEndpointsReader();
   const defaultLogsReaders =
     options.logSourcesReader === undefined || options.logsReader === undefined
       ? buildDefaultLogsReaders()
@@ -223,6 +237,33 @@ export function buildApp(options: BuildAppOptions = {}) {
 
       try {
         return await backupStatusReader();
+      } catch {
+        return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/endpoints",
+    {
+      attachValidation: true,
+      schema: {
+        querystring: PublicEndpointStatusQuerySchema,
+        response: {
+          200: PublicEndpointStatusSnapshotSchema,
+          400: PublicEndpointStatusApiErrorSchema,
+          503: PublicEndpointStatusApiErrorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      if (request.validationError !== undefined) {
+        return reply.code(400).send({ error: "INVALID_REQUEST" });
+      }
+
+      try {
+        return await publicEndpointsReader();
       } catch {
         return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
       }
