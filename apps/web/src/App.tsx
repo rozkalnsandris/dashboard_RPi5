@@ -45,8 +45,9 @@ const primaryNavigation = [
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
-const mobilePrimary = primaryNavigation.slice(0, 4);
-const mobileMore = primaryNavigation.slice(4);
+const mobilePrimaryPaths = new Set(["/", "/docker", "/logs", "/terminal"]);
+const mobilePrimary = primaryNavigation.filter(({ to }) => mobilePrimaryPaths.has(to));
+const mobileMore = primaryNavigation.filter(({ to }) => !mobilePrimaryPaths.has(to));
 
 function HealthPill() {
   return (
