@@ -7,9 +7,11 @@ import { RouterProvider } from "react-router/dom";
 import { AppShell, DockerPage, OverviewPage, PlaceholderPage, RouteErrorPage } from "./App";
 import { ActivityPage } from "./pages/ActivityPage";
 import { LogsPage } from "./pages/LogsPage";
+import { ReliabilityStatesPage } from "./pages/ReliabilityStatesPage";
 import { TerminalPage } from "./pages/TerminalPage";
 import "./styles.css";
 import "./phase1-pages.css";
+import "./reliability-states.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,7 +37,7 @@ const router = createBrowserRouter([
       { path: "activity", element: <ActivityPage /> },
       { path: "backups", element: <PlaceholderPage /> },
       { path: "deployments", element: <PlaceholderPage /> },
-      { path: "settings", element: <PlaceholderPage /> },
+      { path: "settings", element: <ReliabilityStatesPage /> },
     ],
   },
 ]);
