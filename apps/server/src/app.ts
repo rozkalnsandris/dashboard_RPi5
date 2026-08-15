@@ -1,5 +1,10 @@
 import { ApiHealthSchema, type ApiHealth } from "@dashboard-rpi5/contracts";
 import {
+  ActivityApiErrorSchema,
+  ActivityQuerySchema,
+  ActivitySnapshotSchema,
+} from "@dashboard-rpi5/contracts/activity";
+import {
   DashboardApiErrorSchema,
   HostHistoryQuerySchema,
   HostHistorySnapshotSchema,
@@ -21,6 +26,7 @@ import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import Fastify from "fastify";
 import { isAbsolute } from "node:path";
 
+import { createAgentDockerEventsReader } from "./agent-docker-events-client.js";
 import {
   createAgentLogsReaders,
   type LogsReader,
@@ -30,12 +36,14 @@ import {
   createAgentServicesReader,
   type ServicesReader,
 } from "./agent-services-client.js";
+import { createActivityReader, type ActivityReader } from "./activity.js";
 import { createHostHistoryReader, type HostHistoryReader } from "./host-history.js";
 
 interface BuildAppOptions {
   staticRoot?: string;
   historyReader?: HostHistoryReader;
   servicesReader?: ServicesReader;
+  activityReader?: ActivityReader;
   logSourcesReader?: LogSourcesReader;
   logsReader?: LogsReader;
 }
@@ -57,11 +65,20 @@ function buildDefaultHistoryReader(): HostHistoryReader {
   });
 }
 
+function agentSocketOptions(): { socketPath?: string } {
+  return process.env.DASHBOARD_AGENT_SOCKET_PATH === undefined
+    ? {}
+    : { socketPath: process.env.DASHBOARD_AGENT_SOCKET_PATH };
+}
+
 function buildDefaultServicesReader(): ServicesReader {
-  return createAgentServicesReader({
-    ...(process.env.DASHBOARD_AGENT_SOCKET_PATH === undefined
-      ? {}
-      : { socketPath: process.env.DASHBOARD_AGENT_SOCKET_PATH }),
+  return createAgentServicesReader(agentSocketOptions());
+}
+
+function buildDefaultActivityReader(servicesReader: ServicesReader): ActivityReader {
+  return createActivityReader({
+    dockerEventsReader: createAgentDockerEventsReader(agentSocketOptions()),
+    servicesReader,
   });
 }
 
@@ -69,11 +86,7 @@ function buildDefaultLogsReaders(): {
   readSources: LogSourcesReader;
   readLogs: LogsReader;
 } {
-  return createAgentLogsReaders({
-    ...(process.env.DASHBOARD_AGENT_SOCKET_PATH === undefined
-      ? {}
-      : { socketPath: process.env.DASHBOARD_AGENT_SOCKET_PATH }),
-  });
+  return createAgentLogsReaders(agentSocketOptions());
 }
 
 export function buildApp(options: BuildAppOptions = {}) {
@@ -87,6 +100,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   }).withTypeProvider<TypeBoxTypeProvider>();
   const historyReader = options.historyReader ?? buildDefaultHistoryReader();
   const servicesReader = options.servicesReader ?? buildDefaultServicesReader();
+  const activityReader = options.activityReader ?? buildDefaultActivityReader(servicesReader);
   const defaultLogsReaders =
     options.logSourcesReader === undefined || options.logsReader === undefined
       ? buildDefaultLogsReaders()
@@ -160,6 +174,33 @@ export function buildApp(options: BuildAppOptions = {}) {
 
       try {
         return await servicesReader();
+      } catch {
+        return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/activity",
+    {
+      attachValidation: true,
+      schema: {
+        querystring: ActivityQuerySchema,
+        response: {
+          200: ActivitySnapshotSchema,
+          400: ActivityApiErrorSchema,
+          503: ActivityApiErrorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      if (request.validationError !== undefined) {
+        return reply.code(400).send({ error: "INVALID_REQUEST" });
+      }
+
+      try {
+        return await activityReader();
       } catch {
         return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
       }

@@ -14,6 +14,7 @@ import { TerminalPage } from "./pages/TerminalPage";
 import "./styles.css";
 import "./phase1-pages.css";
 import "./logs-page.css";
+import "./activity-page.css";
 import "./reliability-states.css";
 import "./history-panel.css";
 import "./services-page.css";
