@@ -6,6 +6,7 @@ const activityPayload = {
     { source: "DOCKER", status: "AVAILABLE", observedAt: "2026-08-15T17:00:00.000Z" },
     { source: "SYSTEMD", status: "AVAILABLE", observedAt: "2026-08-15T17:00:00.000Z" },
     { source: "BACKUP", status: "AVAILABLE", observedAt: "2026-08-15T17:00:00.000Z" },
+    { source: "MAINTENANCE", status: "AVAILABLE", observedAt: "2026-08-15T17:00:00.000Z" },
   ],
   items: [
     {
@@ -17,6 +18,17 @@ const activityPayload = {
       title: "homeassistant out of memory",
       detail: "image homeassistant/home-assistant:stable · scope local",
       target: "/docker",
+      groupCount: 1,
+    },
+    {
+      id: "maintenance:structured-success",
+      source: "MAINTENANCE",
+      severity: "INFO",
+      kind: "MAINTENANCE_RESULT",
+      occurredAt: "2026-08-15T16:58:45.000Z",
+      title: "Maintenance completed",
+      detail: "invocation 0123456789abcdef0123456789abcdef · systemd result success",
+      target: "/logs",
       groupCount: 1,
     },
     {
@@ -55,7 +67,7 @@ const activityPayload = {
   ],
 };
 
-test("Activity renders bounded live evidence without fixture categories or page overflow", async ({ page }) => {
+test("Activity renders bounded live evidence without fixture deploy or endpoint categories or page overflow", async ({ page }) => {
   const requestedUrls: string[] = [];
   await page.route("**/api/activity", async (route) => {
     requestedUrls.push(route.request().url());
@@ -68,14 +80,14 @@ test("Activity renders bounded live evidence without fixture categories or page 
 
   await page.goto("/activity");
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
-  await expect(page.getByText("4 visible / 4 bounded events")).toBeVisible();
+  await expect(page.getByText("5 visible / 5 bounded events")).toBeVisible();
   await expect(page.getByText("homeassistant out of memory")).toBeVisible();
+  await expect(page.getByText("Maintenance completed")).toBeVisible();
   await expect(page.getByText("Backup completed")).toBeVisible();
   await expect(page.getByText("SSH is failed")).toBeVisible();
   await expect(page.getByText("2 grouped events")).toBeVisible();
   await expect(page.getByText(/CV production SHA verified/i)).toHaveCount(0);
   await expect(page.getByText(/public endpoints remain reachable/i)).toHaveCount(0);
-  await expect(page.getByText(/maintenance completed/i)).toHaveCount(0);
 
   expect(requestedUrls.length).toBeGreaterThan(0);
   for (const url of requestedUrls) {
@@ -116,10 +128,16 @@ test("Activity source and severity filters stay client-side", async ({ page }, t
   await expect(page.getByText("SSH is failed")).toHaveCount(0);
   expect(requests).toBe(beforeFilters);
 
+  await page.getByLabel("Activity source").selectOption("MAINTENANCE");
+  await expect(page.getByText("Maintenance completed")).toBeVisible();
+  await expect(page.getByText("Backup completed")).toHaveCount(0);
+  expect(requests).toBe(beforeFilters);
+
   await page.getByLabel("Activity source").selectOption("ALL");
   await page.getByLabel("Activity severity").selectOption("INFO");
   await expect(page.getByText("prometheus started")).toBeVisible();
   await expect(page.getByText("Backup completed")).toBeVisible();
+  await expect(page.getByText("Maintenance completed")).toBeVisible();
   await expect(page.getByText("SSH is failed")).toHaveCount(0);
   expect(requests).toBe(beforeFilters);
 });
@@ -136,8 +154,9 @@ test("Activity keeps partial source failure explicit without hiding valid eviden
           { source: "DOCKER", status: "UNAVAILABLE", observedAt: null },
           activityPayload.sources[1],
           { source: "BACKUP", status: "UNAVAILABLE", observedAt: null },
+          activityPayload.sources[3],
         ],
-        items: [activityPayload.items[2]],
+        items: [activityPayload.items[1], activityPayload.items[3]],
       }),
     }),
   );
@@ -145,6 +164,7 @@ test("Activity keeps partial source failure explicit without hiding valid eviden
   await page.goto("/activity");
   await expect(page.getByText("Activity is degraded")).toBeVisible();
   await expect(page.getByText(/Unavailable: Docker, Backups/)).toBeVisible();
+  await expect(page.getByText("Maintenance completed")).toBeVisible();
   await expect(page.getByText("SSH is failed")).toBeVisible();
   await expect(page.getByText("Backup completed")).toHaveCount(0);
 });
