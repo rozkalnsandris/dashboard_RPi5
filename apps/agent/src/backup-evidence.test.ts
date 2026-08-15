@@ -74,14 +74,22 @@ describe("Phase 5C-B structured backup evidence reader", () => {
     });
   });
 
-  it("fails closed for missing paths, symlinks and group/world-writable files", async () => {
+  it("fails closed for missing, non-regular, wrong-owner, symlink and writable evidence", async () => {
     const directory = await makeDirectory();
     const missing = join(directory, "missing.json");
     await expect(
       readBackupEvidence({ path: missing, requiredUid: currentUid }),
     ).rejects.toBeInstanceOf(BackupSourceUnavailableError);
 
+    await expect(
+      readBackupEvidence({ path: directory, requiredUid: currentUid }),
+    ).rejects.toBeInstanceOf(BackupSourceUnavailableError);
+
     const target = await writeEvidence(directory, validEvidence);
+    await expect(
+      readBackupEvidence({ path: target, requiredUid: currentUid + 1 }),
+    ).rejects.toBeInstanceOf(BackupSourceUnavailableError);
+
     const link = join(directory, "link.json");
     await symlink(target, link);
     await expect(
