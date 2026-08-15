@@ -78,6 +78,7 @@ describe("startAgent", () => {
             "logs.read",
             "backups.recent",
             "maintenance.events.recent",
+            "deploy.events.recent",
           ],
         });
       } finally {
