@@ -50,9 +50,11 @@ async function readServicesFromAgent(
 ): Promise<SystemdServicesSnapshot> {
   return new Promise((resolve, reject) => {
     let settled = false;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     const finish = (callback: () => void) => {
       if (settled) return;
       settled = true;
+      if (deadline !== undefined) clearTimeout(deadline);
       callback();
     };
 
@@ -99,10 +101,11 @@ async function readServicesFromAgent(
       },
     );
 
-    req.setTimeout(timeoutMs, () => {
+    deadline = setTimeout(() => {
       req.destroy();
       finish(() => reject(new AgentServicesSourceError()));
-    });
+    }, timeoutMs);
+    deadline.unref();
     req.on("error", () => finish(() => reject(new AgentServicesSourceError())));
     req.end();
   });
