@@ -81,6 +81,26 @@ const dockerContainersFixture = {
   ],
 };
 
+const dockerEventsFixture = {
+  observedAt: "2026-08-15T13:00:00.000Z",
+  windowStart: "2026-08-15T12:00:00.000Z",
+  windowEnd: "2026-08-15T13:00:00.000Z",
+  apiVersion: "1.40" as const,
+  events: [
+    {
+      occurredAt: "2026-08-15T12:55:00.000Z",
+      action: "RESTART" as const,
+      containerId: "a".repeat(64),
+      containerName: "homeassistant",
+      image: "ghcr.io/home-assistant/home-assistant:stable",
+      health: null,
+      exitCode: null,
+      signal: null,
+      scope: "LOCAL" as const,
+    },
+  ],
+};
+
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
@@ -90,6 +110,7 @@ describe("agent health protocol", () => {
     const { app } = buildAgentApp({
       hostSummaryReader: async () => hostSummaryFixture,
       dockerContainersReader: async () => dockerContainersFixture,
+      dockerEventsReader: async () => dockerEventsFixture,
     });
     apps.push(app);
 
@@ -102,8 +123,13 @@ describe("agent health protocol", () => {
       service: "dashboard-rpi5-agent",
       mode: "SOURCE_ONLY",
       protocolVersion: 1,
-      agentVersion: "0.4.0",
-      capabilities: ["protocol.health", "host.summary", "docker.containers"],
+      agentVersion: "0.5.0",
+      capabilities: [
+        "protocol.health",
+        "host.summary",
+        "docker.containers",
+        "docker.events.recent",
+      ],
     });
     expect(new Date(payload.observedAt).toISOString()).toBe(payload.observedAt);
   });
@@ -112,6 +138,7 @@ describe("agent health protocol", () => {
     const { app } = buildAgentApp({
       hostSummaryReader: async () => hostSummaryFixture,
       dockerContainersReader: async () => dockerContainersFixture,
+      dockerEventsReader: async () => dockerEventsFixture,
     });
     apps.push(app);
 
@@ -124,6 +151,7 @@ describe("agent health protocol", () => {
     const { app } = buildAgentApp({
       hostSummaryReader: async () => hostSummaryFixture,
       dockerContainersReader: async () => dockerContainersFixture,
+      dockerEventsReader: async () => dockerEventsFixture,
     });
     apps.push(app);
 
@@ -132,12 +160,26 @@ describe("agent health protocol", () => {
     expect(response.json()).toEqual(dockerContainersFixture);
   });
 
+  it("returns the bounded Docker recent-events contract", async () => {
+    const { app } = buildAgentApp({
+      hostSummaryReader: async () => hostSummaryFixture,
+      dockerContainersReader: async () => dockerContainersFixture,
+      dockerEventsReader: async () => dockerEventsFixture,
+    });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/v1/docker/events/recent" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(dockerEventsFixture);
+  });
+
   it("normalizes unavailable host evidence without leaking details", async () => {
     const { app } = buildAgentApp({
       hostSummaryReader: async () => {
         throw new HostSourceUnavailableError();
       },
       dockerContainersReader: async () => dockerContainersFixture,
+      dockerEventsReader: async () => dockerEventsFixture,
     });
     apps.push(app);
 
@@ -152,6 +194,7 @@ describe("agent health protocol", () => {
       dockerContainersReader: async () => {
         throw new DockerSourceUnavailableError();
       },
+      dockerEventsReader: async () => dockerEventsFixture,
     });
     apps.push(app);
 
@@ -160,10 +203,26 @@ describe("agent health protocol", () => {
     expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
   });
 
+  it("normalizes unavailable Docker event evidence without leaking details", async () => {
+    const { app } = buildAgentApp({
+      hostSummaryReader: async () => hostSummaryFixture,
+      dockerContainersReader: async () => dockerContainersFixture,
+      dockerEventsReader: async () => {
+        throw new DockerSourceUnavailableError();
+      },
+    });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/v1/docker/events/recent" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: "SOURCE_UNAVAILABLE" });
+  });
+
   it("normalizes unknown routes without leaking internal details", async () => {
     const { app } = buildAgentApp({
       hostSummaryReader: async () => hostSummaryFixture,
       dockerContainersReader: async () => dockerContainersFixture,
+      dockerEventsReader: async () => dockerEventsFixture,
     });
     apps.push(app);
 
