@@ -1,10 +1,46 @@
 import { expect, test } from "@playwright/test";
 
-test("overview renders the fixture health shell without page overflow", async ({ page }) => {
+const overviewBackupSuccess = {
+  runId: "backup-success",
+  startedAt: "2026-08-15T00:00:00.000Z",
+  completedAt: "2026-08-15T00:02:00.000Z",
+  result: "SUCCESS",
+  durationSeconds: 120,
+  sizeBytes: 123_456,
+  exitCode: 0,
+};
+
+const overviewBackupPayload = {
+  observedAt: "2026-08-15T02:00:00.000Z",
+  health: "HEALTHY",
+  freshness: "FRESH",
+  latestRun: overviewBackupSuccess,
+  lastSuccessfulAt: overviewBackupSuccess.completedAt,
+  ageSeconds: 7_080,
+  policy: {
+    destinationLabel: "Encrypted Google Drive",
+    scheduleLabel: "Daily at 02:00 host local time",
+    localRetentionDays: 7,
+    remoteRetentionDays: 30,
+    freshnessBudgetHours: 30,
+  },
+  history: [overviewBackupSuccess],
+};
+
+test("overview renders live backup health without page overflow", async ({ page }) => {
+  await page.route("**/api/backups", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(overviewBackupPayload),
+    }),
+  );
+
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Raspberry Pi 5" })).toBeVisible();
-  await expect(page.getByText("Needs attention")).toBeVisible();
+  await expect(page.getByText("Backup fresh", { exact: true })).toBeVisible();
+  await expect(page.getByText("All clear", { exact: true })).toBeHidden();
   await expect(page.getByRole("heading", { name: "Docker" })).toBeVisible();
 
   const hasHorizontalOverflow = await page.evaluate(
