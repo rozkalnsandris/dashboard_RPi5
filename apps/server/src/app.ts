@@ -5,6 +5,13 @@ import {
   HostHistorySnapshotSchema,
 } from "@dashboard-rpi5/contracts/history";
 import {
+  LogSnapshotSchema,
+  LogSourcesQuerySchema,
+  LogSourcesSnapshotSchema,
+  LogsApiErrorSchema,
+  LogsQuerySchema,
+} from "@dashboard-rpi5/contracts/logs";
+import {
   SystemdServicesApiErrorSchema,
   SystemdServicesQuerySchema,
   SystemdServicesSnapshotSchema,
@@ -15,6 +22,11 @@ import Fastify from "fastify";
 import { isAbsolute } from "node:path";
 
 import {
+  createAgentLogsReaders,
+  type LogsReader,
+  type LogSourcesReader,
+} from "./agent-logs-client.js";
+import {
   createAgentServicesReader,
   type ServicesReader,
 } from "./agent-services-client.js";
@@ -24,6 +36,8 @@ interface BuildAppOptions {
   staticRoot?: string;
   historyReader?: HostHistoryReader;
   servicesReader?: ServicesReader;
+  logSourcesReader?: LogSourcesReader;
+  logsReader?: LogsReader;
 }
 
 function buildDefaultHistoryReader(): HostHistoryReader {
@@ -51,6 +65,17 @@ function buildDefaultServicesReader(): ServicesReader {
   });
 }
 
+function buildDefaultLogsReaders(): {
+  readSources: LogSourcesReader;
+  readLogs: LogsReader;
+} {
+  return createAgentLogsReaders({
+    ...(process.env.DASHBOARD_AGENT_SOCKET_PATH === undefined
+      ? {}
+      : { socketPath: process.env.DASHBOARD_AGENT_SOCKET_PATH }),
+  });
+}
+
 export function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({
     logger: false,
@@ -62,6 +87,15 @@ export function buildApp(options: BuildAppOptions = {}) {
   }).withTypeProvider<TypeBoxTypeProvider>();
   const historyReader = options.historyReader ?? buildDefaultHistoryReader();
   const servicesReader = options.servicesReader ?? buildDefaultServicesReader();
+  const defaultLogsReaders =
+    options.logSourcesReader === undefined || options.logsReader === undefined
+      ? buildDefaultLogsReaders()
+      : null;
+  const logSourcesReader = options.logSourcesReader ?? defaultLogsReaders?.readSources;
+  const logsReader = options.logsReader ?? defaultLogsReaders?.readLogs;
+  if (logSourcesReader === undefined || logsReader === undefined) {
+    throw new Error("Logs readers are not configured");
+  }
 
   app.get(
     "/api/health",
@@ -126,6 +160,56 @@ export function buildApp(options: BuildAppOptions = {}) {
 
       try {
         return await servicesReader();
+      } catch {
+        return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/logs/sources",
+    {
+      attachValidation: true,
+      schema: {
+        querystring: LogSourcesQuerySchema,
+        response: {
+          200: LogSourcesSnapshotSchema,
+          400: LogsApiErrorSchema,
+          503: LogsApiErrorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (request.validationError !== undefined) {
+        return reply.code(400).send({ error: "INVALID_REQUEST" });
+      }
+      try {
+        return await logSourcesReader();
+      } catch {
+        return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/logs",
+    {
+      attachValidation: true,
+      schema: {
+        querystring: LogsQuerySchema,
+        response: {
+          200: LogSnapshotSchema,
+          400: LogsApiErrorSchema,
+          503: LogsApiErrorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (request.validationError !== undefined) {
+        return reply.code(400).send({ error: "INVALID_REQUEST" });
+      }
+      try {
+        return await logsReader(request.query.sourceId, request.query.range);
       } catch {
         return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
       }
