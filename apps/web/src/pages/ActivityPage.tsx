@@ -7,6 +7,7 @@ import {
   Activity,
   Archive,
   Box,
+  Globe2,
   RefreshCw,
   Rocket,
   ServerCog,
@@ -45,6 +46,8 @@ function sourceLabel(source: ActivitySource): string {
       return "Maintenance";
     case "DEPLOY":
       return "Deploys";
+    case "ENDPOINT":
+      return "Endpoints";
   }
 }
 
@@ -60,6 +63,8 @@ function sourceIcon(source: ActivitySource) {
       return Wrench;
     case "DEPLOY":
       return Rocket;
+    case "ENDPOINT":
+      return Globe2;
   }
 }
 
@@ -96,7 +101,7 @@ export function ActivityPage() {
         <div>
           <p className="eyebrow">What changed</p>
           <h1 id="activity-page-title">Activity</h1>
-          <p>Bounded operational events from structured Docker, allowlisted service, backup, maintenance and root-authenticated deploy verification evidence. Failed deploy outcomes are never inferred from rollback-start text.</p>
+          <p>Bounded operational events from structured Docker, allowlisted service, backup, maintenance, root-authenticated deploy verification and normalized endpoint-transition evidence. Missing endpoint evidence is never replaced by a parallel browser-driven probe.</p>
         </div>
       </div>
 
@@ -114,6 +119,7 @@ export function ActivityPage() {
             <option value="BACKUP">Backups</option>
             <option value="MAINTENANCE">Maintenance</option>
             <option value="DEPLOY">Deploys</option>
+            <option value="ENDPOINT">Endpoints</option>
           </select>
         </label>
         <label>
@@ -141,7 +147,7 @@ export function ActivityPage() {
       {sourceFailure ? (
         <div className="logs-message logs-message--warning" role="status">
           <ShieldAlert size={18} aria-hidden="true" />
-          <div><strong>Activity evidence unavailable</strong><span>Docker, service, backup, maintenance and deploy evidence sources are all unavailable.</span></div>
+          <div><strong>Activity evidence unavailable</strong><span>Docker, service, backup, maintenance, deploy and endpoint evidence sources are all unavailable.</span></div>
         </div>
       ) : null}
 
