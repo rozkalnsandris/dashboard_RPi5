@@ -116,11 +116,15 @@ describe("Phase 5C-B structured backup evidence reader", () => {
     ).rejects.toBeInstanceOf(BackupSourceUnavailableError);
   });
 
-  it("rejects ambiguous timestamps and inconsistent result evidence", async () => {
+  it("rejects ambiguous or calendar-invalid timestamps and inconsistent result evidence", async () => {
     const cases = [
       {
         ...validEvidence,
         runs: [{ ...validEvidence.runs[0], startedAt: "2026-08-14T02:00:00" }],
+      },
+      {
+        ...validEvidence,
+        runs: [{ ...validEvidence.runs[0], startedAt: "2026-02-30T02:00:00+02:00" }],
       },
       {
         ...validEvidence,
