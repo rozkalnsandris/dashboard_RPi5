@@ -2,14 +2,17 @@ import {
   AgentErrorSchema,
   AgentHealthSchema,
   DockerContainersSnapshotSchema,
+  DockerRecentEventsSnapshotSchema,
   HostSummarySchema,
   type AgentHealth,
   type DockerContainersSnapshot,
+  type DockerRecentEventsSnapshot,
   type HostSummary,
 } from "@dashboard-rpi5/contracts";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import Fastify from "fastify";
 
+import { readRecentDockerEvents } from "./docker-events.js";
 import { readDockerContainers } from "./docker-read.js";
 import { readHostSummary } from "./host-read.js";
 import { normalizeAgentError, OperationRegistry } from "./operation-registry.js";
@@ -25,6 +28,7 @@ interface BuildAgentAppOptions {
   operationRegistry?: OperationRegistry;
   hostSummaryReader?: (signal: AbortSignal) => Promise<HostSummary>;
   dockerContainersReader?: (signal: AbortSignal) => Promise<DockerContainersSnapshot>;
+  dockerEventsReader?: (signal: AbortSignal) => Promise<DockerRecentEventsSnapshot>;
 }
 
 export function buildAgentApp(options: BuildAgentAppOptions = {}) {
@@ -34,9 +38,13 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
   const dockerContainersReader =
     options.dockerContainersReader ??
     ((signal: AbortSignal) => readDockerContainers(undefined, signal));
+  const dockerEventsReader =
+    options.dockerEventsReader ??
+    ((signal: AbortSignal) => readRecentDockerEvents(undefined, signal));
 
   operationRegistry.register("host.summary", hostSummaryReader);
   operationRegistry.register("docker.containers", dockerContainersReader);
+  operationRegistry.register("docker.events.recent", dockerEventsReader);
 
   const app = Fastify({
     logger: false,
@@ -91,6 +99,21 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
     },
     async (): Promise<DockerContainersSnapshot> =>
       operationRegistry.run<DockerContainersSnapshot>("docker.containers"),
+  );
+
+  app.get(
+    "/v1/docker/events/recent",
+    {
+      schema: {
+        response: {
+          200: DockerRecentEventsSnapshotSchema,
+          503: AgentErrorSchema,
+          504: AgentErrorSchema,
+        },
+      },
+    },
+    async (): Promise<DockerRecentEventsSnapshot> =>
+      operationRegistry.run<DockerRecentEventsSnapshot>("docker.events.recent"),
   );
 
   app.setNotFoundHandler(async (_request, reply) =>
