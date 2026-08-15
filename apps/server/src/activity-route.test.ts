@@ -9,10 +9,11 @@ const snapshot = {
   sources: [
     { source: "DOCKER" as const, status: "AVAILABLE" as const, observedAt: "2026-08-15T17:00:00.000Z" },
     { source: "SYSTEMD" as const, status: "UNAVAILABLE" as const, observedAt: null },
+    { source: "BACKUP" as const, status: "UNAVAILABLE" as const, observedAt: null },
   ],
   items: [
     {
-      id: `docker:${"a".repeat(64)}:START:2026-08-15T16:59:00.000Z:none:none`,
+      id: `docker:${"a".repeat(64)}`,
       source: "DOCKER" as const,
       severity: "INFO" as const,
       kind: "DOCKER_START" as const,
@@ -29,7 +30,7 @@ afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
 
-describe("Phase 5C-A Activity API", () => {
+describe("Phase 5C-B Activity API", () => {
   it("returns no-store bounded activity evidence and rejects every browser selector", async () => {
     const app = buildApp({ activityReader: async () => snapshot });
     apps.push(app);
@@ -44,6 +45,7 @@ describe("Phase 5C-A Activity API", () => {
       "/api/activity?since=1h",
       "/api/activity?container=homeassistant",
       "/api/activity?unit=ssh.service",
+      "/api/activity?backupPath=%2Fvar%2Flog%2Frpi5-backup.log",
     ]) {
       const rejected = await app.inject({ method: "GET", url });
       expect(rejected.statusCode).toBe(400);
