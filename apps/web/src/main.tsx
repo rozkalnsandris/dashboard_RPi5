@@ -6,6 +6,7 @@ import { RouterProvider } from "react-router/dom";
 
 import { AppShell, DockerPage, PlaceholderPage, RouteErrorPage } from "./App";
 import { ActivityPage } from "./pages/ActivityPage";
+import { BackupsPage } from "./pages/BackupsPage";
 import { LogsPage } from "./pages/LogsPage";
 import { OverviewHistoryPage } from "./pages/OverviewHistoryPage";
 import { ReliabilityStatesPage } from "./pages/ReliabilityStatesPage";
@@ -15,6 +16,8 @@ import "./styles.css";
 import "./phase1-pages.css";
 import "./logs-page.css";
 import "./activity-page.css";
+import "./backup-page.css";
+import "./backup-overview.css";
 import "./reliability-states.css";
 import "./history-panel.css";
 import "./services-page.css";
@@ -43,7 +46,7 @@ const router = createBrowserRouter([
       { path: "logs", element: <LogsPage /> },
       { path: "terminal", element: <TerminalPage /> },
       { path: "activity", element: <ActivityPage /> },
-      { path: "backups", element: <PlaceholderPage /> },
+      { path: "backups", element: <BackupsPage /> },
       { path: "deployments", element: <PlaceholderPage /> },
       { path: "settings", element: <ReliabilityStatesPage /> },
     ],
