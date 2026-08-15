@@ -1,0 +1,18 @@
+{
+  "name": "@dashboard-rpi5/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "build": "tsup src/index.ts --format esm --platform node --target node24 --clean"
+  },
+  "dependencies": {
+    "@dashboard-rpi5/contracts": "*",
+    "@fastify/static": "10.1.2",
+    "@fastify/type-provider-typebox": "6.1.0",
+    "fastify": "5.12.0"
+  }
+}

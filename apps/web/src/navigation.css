@@ -1,0 +1,13 @@
+.mobile-more-menu__item {
+  min-height: 46px;
+  cursor: pointer;
+}
+
+.mobile-more-menu__content {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  font-size: .86rem;
+}

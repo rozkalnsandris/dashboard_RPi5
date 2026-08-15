@@ -1,0 +1,87 @@
+.reliability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.reliability-card {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: #0a1018;
+}
+
+.reliability-card--warning {
+  border-color: #5c4823;
+  background: #17120b;
+}
+
+.reliability-card--danger {
+  border-color: #60333c;
+  background: #1a0f13;
+}
+
+.reliability-card--info {
+  border-color: #314767;
+  background: #0d1521;
+}
+
+.reliability-card__topline {
+  min-height: 30px;
+  display: flex;
+  align-items: flex-start;
+}
+
+.state-badge {
+  min-height: 27px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: .65rem;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.state-badge--info { color: #b9d2ff; border-color: #35527d; }
+.state-badge--warning { color: #ffd58a; border-color: #695126; }
+.state-badge--danger { color: #ffc2c9; border-color: #6b3942; }
+.state-badge--neutral { color: #c3ccd9; }
+
+.reliability-card__value {
+  display: block;
+  margin-top: 14px;
+  color: var(--text);
+  font-size: clamp(1.15rem, 5vw, 1.55rem);
+  letter-spacing: -.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.reliability-card h3 {
+  margin: 10px 0 0;
+  font-size: .84rem;
+}
+
+.reliability-card p {
+  margin: 5px 0 0;
+  color: var(--subtle);
+  font-size: .7rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 350px) {
+  .reliability-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 900px) {
+  .reliability-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
