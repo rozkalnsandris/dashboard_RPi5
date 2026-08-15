@@ -2,9 +2,17 @@ import type { HostHistoryMetric } from "@dashboard-rpi5/contracts/history";
 
 import { PrometheusSourceUnavailableError } from "./prometheus-types.js";
 
+function containsControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)) return true;
+  }
+  return false;
+}
+
 function validateNodeInstance(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
-  if (value.length === 0 || value.length > 256 || /[\u0000-\u001f\u007f]/u.test(value)) {
+  if (value.length === 0 || value.length > 256 || containsControlCharacter(value)) {
     throw new PrometheusSourceUnavailableError();
   }
   return value;
