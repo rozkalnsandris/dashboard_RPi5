@@ -18,23 +18,44 @@ async function loadJson(path) {
   return JSON.parse(await readFile(resolve(ROOT, path), "utf8"));
 }
 
-test("source Cloudflare launch contract matches production loopback boundary", async () => {
+test("source Cloudflare launch contract matches production loopback and cloudflared JWT boundary", async () => {
   const contract = await loadJson("ops/production/cloudflare-contract.json");
   const launch = await loadJson("ops/production/launch-contract.json");
   assert.deepEqual(validateCloudflareContract(contract, launch), {
-    schema: "dashboard-rpi5.cloudflare-launch.v1",
+    schema: "dashboard-rpi5.cloudflare-launch.v2",
     hostname: "dash.rozkalns.net",
     origin: "http://127.0.0.1:8787",
+    baseJwtEnforcementPoint: "cloudflared_protect_with_access",
   });
 });
 
-test("Cloudflare contract rejects route drift and weaker Access modes", async () => {
+test("Cloudflare contract rejects route drift and weaker Access policy modes", async () => {
   const contract = await loadJson("ops/production/cloudflare-contract.json");
   const launch = await loadJson("ops/production/launch-contract.json");
 
   assert.throws(() => validateCloudflareContract({ ...contract, origin: { ...contract.origin, port: 8788 } }, launch), /origin mismatch/u);
   assert.throws(() => validateCloudflareContract({ ...contract, access: { ...contract.access, bypassAllowed: true } }, launch), /forbidden policy mode/u);
+  assert.throws(() => validateCloudflareContract({ ...contract, access: { ...contract.access, emailDomainWildcardAllowed: true } }, launch), /forbidden policy mode/u);
+  assert.throws(() => validateCloudflareContract({ ...contract, access: { ...contract.access, allowValueBinding: "DASHBOARD_OWNER_DOMAIN" } }, launch), /owner policy invariant/u);
+});
+
+test("Cloudflare contract requires exact cloudflared Protect with Access JWT semantics", async () => {
+  const contract = await loadJson("ops/production/cloudflare-contract.json");
+  const launch = await loadJson("ops/production/launch-contract.json");
+
   assert.throws(() => validateCloudflareContract({ ...contract, tunnel: { ...contract.tunnel, protectWithAccess: { ...contract.tunnel.protectWithAccess, required: false } } }, launch), /Protect with Access/u);
+  assert.throws(() => validateCloudflareContract({ ...contract, tunnel: { ...contract.tunnel, protectWithAccess: { ...contract.tunnel.protectWithAccess, teamNameBinding: "WRONG_TEAM" } } }, launch), /Protect with Access/u);
+  assert.throws(() => validateCloudflareContract({ ...contract, tunnel: { ...contract.tunnel, protectWithAccess: { ...contract.tunnel.protectWithAccess, audienceBinding: "WRONG_AUD" } } }, launch), /Protect with Access/u);
+  assert.throws(() => validateCloudflareContract({ ...contract, access: { ...contract.access, baseApplicationJwtBoundary: { ...contract.access.baseApplicationJwtBoundary, enforcementPoint: "fastify_global_middleware" } } }, launch), /base application JWT boundary/u);
+  assert.throws(() => validateCloudflareContract({ ...contract, access: { ...contract.access, baseApplicationJwtBoundary: { ...contract.access.baseApplicationJwtBoundary, fastifyGlobalMiddlewareRequired: true } } }, launch), /base application JWT boundary/u);
+});
+
+
+test("Phase 11C documents cloudflared as the base JWT gate and keeps terminal verification separate", async () => {
+  const doc = await readFile(resolve(ROOT, "docs/PHASE11C_CLOUDFLARE_LAUNCH.md"), "utf8");
+  assert.match(doc, /cloudflared` Protect with Access before origin proxy/iu);
+  assert.match(doc, /not required to register a global Access-JWT middleware/iu);
+  assert.match(doc, /cloudflare-access-owner-auth\.ts.*independent application-layer cryptographic verifier/isu);
 });
 
 test("activation bindings accept only exact reviewed value classes", () => {

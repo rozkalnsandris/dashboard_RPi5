@@ -1,5 +1,5 @@
 {
-  "schema": "dashboard-rpi5.cloudflare-launch.v1",
+  "schema": "dashboard-rpi5.cloudflare-launch.v2",
   "sourceOnly": true,
   "hostname": "dash.rozkalns.net",
   "origin": {
@@ -19,11 +19,12 @@
     "emailDomainWildcardAllowed": false,
     "bypassAllowed": false,
     "serviceTokenOnlyHumanAccessAllowed": false,
-    "originJwtValidation": {
-      "required": true,
-      "header": "Cf-Access-Jwt-Assertion",
+    "baseApplicationJwtBoundary": {
+      "enforcementPoint": "cloudflared_protect_with_access",
+      "assertionHeader": "Cf-Access-Jwt-Assertion",
       "teamNameBinding": "DASHBOARD_CLOUDFLARE_TEAM_NAME",
-      "audienceBinding": "DASHBOARD_CLOUDFLARE_APPLICATION_AUDIENCE"
+      "audienceBinding": "DASHBOARD_CLOUDFLARE_APPLICATION_AUDIENCE",
+      "fastifyGlobalMiddlewareRequired": false
     }
   },
   "tunnel": {
@@ -33,6 +34,8 @@
     "tunnelIdBinding": "DASHBOARD_CLOUDFLARE_TUNNEL_ID",
     "protectWithAccess": {
       "required": true,
+      "validationPoint": "before_origin_proxy",
+      "assertionHeader": "Cf-Access-Jwt-Assertion",
       "teamNameBinding": "DASHBOARD_CLOUDFLARE_TEAM_NAME",
       "audienceBinding": "DASHBOARD_CLOUDFLARE_APPLICATION_AUDIENCE"
     }
@@ -45,8 +48,8 @@
     "create_exact_owner_allow_policy",
     "verify_access_deny_by_default",
     "publish_tunnel_route",
+    "verify_tunnel_access_jwt_gate",
     "verify_unauthenticated_block",
-    "verify_origin_jwt",
     "authenticated_smoke"
   ]
 }
