@@ -1,16 +1,20 @@
 import type { Readable, Writable } from "node:stream";
 
-import { loadTerminalNativePtyFactory, type TerminalNativePtyFactory, type TerminalNativePtyProcess } from "./native-pty.js";
+import {
+  loadTerminalNativePtyFactory,
+  type TerminalNativePtyFactory,
+  type TerminalNativePtyProcess,
+} from "./native-pty.js";
 import {
   parseTerminalLocalClientFrame,
   serializeTerminalLocalServerFrame,
   splitTerminalLocalOutput,
   TerminalLocalLineDecoder,
-  TerminalLocalProtocolError,
   TERMINAL_LOCAL_ABSOLUTE_TIMEOUT_MS,
   TERMINAL_LOCAL_IDLE_TIMEOUT_MS,
   TERMINAL_LOCAL_MAX_PENDING_OUTPUT_BYTES,
   TERMINAL_LOCAL_OPEN_TIMEOUT_MS,
+  TERMINAL_LOCAL_OUTPUT_DRAIN_TIMEOUT_MS,
   type TerminalLocalErrorCode,
   type TerminalLocalServerFrame,
 } from "./local-protocol.js";
@@ -40,6 +44,7 @@ export function runTerminalLocalSession(options: TerminalLocalSessionOptions): P
   let openTimer: NodeJS.Timeout | undefined;
   let idleTimer: NodeJS.Timeout | undefined;
   let absoluteTimer: NodeJS.Timeout | undefined;
+  let outputDrainTimer: NodeJS.Timeout | undefined;
   let outputBlocked = false;
   let outputEnding = false;
   let pendingOutputBytes = 0;
@@ -51,6 +56,11 @@ export function runTerminalLocalSession(options: TerminalLocalSessionOptions): P
   });
 
   const finishDone = once(() => resolveDone());
+
+  const clearOutputDrainTimer = () => {
+    if (outputDrainTimer) clearTimer(outputDrainTimer);
+    outputDrainTimer = undefined;
+  };
 
   const clearSessionTimers = () => {
     if (openTimer) clearTimer(openTimer);
@@ -68,10 +78,20 @@ export function runTerminalLocalSession(options: TerminalLocalSessionOptions): P
     ptyExitSubscription = undefined;
   };
 
+  const forceOutputClosed = () => {
+    clearOutputDrainTimer();
+    if (!output.destroyed) output.destroy();
+    finishDone();
+  };
+
   const endOutputWhenFlushed = () => {
     outputEnding = true;
     if (!outputBlocked && outputQueue.length === 0 && !output.writableEnded && !output.destroyed) {
       output.end();
+      return;
+    }
+    if (!outputDrainTimer && !output.destroyed && !output.writableEnded) {
+      outputDrainTimer = setTimer(forceOutputClosed, TERMINAL_LOCAL_OUTPUT_DRAIN_TIMEOUT_MS);
     }
   };
 
@@ -86,6 +106,7 @@ export function runTerminalLocalSession(options: TerminalLocalSessionOptions): P
     if (outputBlocked) {
       output.once("drain", onDrain);
     } else if (outputEnding && !output.writableEnded && !output.destroyed) {
+      clearOutputDrainTimer();
       output.end();
     }
   };
@@ -119,7 +140,7 @@ export function runTerminalLocalSession(options: TerminalLocalSessionOptions): P
     pty = undefined;
   };
 
-  const closeSession = (options: {
+  const closeSession = (closeOptions: {
     killPty: boolean;
     errorCode?: TerminalLocalErrorCode;
     exit?: { code: number | null; signal: number | null };
@@ -131,14 +152,16 @@ export function runTerminalLocalSession(options: TerminalLocalSessionOptions): P
     input.removeAllListeners("end");
     input.removeAllListeners("error");
 
-    if (options.killPty) cleanupPty();
+    if (closeOptions.killPty) cleanupPty();
     else {
       disposePtySubscriptions();
       pty = undefined;
     }
 
-    if (options.errorCode) enqueueFrame({ v: 1, type: "error", code: options.errorCode });
-    if (options.exit) enqueueFrame({ v: 1, type: "exit", ...options.exit });
+    if (closeOptions.errorCode) {
+      enqueueFrame({ v: 1, type: "error", code: closeOptions.errorCode });
+    }
+    if (closeOptions.exit) enqueueFrame({ v: 1, type: "exit", ...closeOptions.exit });
     endOutputWhenFlushed();
   };
 
@@ -272,6 +295,7 @@ export function runTerminalLocalSession(options: TerminalLocalSessionOptions): P
   });
   input.once("error", () => closeSession({ killPty: true }));
   output.once("error", () => {
+    clearOutputDrainTimer();
     if (state !== "closed") {
       state = "closed";
       clearSessionTimers();
@@ -279,7 +303,10 @@ export function runTerminalLocalSession(options: TerminalLocalSessionOptions): P
     }
     finishDone();
   });
-  output.once("finish", finishDone);
+  output.once("finish", () => {
+    clearOutputDrainTimer();
+    finishDone();
+  });
 
   openTimer = setTimer(
     () => closeSession({ killPty: false, errorCode: "PROTOCOL_ERROR" }),
