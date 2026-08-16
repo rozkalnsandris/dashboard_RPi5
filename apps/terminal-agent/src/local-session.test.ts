@@ -90,6 +90,7 @@ describe("terminal local session", () => {
     expect(session.pty.write).toHaveBeenCalledWith("pwd\r");
     expect(session.pty.resize).toHaveBeenCalledWith(120, 40);
     expect(session.pty.kill).toHaveBeenCalledTimes(1);
+    expect(session.input.destroyed).toBe(true);
     expect(session.text()).toContain('"type":"ready"');
   });
 
