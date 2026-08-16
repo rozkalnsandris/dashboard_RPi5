@@ -31,12 +31,14 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
   "ops/production/cloudflare-contract.json",
   "ops/production/cloudflare.env.example",
   "ops/production/release-activation-contract.json",
+  "ops/production/host-readiness-contract.json",
   "ops/systemd/dashboard-rpi5-web.service",
   "ops/systemd/dashboard-rpi5-agent.service",
   "ops/systemd/dashboard-rpi5-terminal.socket",
   "ops/systemd/dashboard-rpi5-terminal@.service",
   "tools/production-candidate-manifest.mjs",
   "tools/production-release-controller.mjs",
+  "tools/production-host-readiness.mjs",
 ]);
 
 const FULL_SHA = /^[0-9a-f]{40}$/u;
