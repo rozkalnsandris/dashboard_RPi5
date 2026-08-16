@@ -1,0 +1,233 @@
+.full-terminal-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.full-terminal-heading {
+  min-height: 42px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.full-terminal-heading h2 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: -.02em;
+}
+
+.terminal-session-state {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: .7rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.terminal-session-state--ready {
+  border-color: #29523a;
+  background: #0d2317;
+  color: #c5f7d8;
+}
+
+.terminal-session-state--starting,
+.terminal-session-state--connecting {
+  border-color: #405679;
+  background: #121e30;
+  color: #dbe7ff;
+}
+
+.terminal-session-state--unavailable,
+.terminal-session-state--denied,
+.terminal-session-state--auth-unavailable,
+.terminal-session-state--error {
+  border-color: #5a342f;
+  background: #1b0f0d;
+  color: #ffb4a8;
+}
+
+.full-terminal-summary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  margin-bottom: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.full-terminal-summary svg {
+  margin-top: 1px;
+  color: #9bb7ff;
+}
+
+.full-terminal-summary p,
+.full-terminal-privacy,
+.full-terminal-input-notice {
+  margin: 0;
+  font-size: .76rem;
+  line-height: 1.5;
+}
+
+.full-terminal-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.full-terminal-button {
+  min-width: 0;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+  font-size: .78rem;
+  font-weight: 820;
+}
+
+.full-terminal-button--primary {
+  border-color: #405679;
+  background: #15243b;
+  color: #e8efff;
+}
+
+.full-terminal-button[data-disabled] {
+  cursor: not-allowed;
+  opacity: .48;
+}
+
+.full-terminal-button:focus-visible {
+  outline: 3px solid #9bb7ff;
+  outline-offset: 2px;
+}
+
+.full-terminal-input-notice {
+  margin-bottom: 10px;
+  padding: 9px 11px;
+  border: 1px solid #664b24;
+  border-radius: 10px;
+  background: #1c1509;
+  color: #f5d58b;
+}
+
+.full-terminal-frame {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid #27364b;
+  border-radius: 14px;
+  background: #05080d;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.015);
+}
+
+.full-terminal-frame:focus-within {
+  border-color: #5276b5;
+  box-shadow: 0 0 0 2px rgba(95,140,255,.12);
+}
+
+.full-terminal-viewport {
+  width: 100%;
+  height: clamp(280px, 48dvh, 520px);
+  min-width: 0;
+  min-height: 280px;
+  padding: 9px;
+  overflow: hidden;
+  background: #05080d;
+}
+
+.full-terminal-viewport .xterm {
+  width: 100%;
+  height: 100%;
+}
+
+.full-terminal-viewport .xterm-screen,
+.full-terminal-viewport .xterm-viewport {
+  max-width: 100%;
+}
+
+.full-terminal-viewport .xterm-viewport {
+  overscroll-behavior: contain;
+}
+
+.full-terminal-viewport .xterm-helper-textarea {
+  font-size: 16px !important;
+}
+
+.full-terminal-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px;
+  color: #74849a;
+  text-align: center;
+  pointer-events: none;
+}
+
+.full-terminal-placeholder span {
+  max-width: 340px;
+  font-size: .78rem;
+  line-height: 1.5;
+}
+
+.full-terminal-privacy {
+  margin-top: 10px;
+  color: var(--subtle);
+}
+
+@media (min-width: 520px) {
+  .full-terminal-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 900px) {
+  .full-terminal-panel {
+    padding: 16px;
+  }
+
+  .full-terminal-viewport {
+    height: clamp(420px, 58dvh, 680px);
+    min-height: 420px;
+    padding: 11px;
+  }
+
+  .full-terminal-controls {
+    grid-template-columns: minmax(170px, .8fr) minmax(170px, .8fr) minmax(150px, .6fr);
+    justify-content: start;
+    max-width: 620px;
+  }
+}
+
+@media (max-height: 500px) {
+  .full-terminal-viewport {
+    height: 220px;
+    min-height: 220px;
+  }
+}
