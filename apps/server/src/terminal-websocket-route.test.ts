@@ -1,3 +1,5 @@
+import Fastify from "fastify";
+import { Socket } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "./app.js";
@@ -8,6 +10,8 @@ import {
 } from "./terminal-session-security.js";
 import { createDefaultTerminalRuntime, type TerminalRuntime } from "./terminal-runtime.js";
 import {
+  registerTerminalWebSocketPlugin,
+  registerTerminalWebSocketRoute,
   TERMINAL_WEBSOCKET_MAX_PAYLOAD_BYTES,
   TERMINAL_WEBSOCKET_PATH,
 } from "./terminal-websocket-route.js";
@@ -67,6 +71,16 @@ async function mintSession(app: ReturnType<typeof buildApp>): Promise<string> {
   });
   expect(response.statusCode).toBe(201);
   return (response.json() as { sessionToken: string }).sessionToken;
+}
+
+function mintSessionDirect(runtime: TerminalRuntime): string {
+  const result = runtime.sessionRegistry.createSession({
+    terminalEnabled: true,
+    ownerAuthVerified: true,
+    origin: TERMINAL_EXPECTED_ORIGIN,
+  });
+  if (!result.created) throw new Error("test terminal session was not created");
+  return result.session.token;
 }
 
 async function waitForClose(socket: {
@@ -165,20 +179,26 @@ describe("terminal WebSocket route", () => {
     await app.close();
   });
 
-  it("bounds inbound WebSocket messages before application handling", async () => {
+  it("keeps the exact 4 KiB WebSocket max-payload gate ahead of bridge handling", async () => {
     const runtime = enabledRuntime();
-    const app = buildApp({ terminalRuntime: runtime });
-    const token = await mintSession(app);
+    const token = mintSessionDirect(runtime);
+    const app = Fastify();
+    registerTerminalWebSocketPlugin(app);
+    registerTerminalWebSocketRoute(
+      app,
+      runtime.websocketAdmission,
+      runtime.sessionRegistry,
+      () => new Socket(),
+    );
     await app.ready();
+
     const socket = await app.injectWS(TERMINAL_WEBSOCKET_PATH, {
       headers: websocketHeaders(token),
     });
-
     const closed = waitForClose(socket);
     socket.send(Buffer.alloc(TERMINAL_WEBSOCKET_MAX_PAYLOAD_BYTES + 1, 0x61));
-    const result = await closed;
-    expect([1009, 1011]).toContain(result.code);
-    expect(result.reason).not.toContain(token);
+
+    await expect(closed).resolves.toMatchObject({ code: 1009 });
     expect(runtime.sessionRegistry.activeCount()).toBe(0);
     await app.close();
   });
