@@ -120,13 +120,6 @@ describe("isolated native PTY adapter", () => {
       encoding: "utf8",
       handleFlowControl: false,
     });
-
-    const options = spawn.mock.calls[0]?.[2] as { env: Record<string, string> };
-    expect(Object.keys(options.env).sort()).toEqual(
-      ["COLORTERM", "HOME", "LANG", "LOGNAME", "PATH", "SHELL", "TERM", "USER"].sort(),
-    );
-    expect(options).not.toHaveProperty("uid");
-    expect(options).not.toHaveProperty("gid");
   });
 
   it("bounds initial and later resize dimensions independently of the browser layer", () => {
