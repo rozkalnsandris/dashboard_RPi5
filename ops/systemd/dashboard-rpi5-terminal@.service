@@ -1,6 +1,9 @@
 # SOURCE-ONLY BLUEPRINT.
 # Do not install, enable, start, restart, or otherwise activate this unit
 # without separate owner authorization under issue #1.
+#
+# The terminal worker is deliberately isolated from the web and read-agent
+# identities. The production account must have no supplementary groups.
 
 [Unit]
 Description=dashboard_RPi5 contained terminal session %i
@@ -12,7 +15,9 @@ User=dashboard-rpi5-terminal
 Group=dashboard-rpi5-terminal
 SupplementaryGroups=
 WorkingDirectory=/var/lib/dashboard-rpi5-terminal
-ExecStart=/usr/bin/node /opt/dashboard_RPi5/apps/terminal-agent/dist/session-stdio-entry.js
+StateDirectory=dashboard-rpi5-terminal
+StateDirectoryMode=0700
+ExecStart=/usr/bin/node /opt/dashboard_RPi5/current/apps/terminal-agent/dist/session-stdio-entry.js
 StandardInput=socket
 StandardOutput=socket
 StandardError=journal

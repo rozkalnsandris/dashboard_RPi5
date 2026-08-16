@@ -1,0 +1,37 @@
+{
+  "schema": "dashboard-rpi5.production-launch.v1",
+  "release": {
+    "root": "/opt/dashboard_RPi5/releases",
+    "current": "/opt/dashboard_RPi5/current",
+    "configDir": "/etc/dashboard-rpi5"
+  },
+  "web": {
+    "user": "dashboard-rpi5-web",
+    "group": "dashboard-rpi5-web",
+    "agentClientGroup": "dashboard-rpi5-agent-client",
+    "terminalClientGroup": "dashboard-rpi5-terminal-client",
+    "host": "127.0.0.1",
+    "port": 8787,
+    "webRoot": "/opt/dashboard_RPi5/current/apps/web/dist",
+    "agentSocket": "/run/dashboard-rpi5/agent.sock",
+    "terminalEnabledByDefault": false
+  },
+  "agent": {
+    "user": "dashboard-rpi5-agent",
+    "group": "dashboard-rpi5-agent-client",
+    "socket": "/run/dashboard-rpi5/agent.sock",
+    "runtimeDirectory": "/run/dashboard-rpi5",
+    "quickCommandsEnabledByDefault": false
+  },
+  "terminal": {
+    "user": "dashboard-rpi5-terminal",
+    "group": "dashboard-rpi5-terminal",
+    "clientGroup": "dashboard-rpi5-terminal-client",
+    "stateDirectory": "/var/lib/dashboard-rpi5-terminal",
+    "socket": "/run/dashboard-rpi5-terminal.sock",
+    "socketMode": "0660",
+    "maxConnections": 1,
+    "runtimeMaxSeconds": 1800,
+    "idleMaxSeconds": 300
+  }
+}
