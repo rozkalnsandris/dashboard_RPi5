@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, readlink, rm, symlink, unlink, writeFile } fr
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   PRODUCTION_CANDIDATE_DIRECTORY_ROOTS,
@@ -19,7 +20,7 @@ import {
 
 const SHA_A = "a".repeat(40);
 const SHA_B = "b".repeat(40);
-const ROOT = resolve(new URL("..", import.meta.url).pathname);
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 async function loadContract() {
   return JSON.parse(await readFile(resolve(ROOT, "ops/production/release-activation-contract.json"), "utf8"));
@@ -154,7 +155,7 @@ test("candidate symlink and tampered manifest escape are fail-closed", async (t)
   );
 
   const clean = await makeCandidate(t, SHA_A, "clean");
-  const tampered = structuredClone(clean.manifest);
+  const tampered = JSON.parse(JSON.stringify(clean.manifest));
   tampered.files[0].path = "../escape";
   const tamperedPath = resolve(clean.workspace, "tampered.json");
   await writeFile(tamperedPath, `${JSON.stringify(tampered)}\n`, "utf8");
