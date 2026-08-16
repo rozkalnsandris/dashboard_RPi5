@@ -97,6 +97,7 @@ export function createTerminalNativePtyFactory(
     TERM: TERMINAL_NATIVE_TERM,
     COLORTERM: "truecolor",
     LANG: TERMINAL_NATIVE_LANG,
+    PWD: identity.homedir,
   });
 
   return {
