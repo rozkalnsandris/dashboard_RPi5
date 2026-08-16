@@ -18,7 +18,7 @@ export function TerminalPage() {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
-  const command = useMutation({ mutationFn: runQuickCommand });
+  const command = useMutation({ mutationFn: (commandId) => runQuickCommand(commandId) });
 
   const resultText = command.isPending
     ? "Running bounded read-only diagnostic…"
