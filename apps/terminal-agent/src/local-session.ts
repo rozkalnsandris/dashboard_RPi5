@@ -274,10 +274,7 @@ export function runTerminalLocalSession(options: TerminalLocalSessionOptions): P
     if (state === "closed") return;
     try {
       const frames = decoder.push(typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk);
-      for (const frame of frames) {
-        if (state === "closed") break;
-        handleFrame(frame);
-      }
+      for (const frame of frames) handleFrame(frame);
     } catch {
       closeSession({ killPty: true, errorCode: "PROTOCOL_ERROR" });
     }
