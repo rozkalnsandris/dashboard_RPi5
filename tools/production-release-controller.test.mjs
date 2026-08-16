@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, readlink, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { copyFile, mkdtemp, mkdir, readFile, readlink, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
@@ -9,6 +10,8 @@ import {
   PRODUCTION_CANDIDATE_DIRECTORY_ROOTS,
   PRODUCTION_CANDIDATE_FILE_ROOTS,
   createProductionCandidateManifest,
+  verifyInstalledProductionCandidateManifest,
+  verifyProductionCandidateManifest,
 } from "./production-candidate-manifest.mjs";
 import {
   applyReleaseActivation,
@@ -22,6 +25,8 @@ const SHA_A = "a".repeat(40);
 const SHA_B = "b".repeat(40);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const APPLY_LOCK_NAME = ".dashboard-release-controller.lock";
+const MANIFEST_MARKER = ".dashboard-production-candidate.json";
+const HISTORICAL_OMITTED_PATH = "tools/production-runtime-smoke.mjs";
 
 async function loadContract() {
   return JSON.parse(await readFile(resolve(ROOT, "ops/production/release-activation-contract.json"), "utf8"));
@@ -51,6 +56,40 @@ async function makeCandidate(t, sha, variant) {
   const manifestPath = resolve(workspace, "candidate-manifest.json");
   await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, "utf8");
   return { workspace, candidateRoot, manifestPath, manifest };
+}
+
+function historicalManifestFrom(candidateManifest, omittedPath = HISTORICAL_OMITTED_PATH) {
+  const files = candidateManifest.files.filter((entry) => entry.path !== omittedPath);
+  assert.equal(files.length, candidateManifest.files.length - 1);
+  const core = {
+    schema: candidateManifest.schema,
+    sourceSha: candidateManifest.sourceSha,
+    releasePath: candidateManifest.releasePath,
+    nodeMajor: candidateManifest.nodeMajor,
+    hashAlgorithm: candidateManifest.hashAlgorithm,
+    fileCount: files.length,
+    totalBytes: files.reduce((total, entry) => total + entry.bytes, 0),
+    files,
+  };
+  return {
+    ...core,
+    candidateSha256: createHash("sha256").update(JSON.stringify(core), "utf8").digest("hex"),
+  };
+}
+
+async function installHistoricalRelease({ activationRoot, candidate, makeCurrent = true }) {
+  const releaseDir = resolve(activationRoot, "releases", candidate.manifest.sourceSha);
+  await mkdir(releaseDir, { recursive: true });
+  const manifest = historicalManifestFrom(candidate.manifest);
+  for (const entry of manifest.files) {
+    const source = resolve(candidate.candidateRoot, entry.path);
+    const destination = resolve(releaseDir, entry.path);
+    await mkdir(dirname(destination), { recursive: true });
+    await copyFile(source, destination);
+  }
+  await writeFile(resolve(releaseDir, MANIFEST_MARKER), `${JSON.stringify(manifest)}\n`, "utf8");
+  if (makeCurrent) await symlink(`releases/${candidate.manifest.sourceSha}`, resolve(activationRoot, "current"));
+  return { releaseDir, manifest };
 }
 
 async function pathExists(path) {
@@ -97,7 +136,7 @@ test("apply copies only manifest files, verifies marker and activates relative c
   assert.equal(result.releasesDeleted, 0);
   assert.equal(await readlink(resolve(activationRoot, "current")), `releases/${SHA_A}`);
   assert.equal(await pathExists(resolve(activationRoot, APPLY_LOCK_NAME)), false);
-  const marker = JSON.parse(await readFile(resolve(activationRoot, "releases", SHA_A, ".dashboard-production-candidate.json"), "utf8"));
+  const marker = JSON.parse(await readFile(resolve(activationRoot, "releases", SHA_A, MANIFEST_MARKER), "utf8"));
   assert.equal(marker.candidateSha256, candidate.manifest.candidateSha256);
 });
 
@@ -136,6 +175,110 @@ test("activation and releases roots reject symlinks instead of following them", 
     planReleaseActivation({ activationRoot, candidateRoot: candidate.candidateRoot, manifestPath: candidate.manifestPath, sourceSha: SHA_A, contract }),
     /releases root must be a real directory/u,
   );
+});
+
+test("historical installed release remains valid after current allowlist grows", async (t) => {
+  const contract = await loadContract();
+  const historicalCandidate = await makeCandidate(t, SHA_A, "historical");
+  const nextCandidate = await makeCandidate(t, SHA_B, "next");
+  const activationRoot = resolve(historicalCandidate.workspace, "activation");
+  const historical = await installHistoricalRelease({ activationRoot, candidate: historicalCandidate });
+
+  await verifyInstalledProductionCandidateManifest({
+    rootDir: historical.releaseDir,
+    sourceSha: SHA_A,
+    manifest: historical.manifest,
+  });
+  await assert.rejects(
+    verifyProductionCandidateManifest({ rootDir: historical.releaseDir, sourceSha: SHA_A, manifest: historical.manifest }),
+    /production-runtime-smoke|ENOENT|exact build contents/u,
+  );
+
+  const plan = await planReleaseActivation({
+    activationRoot,
+    candidateRoot: nextCandidate.candidateRoot,
+    manifestPath: nextCandidate.manifestPath,
+    sourceSha: SHA_B,
+    contract,
+  });
+  assert.equal(plan.observedCurrent, SHA_A);
+  assert.equal(plan.targetRelease, "absent");
+  assert.deepEqual(plan.operations, ["copy_manifest_allowlisted_release", "write_verified_manifest_marker", "atomic_current_symlink_swap"]);
+});
+
+test("historical installed manifest rejects digest, tree, traversal and symlink drift", async (t) => {
+  const candidate = await makeCandidate(t, SHA_A, "historical-integrity");
+
+  const digestRoot = resolve(candidate.workspace, "activation-digest");
+  const digestFixture = await installHistoricalRelease({ activationRoot: digestRoot, candidate });
+  await assert.rejects(
+    verifyInstalledProductionCandidateManifest({
+      rootDir: digestFixture.releaseDir,
+      sourceSha: SHA_A,
+      manifest: { ...digestFixture.manifest, candidateSha256: "0".repeat(64) },
+    }),
+    /manifest digest mismatch/u,
+  );
+
+  const missingRoot = resolve(candidate.workspace, "activation-missing");
+  const missingFixture = await installHistoricalRelease({ activationRoot: missingRoot, candidate });
+  await unlink(resolve(missingFixture.releaseDir, missingFixture.manifest.files[0].path));
+  await assert.rejects(
+    verifyInstalledProductionCandidateManifest({ rootDir: missingFixture.releaseDir, sourceSha: SHA_A, manifest: missingFixture.manifest }),
+    /release tree does not match/u,
+  );
+
+  const extraRoot = resolve(candidate.workspace, "activation-extra");
+  const extraFixture = await installHistoricalRelease({ activationRoot: extraRoot, candidate });
+  await writeFile(resolve(extraFixture.releaseDir, "unexpected.txt"), "drift\n", "utf8");
+  await assert.rejects(
+    verifyInstalledProductionCandidateManifest({ rootDir: extraFixture.releaseDir, sourceSha: SHA_A, manifest: extraFixture.manifest }),
+    /release tree does not match/u,
+  );
+
+  const traversalRoot = resolve(candidate.workspace, "activation-traversal");
+  const traversalFixture = await installHistoricalRelease({ activationRoot: traversalRoot, candidate });
+  const traversalManifest = JSON.parse(JSON.stringify(traversalFixture.manifest));
+  traversalManifest.files[0].path = "../escape";
+  await assert.rejects(
+    verifyInstalledProductionCandidateManifest({ rootDir: traversalFixture.releaseDir, sourceSha: SHA_A, manifest: traversalManifest }),
+    /path escapes release root/u,
+  );
+
+  const symlinkRoot = resolve(candidate.workspace, "activation-symlink");
+  const symlinkFixture = await installHistoricalRelease({ activationRoot: symlinkRoot, candidate });
+  const firstPath = resolve(symlinkFixture.releaseDir, symlinkFixture.manifest.files[0].path);
+  const replacement = resolve(candidate.workspace, "historical-replacement.txt");
+  await writeFile(replacement, await readFile(firstPath));
+  await unlink(firstPath);
+  await symlink(replacement, firstPath);
+  await assert.rejects(
+    verifyInstalledProductionCandidateManifest({ rootDir: symlinkFixture.releaseDir, sourceSha: SHA_A, manifest: symlinkFixture.manifest }),
+    /installed release symlink is forbidden/u,
+  );
+});
+
+test("historical installed release remains a verified rollback target", async (t) => {
+  const contract = await loadContract();
+  const historicalCandidate = await makeCandidate(t, SHA_A, "historical-rollback");
+  const nextCandidate = await makeCandidate(t, SHA_B, "next-rollback");
+  const activationRoot = resolve(historicalCandidate.workspace, "activation");
+  await installHistoricalRelease({ activationRoot, candidate: historicalCandidate });
+
+  const applied = await applyReleaseActivation({
+    activationRoot,
+    candidateRoot: nextCandidate.candidateRoot,
+    manifestPath: nextCandidate.manifestPath,
+    sourceSha: SHA_B,
+    expectedCurrent: SHA_A,
+    contract,
+  });
+  assert.equal(applied.currentRelease, SHA_B);
+
+  const rollbackPlan = await planReleaseRollback({ activationRoot, rollbackSha: SHA_A, contract });
+  assert.equal(rollbackPlan.observedCurrent, SHA_B);
+  assert.equal(rollbackPlan.rollbackSha, SHA_A);
+  assert.deepEqual(rollbackPlan.operations, ["atomic_current_symlink_swap"]);
 });
 
 test("stale expected-current blocks before a second release is written", async (t) => {
@@ -177,7 +320,7 @@ test("rollback rejects an unverified target release", async (t) => {
   await applyReleaseActivation({ activationRoot, candidateRoot: first.candidateRoot, manifestPath: first.manifestPath, sourceSha: SHA_A, expectedCurrent: "none", contract });
   const fake = resolve(activationRoot, "releases", SHA_B);
   await mkdir(fake, { recursive: true });
-  await writeFile(resolve(fake, ".dashboard-production-candidate.json"), "{}\n", "utf8");
+  await writeFile(resolve(fake, MANIFEST_MARKER), "{}\n", "utf8");
   await assert.rejects(planReleaseRollback({ activationRoot, rollbackSha: SHA_B, contract }), /candidate manifest schema mismatch/u);
 });
 
