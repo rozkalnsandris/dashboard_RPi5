@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const TOKEN_A = "a".repeat(64);
 const catalog = {
@@ -8,14 +8,17 @@ const catalog = {
   ],
 };
 
-async function mockQuickCommands(page: Parameters<typeof test>[0] extends never ? never : never) {
-  void page;
-}
-
-async function installQuickCommandCatalog(page: import("@playwright/test").Page) {
+async function installQuickCommandCatalog(page: Page) {
   await page.route("**/api/quick-commands", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(catalog) }),
   );
+}
+
+function resizeFrameCount(messages: readonly string[]): number {
+  return messages.filter((message) => {
+    const parsed = JSON.parse(message) as Record<string, unknown>;
+    return parsed.type === "resize";
+  }).length;
 }
 
 test("full terminal requires explicit start, keeps capability out of DOM/storage and translates xterm input", async ({ page }, testInfo) => {
@@ -83,10 +86,7 @@ test("full terminal requires explicit start, keeps capability out of DOM/storage
   }).join("");
   expect(joinedInput).toContain("pwd");
   expect(joinedInput).toContain("\r");
-  expect(clientFrames.some((frame) => {
-    const parsed = JSON.parse(frame) as Record<string, unknown>;
-    return parsed.type === "resize";
-  })).toBe(true);
+  expect(resizeFrameCount(clientFrames)).toBeGreaterThan(0);
 });
 
 test("A55 terminal controls remain touch-sized and refit after a mobile viewport-height change", async ({ page }, testInfo) => {
@@ -130,11 +130,9 @@ test("A55 terminal controls remain touch-sized and refit after a mobile viewport
   expect(initialBox?.width ?? 9999).toBeLessThanOrEqual(412);
   expect(initialBox?.height ?? 0).toBeGreaterThanOrEqual(280);
 
-  const resizeCountBefore = clientFrames.filter((message) => JSON.parse(message).type === "resize").length;
+  const resizeCountBefore = resizeFrameCount(clientFrames);
   await page.setViewportSize({ width: 412, height: 640 });
-  await expect.poll(
-    () => clientFrames.filter((message) => JSON.parse(message).type === "resize").length,
-  ).toBeGreaterThan(resizeCountBefore);
+  await expect.poll(() => resizeFrameCount(clientFrames)).toBeGreaterThan(resizeCountBefore);
 
   const hasHorizontalOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
