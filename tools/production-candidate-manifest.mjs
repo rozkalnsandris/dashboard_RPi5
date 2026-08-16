@@ -37,6 +37,7 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
   "ops/systemd/dashboard-rpi5-terminal.socket",
   "ops/systemd/dashboard-rpi5-terminal@.service",
   "tools/production-candidate-manifest.mjs",
+  "tools/production-runtime-smoke.mjs",
   "tools/production-release-controller.mjs",
   "tools/production-host-readiness.mjs",
 ]);

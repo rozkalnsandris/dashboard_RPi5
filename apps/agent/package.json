@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "build": "tsup src/index.ts --format esm --platform node --target node24 --clean"
+    "build": "tsup --config tsup.config.ts"
   },
   "dependencies": {
     "@dashboard-rpi5/contracts": "*",

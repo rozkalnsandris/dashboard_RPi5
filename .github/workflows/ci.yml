@@ -53,6 +53,15 @@ jobs:
           node tools/production-candidate-manifest.mjs --root . --sha "$DASHBOARD_CANDIDATE_SHA" > /tmp/dashboard-rpi5-production-candidate.json
           node tools/production-candidate-manifest.mjs --root . --sha "$DASHBOARD_CANDIDATE_SHA" --verify /tmp/dashboard-rpi5-production-candidate.json
 
+      - name: Validate manifest-only base runtime
+        env:
+          DASHBOARD_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node tools/production-runtime-smoke.mjs \
+            --root . \
+            --manifest /tmp/dashboard-rpi5-production-candidate.json \
+            --sha "$DASHBOARD_CANDIDATE_SHA"
+
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
