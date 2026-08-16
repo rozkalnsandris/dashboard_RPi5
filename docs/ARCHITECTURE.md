@@ -25,7 +25,7 @@ flowchart LR
 
     B --> A --> T --> W
     W --> X
-    W -. later terminal bridge .-> Y
+    W -. source-only authenticated terminal bridge .-> Y
     X --> D
     X --> J
     X --> R
@@ -56,7 +56,7 @@ Responsibilities:
 - query Prometheus for historical metrics;
 - communicate with local helpers only through narrow Unix-socket protocols;
 - enforce request validation and response shaping;
-- host the authenticated terminal WebSocket gateway only after the terminal phase is authorized.
+- host the authenticated terminal WebSocket gateway only behind the explicit terminal gate.
 
 Must not:
 
@@ -64,6 +64,8 @@ Must not:
 - receive Docker socket directly;
 - load `node-pty`;
 - run as root.
+
+Phase 9I adds the source-only terminal bridge in this process. The bridge can connect only to the fixed filesystem path `/run/dashboard-rpi5-terminal.sock`; it does not spawn a PTY or accept a browser-selected socket path, executable, argv, cwd, env, uid/gid or shell path.
 
 ### `dashboard-rpi5-agent`
 
@@ -92,7 +94,7 @@ The read agent must not load `node-pty` or host the free-form shell. This avoids
 
 Separate local execution boundary for the future full terminal.
 
-Phase 9G created the native module/build boundary. Phase 9H adds a source-only local protocol and systemd containment blueprint, but still does **not** connect the browser-facing WebSocket to the PTY.
+Phase 9G created the native module/build boundary. Phase 9H added a source-only local protocol and systemd containment blueprint. Phase 9I adds the source-only authenticated server-to-local protocol bridge, while production socket/user/group activation remains separately owner-gated.
 
 Required properties:
 
@@ -120,7 +122,7 @@ The socket uses `Accept=yes`, `MaxConnections=1`, mode `0660`, and a dedicated `
 
 The service is intentionally not cgroup-delegated. `ProtectControlGroups=yes` keeps cgroup management away from the shell, while service teardown uses `KillMode=control-group`, `SendSIGKILL=yes` and a short stop timeout so detached descendants cannot survive ordinary worker exit. A 30-minute systemd runtime limit is an independent backstop.
 
-The exact production users/groups, socket-group membership, unit installation and activation remain owner-gated production decisions and are not performed by source merges.
+The exact production users/groups, web-service socket-group membership, unit installation and activation remain owner-gated production decisions and are not performed by source merges.
 
 ## Browser-facing API
 
@@ -137,7 +139,7 @@ GET  /api/rpi/logs?sourceId=...
 GET  /api/rpi/logs/stream?sourceId=...
 POST /api/rpi/quick-command             # gated
 POST /api/terminal/session              # implemented, production-disabled by default
-WS   /api/terminal/ws                   # authenticated transport; PTY bridge still gated
+WS   /api/terminal/ws                   # authenticated bridge; production local socket still inactive
 ```
 
 ## Read-agent interface
@@ -163,17 +165,17 @@ There is intentionally no free-form terminal endpoint on the privileged-read age
 
 The contained session worker reads newline-delimited JSON from its socket-backed stdin and writes only bounded protocol frames to socket-backed stdout.
 
-The first client frame must be exactly:
+The first local client frame is emitted by the server bridge, never by browser-controlled raw forwarding, and must be exactly:
 
 ```json
 {"v":1,"type":"open","cols":80,"rows":24}
 ```
 
-After `ready`, the only accepted client message types are bounded `input`, bounded `resize`, and `close`. There is no command/executable/argv/cwd/env/uid/gid field in this protocol. Malformed, oversized, duplicate-open or unknown messages fail closed.
+After local `ready`, the server translates only validated browser `input` and `resize` messages into the versioned local protocol. There is no command/executable/argv/cwd/env/uid/gid field in either browser-to-local translation path. Browser messages arriving before local `ready`, malformed/oversized frames, binary frames, unexpected local frames or backpressure overload fail closed.
 
-PTY output is treated as untrusted data, is capped per native callback, split into bounded Unicode-safe chunks and written through a bounded backpressure queue. Terminal frame contents are not persisted or logged.
+PTY output is treated as untrusted data, is capped per native callback, split into bounded Unicode-safe chunks, parsed again by the server-side local-wire decoder and only then serialized into the browser protocol. Terminal frame contents are not persisted or logged.
 
-Phase 9H still has no `apps/server` client for this socket. Joining the authenticated Phase 9E WebSocket to this local protocol is a later security phase.
+The bridge uses Node Unix-domain IPC only at the fixed path `/run/dashboard-rpi5-terminal.sock`, has a bounded local-connect deadline, destroys the local connection on browser disconnect/error, revokes the one-time terminal capability on every terminal path exit, and keeps both local-write and WebSocket-output buffering bounded.
 
 ## Data ownership
 
@@ -195,4 +197,4 @@ cloudflared -> 127.0.0.1:<dashboard-port>
 
 Cloudflare Access protects `dash.rozkalns.net` before public use.
 
-The exact tunnel/DNS/Access mutation, terminal-agent user/group creation, socket/service installation, execution identity and activation are separate owner-authorized production steps.
+The exact tunnel/DNS/Access mutation, terminal-agent user/group creation, web-service connector-group membership, socket/service installation, execution identity and activation are separate owner-authorized production steps.
