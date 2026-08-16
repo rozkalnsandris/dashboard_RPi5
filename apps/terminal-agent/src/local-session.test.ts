@@ -15,8 +15,8 @@ function fakePty() {
   let exitListener: ((event: { exitCode: number; signal?: number }) => void) | undefined;
   return {
     pid: 321,
-    write: vi.fn((_data: string) => undefined),
-    resize: vi.fn((_cols: number, _rows: number) => undefined),
+    write: vi.fn((data: string) => void data),
+    resize: vi.fn((cols: number, rows: number) => void [cols, rows]),
     kill: vi.fn(() => undefined),
     onData(listener: (data: string) => void) {
       dataListener = listener;
