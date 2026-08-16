@@ -25,10 +25,16 @@ import type { TerminalSessionRegistry } from "./terminal-session-security.js";
 export const TERMINAL_BRIDGE_MAX_LOCAL_WRITE_BUFFER_BYTES = 64 * 1024;
 export const TERMINAL_BRIDGE_MAX_WEBSOCKET_BUFFER_BYTES = 64 * 1024;
 export const TERMINAL_BRIDGE_MAX_WEBSOCKET_FRAME_BYTES = 32 * 1024;
+export const TERMINAL_BRIDGE_EXIT_SEND_TIMEOUT_MS = 2_000;
 
 const fatalUtf8 = new TextDecoder("utf-8", { fatal: true });
 
-type TerminalBridgeState = "connecting" | "awaiting-ready" | "active" | "closed";
+type TerminalBridgeState =
+  | "connecting"
+  | "awaiting-ready"
+  | "active"
+  | "closing"
+  | "closed";
 
 export interface TerminalBridgeWebSocket {
   readonly bufferedAmount: number;
@@ -59,6 +65,7 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
   let state: TerminalBridgeState = "connecting";
   let localSocket: Socket | undefined;
   let connectTimer: NodeJS.Timeout | undefined;
+  let exitSendTimer: NodeJS.Timeout | undefined;
   let revoked = false;
 
   const revokeSession = () => {
@@ -72,24 +79,39 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
     connectTimer = undefined;
   };
 
+  const clearExitSendTimer = () => {
+    if (exitSendTimer !== undefined) clearTimer(exitSendTimer);
+    exitSendTimer = undefined;
+  };
+
   const destroyLocal = () => {
-    if (localSocket !== undefined && !localSocket.destroyed) {
-      localSocket.destroy();
+    if (localSocket !== undefined && !localSocket.destroyed) localSocket.destroy();
+  };
+
+  const terminateWebSocket = () => {
+    try {
+      socket.terminate();
+    } catch {
+      // No further transport action is available.
     }
   };
 
-  const finish = (closeWebSocket: boolean, code = 1011, reason = "TERMINAL_LOCAL_UNAVAILABLE") => {
+  const finish = (
+    closeWebSocket: boolean,
+    code = 1011,
+    reason = "TERMINAL_LOCAL_UNAVAILABLE",
+  ) => {
     if (state === "closed") return;
     state = "closed";
     clearConnectTimer();
+    clearExitSendTimer();
     revokeSession();
     destroyLocal();
-    if (closeWebSocket) {
-      try {
-        socket.close(code, reason);
-      } catch {
-        socket.terminate();
-      }
+    if (!closeWebSocket) return;
+    try {
+      socket.close(code, reason);
+    } catch {
+      terminateWebSocket();
     }
   };
 
@@ -97,8 +119,7 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
   const failOverload = (reason: string) => finish(true, 1013, reason);
   const failInternal = (reason: string) => finish(true, 1011, reason);
 
-  const sendBrowserFrame = (frame: string): boolean => {
-    if (state === "closed") return false;
+  const browserFrameCanBeSent = (frame: string): boolean => {
     if (Buffer.byteLength(frame, "utf8") > TERMINAL_BRIDGE_MAX_WEBSOCKET_FRAME_BYTES) {
       failOverload("TERMINAL_OUTPUT_OVERLOAD");
       return false;
@@ -107,6 +128,12 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
       failOverload("TERMINAL_OUTPUT_BACKPRESSURE");
       return false;
     }
+    return true;
+  };
+
+  const sendBrowserFrame = (frame: string): boolean => {
+    if (state === "closed" || state === "closing") return false;
+    if (!browserFrameCanBeSent(frame)) return false;
     try {
       socket.send(frame, (error) => {
         if (error !== undefined) failInternal("TERMINAL_WEBSOCKET_SEND_FAILED");
@@ -118,9 +145,51 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
     }
   };
 
+  const sendExitFrameThenClose = (frame: string) => {
+    if (state !== "active") {
+      failInternal("TERMINAL_LOCAL_PROTOCOL_ERROR");
+      return;
+    }
+    if (!browserFrameCanBeSent(frame)) return;
+
+    state = "closing";
+    clearConnectTimer();
+    revokeSession();
+    destroyLocal();
+
+    exitSendTimer = setTimer(() => {
+      if (state !== "closing") return;
+      state = "closed";
+      terminateWebSocket();
+    }, TERMINAL_BRIDGE_EXIT_SEND_TIMEOUT_MS);
+    exitSendTimer.unref();
+
+    try {
+      socket.send(frame, (error) => {
+        if (state !== "closing") return;
+        clearExitSendTimer();
+        state = "closed";
+        if (error !== undefined) {
+          terminateWebSocket();
+          return;
+        }
+        try {
+          socket.close(1000, "TERMINAL_EXIT");
+        } catch {
+          terminateWebSocket();
+        }
+      });
+    } catch {
+      clearExitSendTimer();
+      state = "closed";
+      terminateWebSocket();
+    }
+  };
+
   const writeLocalFrame = (frame: string): boolean => {
     if (
       state === "closed" ||
+      state === "closing" ||
       localSocket === undefined ||
       localSocket.destroyed ||
       localSocket.writableEnded
@@ -162,7 +231,7 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
   };
 
   const handleLocalFrame = (frame: TerminalLocalServerFrame) => {
-    if (state === "closed") return;
+    if (state === "closed" || state === "closing") return;
     switch (frame.type) {
       case "ready":
         if (state !== "awaiting-ready") {
@@ -188,16 +257,12 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
           failInternal("TERMINAL_LOCAL_PROTOCOL_ERROR");
           return;
         }
-        if (
-          sendBrowserFrame(
-            serializeTerminalExitFrame({
-              exitCode: frame.code ?? 0,
-              ...(frame.signal === null ? {} : { signal: frame.signal }),
-            }),
-          )
-        ) {
-          finish(true, 1000, "TERMINAL_EXIT");
-        }
+        sendExitFrameThenClose(
+          serializeTerminalExitFrame({
+            exitCode: frame.code ?? 0,
+            ...(frame.signal === null ? {} : { signal: frame.signal }),
+          }),
+        );
         return;
       case "error":
         handleLocalError(frame.code);
@@ -206,7 +271,7 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
   };
 
   const handleBrowserMessage = (data: unknown, isBinary: boolean) => {
-    if (state === "closed") return;
+    if (state === "closed" || state === "closing") return;
     if (state !== "active") {
       failPolicy("TERMINAL_NOT_READY");
       return;
@@ -264,25 +329,22 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
   }
 
   localSocket.once("connect", () => {
-    if (state === "closed") return;
+    if (state === "closed" || state === "closing") return;
     clearConnectTimer();
     state = "awaiting-ready";
     writeLocalFrame(serializeTerminalLocalOpenFrame());
   });
   localSocket.on("data", (chunk: Buffer) => {
-    if (state === "closed") return;
+    if (state === "closed" || state === "closing") return;
     try {
       const frames = decoder.push(chunk);
-      for (const frame of frames) {
-        handleLocalFrame(frame);
-        if (state === "closed") break;
-      }
+      for (const frame of frames) handleLocalFrame(frame);
     } catch {
       failInternal("TERMINAL_LOCAL_PROTOCOL_ERROR");
     }
   });
   localSocket.once("end", () => {
-    if (state === "closed") return;
+    if (state === "closed" || state === "closing") return;
     try {
       decoder.end();
     } catch {
@@ -292,10 +354,14 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
     failInternal("TERMINAL_LOCAL_CLOSED");
   });
   localSocket.once("error", () => {
-    if (state !== "closed") failInternal("TERMINAL_LOCAL_UNAVAILABLE");
+    if (state !== "closed" && state !== "closing") {
+      failInternal("TERMINAL_LOCAL_UNAVAILABLE");
+    }
   });
   localSocket.once("close", () => {
-    if (state !== "closed") failInternal("TERMINAL_LOCAL_CLOSED");
+    if (state !== "closed" && state !== "closing") {
+      failInternal("TERMINAL_LOCAL_CLOSED");
+    }
   });
 
   connectTimer = setTimer(
