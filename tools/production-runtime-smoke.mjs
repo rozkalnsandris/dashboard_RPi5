@@ -8,6 +8,7 @@ import {
   mkdtemp,
   readFile,
   rm,
+  symlink,
 } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { createServer } from "node:net";
@@ -131,6 +132,13 @@ async function assertNoNodeModulesResolutionPath(candidateRoot) {
     if (parent === current) break;
     current = parent;
   }
+}
+
+async function createProductionCurrentLink(tempRoot, sourceSha) {
+  if (!FULL_SHA.test(sourceSha)) throw new Error("source SHA is invalid");
+  const currentRoot = resolve(tempRoot, "current");
+  await symlink(`releases/${sourceSha}`, currentRoot, "dir");
+  return currentRoot;
 }
 
 function appendBounded(current, chunk) {
@@ -264,7 +272,7 @@ async function runSmoke({ rootDir, manifestPath, sourceSha }) {
   }
 
   const tempRoot = await mkdtemp(resolve(tmpdir(), "dashboard-rpi5-runtime-smoke-"));
-  const candidateRoot = resolve(tempRoot, "candidate");
+  const candidateRoot = resolve(tempRoot, "releases", sourceSha);
   const runtimeRoot = resolve(tempRoot, "runtime");
   await mkdir(candidateRoot, { recursive: true });
   await mkdir(runtimeRoot, { recursive: true });
@@ -274,11 +282,12 @@ async function runSmoke({ rootDir, manifestPath, sourceSha }) {
   try {
     await materializeCandidate({ rootDir: root, candidateRoot, manifest });
     await assertNoNodeModulesResolutionPath(candidateRoot);
+    const currentRoot = await createProductionCurrentLink(tempRoot, sourceSha);
 
     const agentSocket = resolve(runtimeRoot, "agent.sock");
     agentRuntime = spawnRuntime(
-      resolve(candidateRoot, "apps/agent/dist/index.js"),
-      candidateRoot,
+      resolve(currentRoot, "apps/agent/dist/index.js"),
+      currentRoot,
       {
         DASHBOARD_RPI5_AGENT_SOCKET: agentSocket,
         DASHBOARD_RPI5_QUICK_COMMANDS: "disabled",
@@ -305,11 +314,11 @@ async function runSmoke({ rootDir, manifestPath, sourceSha }) {
 
     const port = await reserveLoopbackPort();
     webRuntime = spawnRuntime(
-      resolve(candidateRoot, "apps/server/dist/index.js"),
-      candidateRoot,
+      resolve(currentRoot, "apps/server/dist/index.js"),
+      currentRoot,
       {
         PORT: String(port),
-        DASHBOARD_WEB_ROOT: resolve(candidateRoot, "apps/web/dist"),
+        DASHBOARD_WEB_ROOT: resolve(currentRoot, "apps/web/dist"),
         DASHBOARD_AGENT_SOCKET_PATH: agentSocket,
         DASHBOARD_TERMINAL_ENABLED: "disabled",
       },
@@ -371,6 +380,7 @@ async function main() {
 
 export {
   assertNoNodeModulesResolutionPath,
+  createProductionCurrentLink,
   materializeCandidate,
   runSmoke,
   safeRelativePath,

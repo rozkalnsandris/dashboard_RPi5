@@ -1,5 +1,3 @@
-import { pathToFileURL } from "node:url";
-
 import { buildAgentApp } from "./app.js";
 import {
   QUICK_COMMANDS_ENV,
@@ -62,8 +60,7 @@ async function runFromCli() {
   process.once("SIGINT", () => void close());
 }
 
-const entrypoint = process.argv[1];
-if (entrypoint !== undefined && import.meta.url === pathToFileURL(entrypoint).href) {
+if (import.meta.main) {
   void runFromCli().catch(() => {
     console.error("dashboard-rpi5-agent failed to start");
     process.exitCode = 1;

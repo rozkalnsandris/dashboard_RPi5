@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readlink, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 
 import {
   assertNoNodeModulesResolutionPath,
+  createProductionCurrentLink,
   materializeCandidate,
   safeRelativePath,
 } from "./production-runtime-smoke.mjs";
@@ -74,6 +75,24 @@ test("runtime smoke rejects node_modules anywhere on the isolated resolution pat
     await assert.rejects(
       assertNoNodeModulesResolutionPath(candidateRoot),
       /node_modules exists on candidate resolution path/u,
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runtime smoke launches through a production-style current release symlink", async () => {
+  const tempRoot = await mkdtemp(resolve(tmpdir(), "dashboard-rpi5-runtime-smoke-test-"));
+  const sourceSha = "0123456789abcdef0123456789abcdef01234567";
+  const releaseRoot = resolve(tempRoot, "releases", sourceSha);
+  try {
+    await mkdir(releaseRoot, { recursive: true });
+    const currentRoot = await createProductionCurrentLink(tempRoot, sourceSha);
+    assert.equal(await readlink(currentRoot), `releases/${sourceSha}`);
+    assert.equal(await realpath(currentRoot), releaseRoot);
+    assert.equal(
+      resolve(currentRoot, "apps/agent/dist/index.js"),
+      resolve(tempRoot, "current", "apps/agent/dist/index.js"),
     );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
