@@ -1,4 +1,7 @@
-import type { CloudflareAccessOwnerAuthOptions } from "./cloudflare-access-owner-auth.js";
+import type {
+  CloudflareAccessOwnerAuthOptions,
+  CloudflareAccessOwnerAuthResult,
+} from "./cloudflare-access-owner-auth.js";
 import {
   createDefaultTerminalSessionAdmission,
   createTerminalSessionAdmission,
@@ -16,16 +19,20 @@ const TOKEN_A = "a".repeat(64);
 const TOKEN_B = "b".repeat(64);
 const ASSERTION = "header.payload.signature";
 
-function verifiedVerifier(): OwnerAuthVerifier {
+function verifierReturning(result: CloudflareAccessOwnerAuthResult): OwnerAuthVerifier {
   return {
-    verifyAssertion: vi.fn(async () => ({
-      verified: true,
-      identity: {
-        email: "owner@example.com",
-        subject: "owner-subject",
-      },
-    })),
+    verifyAssertion: vi.fn(async () => result),
   };
+}
+
+function verifiedVerifier(): OwnerAuthVerifier {
+  return verifierReturning({
+    verified: true,
+    identity: {
+      email: "owner@example.com",
+      subject: "owner-subject",
+    },
+  });
 }
 
 describe("terminal session admission", () => {
@@ -91,12 +98,10 @@ describe("terminal session admission", () => {
     const registry = new TerminalSessionRegistry({
       tokenFactory: () => TOKEN_A,
     });
-    const verifier: OwnerAuthVerifier = {
-      verifyAssertion: vi.fn(async () => ({
-        verified: false,
-        reason: "TOKEN_MISSING",
-      })),
-    };
+    const verifier = verifierReturning({
+      verified: false,
+      reason: "TOKEN_MISSING",
+    });
     const admission = createTerminalSessionAdmission({
       terminalEnabled: true,
       ownerAuthVerifier: verifier,
@@ -113,12 +118,10 @@ describe("terminal session admission", () => {
   });
 
   it("maps Access signing-key availability failure without returning token details", async () => {
-    const verifier: OwnerAuthVerifier = {
-      verifyAssertion: vi.fn(async () => ({
-        verified: false,
-        reason: "KEY_UNAVAILABLE",
-      })),
-    };
+    const verifier = verifierReturning({
+      verified: false,
+      reason: "KEY_UNAVAILABLE",
+    });
     const admission = createTerminalSessionAdmission({
       terminalEnabled: true,
       ownerAuthVerifier: verifier,
