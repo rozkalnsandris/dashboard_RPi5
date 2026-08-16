@@ -9,4 +9,7 @@ export default defineConfig({
   splitting: false,
   shims: true,
   noExternal: [/.*/u],
+  banner: {
+    js: 'import { createRequire as __dashboardCreateRequire } from "node:module"; const require = __dashboardCreateRequire(import.meta.url);',
+  },
 });
