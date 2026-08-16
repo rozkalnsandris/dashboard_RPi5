@@ -1,0 +1,52 @@
+{
+  "schema": "dashboard-rpi5.cloudflare-launch.v1",
+  "sourceOnly": true,
+  "hostname": "dash.rozkalns.net",
+  "origin": {
+    "url": "http://127.0.0.1:8787",
+    "scheme": "http",
+    "host": "127.0.0.1",
+    "port": 8787
+  },
+  "access": {
+    "applicationType": "self_hosted",
+    "entireHostname": true,
+    "denyByDefault": true,
+    "allowPolicyAction": "allow",
+    "allowSelector": "email",
+    "allowValueBinding": "DASHBOARD_OWNER_EMAIL",
+    "exactlyOneOwner": true,
+    "emailDomainWildcardAllowed": false,
+    "bypassAllowed": false,
+    "serviceTokenOnlyHumanAccessAllowed": false,
+    "originJwtValidation": {
+      "required": true,
+      "header": "Cf-Access-Jwt-Assertion",
+      "teamNameBinding": "DASHBOARD_CLOUDFLARE_TEAM_NAME",
+      "audienceBinding": "DASHBOARD_CLOUDFLARE_APPLICATION_AUDIENCE"
+    }
+  },
+  "tunnel": {
+    "routeType": "published_application",
+    "hostname": "dash.rozkalns.net",
+    "service": "http://127.0.0.1:8787",
+    "tunnelIdBinding": "DASHBOARD_CLOUDFLARE_TUNNEL_ID",
+    "protectWithAccess": {
+      "required": true,
+      "teamNameBinding": "DASHBOARD_CLOUDFLARE_TEAM_NAME",
+      "audienceBinding": "DASHBOARD_CLOUDFLARE_APPLICATION_AUDIENCE"
+    }
+  },
+  "network": {
+    "routerPortForward": false
+  },
+  "activationOrder": [
+    "create_access_application",
+    "create_exact_owner_allow_policy",
+    "verify_access_deny_by_default",
+    "publish_tunnel_route",
+    "verify_unauthenticated_block",
+    "verify_origin_jwt",
+    "authenticated_smoke"
+  ]
+}

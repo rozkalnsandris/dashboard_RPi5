@@ -28,6 +28,8 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
   "ops/production/web.env.example",
   "ops/production/terminal.env.example",
   "ops/production/smoke-contract.json",
+  "ops/production/cloudflare-contract.json",
+  "ops/production/cloudflare.env.example",
   "ops/systemd/dashboard-rpi5-web.service",
   "ops/systemd/dashboard-rpi5-agent.service",
   "ops/systemd/dashboard-rpi5-terminal.socket",
