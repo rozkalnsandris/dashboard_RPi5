@@ -83,7 +83,7 @@ Output:
 {"type":"output","data":"..."}
 ```
 
-PTY output is split on Unicode code-point boundaries into chunks whose raw UTF-8 data is at most 8192 bytes before JSON framing.
+A single PTY adapter output callback is limited to 64 KiB of UTF-8 data. Anything larger fails closed before chunk allocation. Accepted output is then split on Unicode code-point boundaries into chunks whose raw UTF-8 data is at most 8192 bytes before JSON framing.
 
 Exit:
 
@@ -108,6 +108,8 @@ Before every output chunk is sent, `bufferedAmount` is checked against a fixed 6
 - kill PTY;
 - revoke terminal session;
 - close with code 1013 and fixed reason `TERMINAL_OUTPUT_OVERLOAD`.
+
+The same fixed overload closure is used when one PTY output callback exceeds the 64 KiB per-event limit.
 
 The controller does not buffer an additional transcript in application memory.
 
@@ -139,7 +141,7 @@ Therefore a future browser message cannot choose what process is spawned. The Ph
 
 ## Lifecycle policy
 
-`attachTerminalPtyLifecycle()` requires an already-live claimed session token and an injected PTY factory.
+`attachTerminalPtyLifecycle()` requires an already-live **claimed** transport session token and an injected PTY factory. A minted but unclaimed token cannot construct a PTY.
 
 On attach:
 
@@ -168,6 +170,7 @@ These conditions terminate idempotently, revoke the session, and kill the PTY:
 - registry session expiry;
 - PTY write/resize failure;
 - transport send failure;
+- oversized PTY output event;
 - output backpressure overload.
 
 A normal PTY exit does not call `kill()` again; it emits an exit frame, revokes the session and closes cleanly.
