@@ -234,7 +234,7 @@ async function copyVerifiedRelease({ activationRoot, candidateRoot, manifest }) 
   try {
     await mkdir(releaseDir, { mode: 0o755 });
   } catch (error) {
-    if (error?.code === "EEXIST") throw new Error("target release appeared after reviewed plan");
+    if (error?.code === "EEXIST") throw new Error("target release appeared after reviewed plan", { cause: error });
     throw error;
   }
 
