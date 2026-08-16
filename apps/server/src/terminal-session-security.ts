@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { performance } from "node:perf_hooks";
 
 export const TERMINAL_EXPECTED_ORIGIN = "https://dash.rozkalns.net";
 export const TERMINAL_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
@@ -92,7 +93,7 @@ export class TerminalSessionRegistry {
   readonly #tokenFactory: () => string;
 
   constructor(options: TerminalSessionRegistryOptions = {}) {
-    this.#now = options.now ?? (() => Date.now());
+    this.#now = options.now ?? (() => performance.now());
     this.#tokenFactory =
       options.tokenFactory ??
       (() => randomBytes(TERMINAL_SESSION_TOKEN_BYTES).toString("hex"));
