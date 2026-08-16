@@ -3,6 +3,10 @@ import {
   type CloudflareAccessOwnerAuthOptions,
 } from "./cloudflare-access-owner-auth.js";
 import {
+  createTerminalLocalSocket,
+  type TerminalLocalConnector,
+} from "./terminal-local-client.js";
+import {
   createDefaultTerminalSessionAdmission,
   type OwnerAuthVerifier,
   type TerminalSessionAdmission,
@@ -21,6 +25,7 @@ export interface TerminalRuntime {
   sessionRegistry: TerminalSessionRegistry;
   sessionAdmission: TerminalSessionAdmission;
   websocketAdmission: TerminalWebSocketAdmission;
+  localConnector: TerminalLocalConnector;
 }
 
 interface DefaultTerminalRuntimeDependencies {
@@ -28,6 +33,7 @@ interface DefaultTerminalRuntimeDependencies {
   ownerAuthVerifierFactory?: (
     options: CloudflareAccessOwnerAuthOptions,
   ) => OwnerAuthVerifier;
+  localConnector?: TerminalLocalConnector;
 }
 
 export function createDefaultTerminalRuntime(
@@ -62,5 +68,6 @@ export function createDefaultTerminalRuntime(
     sessionRegistry,
     sessionAdmission,
     websocketAdmission,
+    localConnector: dependencies.localConnector ?? createTerminalLocalSocket,
   };
 }
