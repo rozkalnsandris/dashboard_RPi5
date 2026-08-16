@@ -50,7 +50,7 @@ export async function createTerminalSession(signal?: AbortSignal): Promise<Termi
       headers: { "Content-Type": "application/json" },
       body: "{}",
       cache: "no-store",
-      signal,
+      ...(signal === undefined ? {} : { signal }),
     });
   } catch (error) {
     if (signal?.aborted === true) throw error;
