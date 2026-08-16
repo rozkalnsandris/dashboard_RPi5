@@ -15,7 +15,7 @@ flowchart LR
     T[Cloudflare Tunnel]
     W[dashboard web + API\nloopback on RPi5]
     X[local privileged-read agent\nUnix socket]
-    Y[isolated terminal agent\nfuture Unix socket]
+    Y[isolated terminal session\nsystemd socket activation]
     D[Docker Engine\nUnix socket]
     J[systemd + journal]
     R[vcgencmd + /proc + sysfs]
@@ -92,9 +92,9 @@ The read agent must not load `node-pty` or host the free-form shell. This avoids
 
 Separate local execution boundary for the future full terminal.
 
-Phase 9G creates only the native module/build boundary; it does **not** listen on a socket or accept browser/server traffic yet.
+Phase 9G created the native module/build boundary. Phase 9H adds a source-only local protocol and systemd containment blueprint, but still does **not** connect the browser-facing WebSocket to the PTY.
 
-Required eventual properties:
+Required properties:
 
 - Linux only;
 - dedicated non-root execution identity;
@@ -104,16 +104,23 @@ Required eventual properties:
 - fixed server-side shell contract;
 - minimal fresh environment rather than inherited service secrets;
 - one bounded PTY session at a time;
-- session process-tree containment stronger than `node-pty.kill()` alone;
-- local Unix socket only after a separate source/security gate.
+- local Unix socket only;
+- one accepted connection maps to one systemd service instance/cgroup;
+- no writable delegated cgroup subtree;
+- PID 1 owns final process-tree cleanup through `KillMode=control-group`;
+- application 5-minute idle / 30-minute absolute lifetime plus independent systemd `RuntimeMaxSec=30min`.
 
-Future transport target:
+Source-only transport target:
 
 ```text
-/run/dashboard-rpi5/terminal.sock
+/run/dashboard-rpi5-terminal.sock
 ```
 
-The exact service identity, socket permissions and systemd/cgroup containment remain owner-gated production decisions and are not activated by source merges.
+The socket uses `Accept=yes`, `MaxConnections=1`, mode `0660`, and a dedicated `dashboard-rpi5-terminal-client` connector group. Each accepted connection launches `dashboard-rpi5-terminal@.service` with the connection attached to stdin/stdout. The service runs the `session-stdio-entry` worker and the Phase 9G native PTY under the same systemd cgroup.
+
+The service is intentionally not cgroup-delegated. `ProtectControlGroups=yes` keeps cgroup management away from the shell, while service teardown uses `KillMode=control-group`, `SendSIGKILL=yes` and a short stop timeout so detached descendants cannot survive ordinary worker exit. A 30-minute systemd runtime limit is an independent backstop.
+
+The exact production users/groups, socket-group membership, unit installation and activation remain owner-gated production decisions and are not performed by source merges.
 
 ## Browser-facing API
 
@@ -152,6 +159,22 @@ POST /v1/quick-command                  # registered IDs only
 
 There is intentionally no free-form terminal endpoint on the privileged-read agent.
 
+## Terminal-agent local protocol
+
+The contained session worker reads newline-delimited JSON from its socket-backed stdin and writes only bounded protocol frames to socket-backed stdout.
+
+The first client frame must be exactly:
+
+```json
+{"v":1,"type":"open","cols":80,"rows":24}
+```
+
+After `ready`, the only accepted client message types are bounded `input`, bounded `resize`, and `close`. There is no command/executable/argv/cwd/env/uid/gid field in this protocol. Malformed, oversized, duplicate-open or unknown messages fail closed.
+
+PTY output is treated as untrusted data, is capped per native callback, split into bounded Unicode-safe chunks and written through a bounded backpressure queue. Terminal frame contents are not persisted or logged.
+
+Phase 9H still has no `apps/server` client for this socket. Joining the authenticated Phase 9E WebSocket to this local protocol is a later security phase.
+
 ## Data ownership
 
 - Prometheus owns time-series history.
@@ -172,4 +195,4 @@ cloudflared -> 127.0.0.1:<dashboard-port>
 
 Cloudflare Access protects `dash.rozkalns.net` before public use.
 
-The exact tunnel/DNS/Access mutation, terminal-agent service installation, execution identity and process containment are separate owner-authorized production steps.
+The exact tunnel/DNS/Access mutation, terminal-agent user/group creation, socket/service installation, execution identity and activation are separate owner-authorized production steps.
