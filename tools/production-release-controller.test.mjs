@@ -176,7 +176,7 @@ test("wrong exact SHA is rejected", async (t) => {
 
 test("controller source has no shell, network, systemd, identity or recursive-delete primitive", async () => {
   const source = await readFile(resolve(ROOT, "tools/production-release-controller.mjs"), "utf8");
-  assert.doesNotMatch(source, /node:child_process|\bfetch\s*\(|\bexec(?:File)?\s*\(|\bspawn\s*\(|systemctl|useradd|groupadd|usermod|\bsudo\b|docker\.sock|cloudflare\.com\/client\/v4/iu);
+  assert.doesNotMatch(source, /node:child_process|["']child_process["']|\bfetch\s*\(|systemctl|useradd|groupadd|usermod|\bsudo\b|docker\.sock|cloudflare\.com\/client\/v4/iu);
   assert.doesNotMatch(source, /\brm\s*\(|\brmdir\s*\(/u);
   assert.doesNotMatch(source, /["']--root["']/u);
 });
