@@ -1,0 +1,92 @@
+{
+  "schema": "dashboard-rpi5.host-readiness.v1",
+  "sourceOnly": true,
+  "mode": "first-production-bootstrap",
+  "runtime": {
+    "platform": "linux",
+    "arch": "arm64",
+    "nodeMajor": 24,
+    "nodeExecPath": "/usr/bin/node",
+    "initComm": "systemd"
+  },
+  "evidence": {
+    "passwd": "/etc/passwd",
+    "group": "/etc/group",
+    "tcp4": "/proc/net/tcp",
+    "tcp6": "/proc/net/tcp6",
+    "initComm": "/proc/1/comm",
+    "systemdRuntime": "/run/systemd/system"
+  },
+  "paths": {
+    "productionRoot": "/opt/dashboard_RPi5",
+    "configDir": "/etc/dashboard-rpi5",
+    "agentRuntimeDirectory": "/run/dashboard-rpi5",
+    "agentSocket": "/run/dashboard-rpi5/agent.sock",
+    "terminalStateDirectory": "/var/lib/dashboard-rpi5-terminal",
+    "terminalSocket": "/run/dashboard-rpi5-terminal.sock"
+  },
+  "identityUsers": [
+    {
+      "name": "dashboard-rpi5-web",
+      "primaryGroup": "dashboard-rpi5-web",
+      "allowedSupplementaryGroups": ["dashboard-rpi5-agent-client"],
+      "forbiddenSupplementaryGroups": ["dashboard-rpi5-terminal-client"]
+    },
+    {
+      "name": "dashboard-rpi5-agent",
+      "primaryGroup": "dashboard-rpi5-agent-client",
+      "allowedSupplementaryGroups": [],
+      "forbiddenSupplementaryGroups": ["dashboard-rpi5-terminal-client"]
+    },
+    {
+      "name": "dashboard-rpi5-terminal",
+      "primaryGroup": "dashboard-rpi5-terminal",
+      "allowedSupplementaryGroups": [],
+      "forbiddenSupplementaryGroups": ["dashboard-rpi5-agent-client", "dashboard-rpi5-terminal-client"]
+    }
+  ],
+  "identityGroups": [
+    "dashboard-rpi5-web",
+    "dashboard-rpi5-agent-client",
+    "dashboard-rpi5-terminal",
+    "dashboard-rpi5-terminal-client"
+  ],
+  "port": {
+    "host": "127.0.0.1",
+    "port": 8787,
+    "requireCompletelyFree": true
+  },
+  "units": [
+    {
+      "name": "dashboard-rpi5-web.service",
+      "source": "ops/systemd/dashboard-rpi5-web.service",
+      "installed": "/etc/systemd/system/dashboard-rpi5-web.service",
+      "enablementLinks": ["/etc/systemd/system/multi-user.target.wants/dashboard-rpi5-web.service"]
+    },
+    {
+      "name": "dashboard-rpi5-agent.service",
+      "source": "ops/systemd/dashboard-rpi5-agent.service",
+      "installed": "/etc/systemd/system/dashboard-rpi5-agent.service",
+      "enablementLinks": ["/etc/systemd/system/multi-user.target.wants/dashboard-rpi5-agent.service"]
+    },
+    {
+      "name": "dashboard-rpi5-terminal.socket",
+      "source": "ops/systemd/dashboard-rpi5-terminal.socket",
+      "installed": "/etc/systemd/system/dashboard-rpi5-terminal.socket",
+      "enablementLinks": ["/etc/systemd/system/sockets.target.wants/dashboard-rpi5-terminal.socket"]
+    },
+    {
+      "name": "dashboard-rpi5-terminal@.service",
+      "source": "ops/systemd/dashboard-rpi5-terminal@.service",
+      "installed": "/etc/systemd/system/dashboard-rpi5-terminal@.service",
+      "enablementLinks": []
+    }
+  ],
+  "baseCapabilities": {
+    "quickCommands": "disabled",
+    "terminal": "disabled"
+  },
+  "mutationAllowed": false,
+  "networkAllowed": false,
+  "processExecutionAllowed": false
+}
