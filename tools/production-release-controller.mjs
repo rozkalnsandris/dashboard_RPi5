@@ -4,6 +4,7 @@ import {
   copyFile,
   lstat,
   mkdir,
+  open,
   readFile,
   readlink,
   rename,
@@ -27,6 +28,7 @@ export const RELEASE_ACTIVATION_ACK = "I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RE
 export const RELEASE_ROLLBACK_ACK = "I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ROLLBACK";
 
 const PRODUCTION_ROOT = "/opt/dashboard_RPi5";
+const APPLY_LOCK_NAME = ".dashboard-release-controller.lock";
 const MANIFEST_MARKER = ".dashboard-production-candidate.json";
 const FULL_SHA = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -51,6 +53,26 @@ function isWithin(root, candidate) {
   return value !== "" && value !== ".." && !value.startsWith(`..${sep}`) && !isAbsolute(value);
 }
 
+function assertRealDirectoryStat(stat, label) {
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error(`${label} must be a real directory`);
+  }
+}
+
+async function ensureRealDirectory(path, label, create = false) {
+  let stat = await pathState(path);
+  if (stat === null && create) {
+    try {
+      await mkdir(path, { mode: 0o755 });
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+    stat = await pathState(path);
+  }
+  if (stat === null) throw new Error(`${label} is missing`);
+  assertRealDirectoryStat(stat, label);
+}
+
 function validateManifestEntry(entry) {
   const value = assertObject(entry, "candidate manifest file");
   if (typeof value.path !== "string" || value.path === "" || value.path.startsWith("/") || value.path.includes("\\")) {
@@ -70,7 +92,12 @@ export function validateReleaseActivationContract(contractValue) {
   if (contract.schema !== RELEASE_ACTIVATION_SCHEMA || contract.sourceOnly !== true) {
     throw new Error("release activation contract schema/source boundary mismatch");
   }
-  if (contract.productionRoot !== PRODUCTION_ROOT || contract.releasesRoot !== `${PRODUCTION_ROOT}/releases` || contract.currentLink !== `${PRODUCTION_ROOT}/current`) {
+  if (
+    contract.productionRoot !== PRODUCTION_ROOT ||
+    contract.releasesRoot !== `${PRODUCTION_ROOT}/releases` ||
+    contract.currentLink !== `${PRODUCTION_ROOT}/current` ||
+    contract.applyLock !== `${PRODUCTION_ROOT}/${APPLY_LOCK_NAME}`
+  ) {
     throw new Error("release activation production path mismatch");
   }
   if (contract.manifestMarker !== MANIFEST_MARKER || contract.candidateManifestSchema !== PRODUCTION_CANDIDATE_SCHEMA) {
@@ -79,10 +106,22 @@ export function validateReleaseActivationContract(contractValue) {
   if (contract.releaseDirectory !== "exact-source-sha" || contract.currentLinkTargetStyle !== "relative-release-path") {
     throw new Error("release activation path style mismatch");
   }
-  if (contract.atomicPointerSwap !== true || contract.retainPreviousRelease !== true || contract.deleteReleaseDuringActivation !== false) {
+  if (
+    contract.atomicPointerSwap !== true ||
+    contract.exclusiveApplyLock !== true ||
+    contract.staleLockAutoCleanup !== false ||
+    contract.retainPreviousRelease !== true ||
+    contract.deleteReleaseDuringActivation !== false
+  ) {
     throw new Error("release activation atomic/retention invariant mismatch");
   }
-  if (contract.networkAllowed !== false || contract.processExecutionAllowed !== false || contract.systemdMutationAllowed !== false || contract.identityMutationAllowed !== false || contract.cloudflareMutationAllowed !== false) {
+  if (
+    contract.networkAllowed !== false ||
+    contract.processExecutionAllowed !== false ||
+    contract.systemdMutationAllowed !== false ||
+    contract.identityMutationAllowed !== false ||
+    contract.cloudflareMutationAllowed !== false
+  ) {
     throw new Error("release activation forbidden capability enabled");
   }
   const capabilities = assertObject(contract.baseCapabilities, "base capability contract");
@@ -94,7 +133,12 @@ export function validateReleaseActivationContract(contractValue) {
     throw new Error("release activation apply gate mismatch");
   }
   const rollbackGate = assertObject(contract.rollbackGate, "rollback gate");
-  if (rollbackGate.flag !== "--apply" || rollbackGate.acknowledgement !== RELEASE_ROLLBACK_ACK || rollbackGate.requiresExpectedCurrent !== true || rollbackGate.requiresVerifiedExistingRelease !== true) {
+  if (
+    rollbackGate.flag !== "--apply" ||
+    rollbackGate.acknowledgement !== RELEASE_ROLLBACK_ACK ||
+    rollbackGate.requiresExpectedCurrent !== true ||
+    rollbackGate.requiresVerifiedExistingRelease !== true
+  ) {
     throw new Error("release activation rollback gate mismatch");
   }
   return contract;
@@ -130,6 +174,10 @@ async function pathState(path) {
 
 async function inspectCurrent(activationRoot) {
   const root = resolve(activationRoot);
+  const rootStat = await pathState(root);
+  if (rootStat === null) return null;
+  assertRealDirectoryStat(rootStat, "activation root");
+
   const currentPath = resolve(root, "current");
   const stat = await pathState(currentPath);
   if (stat === null) return null;
@@ -151,8 +199,15 @@ async function verifyManifestFileAgainstEntry(path, entry) {
   if ((await sha256File(path)) !== entry.sha256) throw new Error(`release file digest mismatch: ${entry.path}`);
 }
 
+async function assertInstalledReleaseRoots(activationRoot) {
+  const root = resolve(activationRoot);
+  await ensureRealDirectory(root, "activation root");
+  await ensureRealDirectory(resolve(root, "releases"), "releases root");
+}
+
 async function readInstalledManifest(activationRoot, sourceSha) {
   assertSha(sourceSha);
+  await assertInstalledReleaseRoots(activationRoot);
   const releaseDir = resolve(activationRoot, "releases", sourceSha);
   const releaseStat = await pathState(releaseDir);
   if (releaseStat === null || releaseStat.isSymbolicLink() || !releaseStat.isDirectory()) {
@@ -166,7 +221,17 @@ async function readInstalledManifest(activationRoot, sourceSha) {
 }
 
 async function inspectTargetRelease(activationRoot, sourceSha) {
-  const releaseDir = resolve(activationRoot, "releases", sourceSha);
+  const root = resolve(activationRoot);
+  const rootStat = await pathState(root);
+  if (rootStat === null) return { exists: false, manifest: null };
+  assertRealDirectoryStat(rootStat, "activation root");
+
+  const releasesRoot = resolve(root, "releases");
+  const releasesStat = await pathState(releasesRoot);
+  if (releasesStat === null) return { exists: false, manifest: null };
+  assertRealDirectoryStat(releasesStat, "releases root");
+
+  const releaseDir = resolve(releasesRoot, sourceSha);
   const stat = await pathState(releaseDir);
   if (stat === null) return { exists: false, manifest: null };
   if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error("target release path exists but is not a real directory");
@@ -196,12 +261,11 @@ async function assertCurrentUnchanged(activationRoot, reviewedCurrent) {
 async function loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha }) {
   assertSha(sourceSha);
   const manifest = await readJsonBounded(resolve(manifestPath), "candidate manifest");
-  const verified = await verifyProductionCandidateManifest({
+  return verifyProductionCandidateManifest({
     rootDir: resolve(candidateRoot),
     sourceSha,
     manifest,
   });
-  return verified;
 }
 
 export async function planReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, contract }) {
@@ -224,19 +288,30 @@ export async function planReleaseActivation({ activationRoot, candidateRoot, man
   };
 }
 
+async function ensureReleaseParentDirectories(releaseDir, entryPath) {
+  const segments = entryPath.split("/").slice(0, -1);
+  let current = releaseDir;
+  for (const segment of segments) {
+    current = resolve(current, segment);
+    await ensureRealDirectory(current, `release directory ${segment}`, true);
+  }
+}
+
 async function copyVerifiedRelease({ activationRoot, candidateRoot, manifest }) {
   const root = resolve(activationRoot);
+  await ensureRealDirectory(root, "activation root");
   const releasesRoot = resolve(root, "releases");
+  await ensureRealDirectory(releasesRoot, "releases root", true);
   const releaseDir = resolve(releasesRoot, manifest.sourceSha);
   if (!isWithin(root, releaseDir)) throw new Error("release destination escaped activation root");
 
-  await mkdir(releasesRoot, { recursive: true, mode: 0o755 });
   try {
     await mkdir(releaseDir, { mode: 0o755 });
   } catch (error) {
     if (error?.code === "EEXIST") throw new Error("target release appeared after reviewed plan", { cause: error });
     throw error;
   }
+  await ensureRealDirectory(releaseDir, "target release directory");
 
   for (const rawEntry of manifest.files) {
     const entry = validateManifestEntry(rawEntry);
@@ -246,7 +321,7 @@ async function copyVerifiedRelease({ activationRoot, candidateRoot, manifest }) 
       throw new Error("manifest path escaped reviewed roots");
     }
     await verifyManifestFileAgainstEntry(sourcePath, entry);
-    await mkdir(dirname(destinationPath), { recursive: true, mode: 0o755 });
+    await ensureReleaseParentDirectories(releaseDir, entry.path);
     await copyFile(sourcePath, destinationPath, constants.COPYFILE_EXCL);
     await verifyManifestFileAgainstEntry(destinationPath, entry);
   }
@@ -260,10 +335,10 @@ async function copyVerifiedRelease({ activationRoot, candidateRoot, manifest }) 
 async function swapCurrentPointer(activationRoot, sourceSha) {
   assertSha(sourceSha);
   const root = resolve(activationRoot);
+  await ensureRealDirectory(root, "activation root");
   const currentPath = resolve(root, "current");
   const temporary = resolve(root, `.current.next-${sourceSha}-${randomUUID()}`);
   const target = `releases/${sourceSha}`;
-  await mkdir(root, { recursive: true, mode: 0o755 });
   await symlink(target, temporary);
   try {
     await rename(temporary, currentPath);
@@ -277,27 +352,74 @@ async function swapCurrentPointer(activationRoot, sourceSha) {
   }
 }
 
+async function withExclusiveApplyLock(activationRoot, operation) {
+  const root = resolve(activationRoot);
+  await ensureRealDirectory(root, "activation root", true);
+  const lockPath = resolve(root, APPLY_LOCK_NAME);
+  let lockHandle;
+  try {
+    lockHandle = await open(lockPath, "wx", 0o600);
+  } catch (error) {
+    if (error?.code === "EEXIST") {
+      throw new Error("release controller apply lock already exists; inspect evidence before explicit cleanup", { cause: error });
+    }
+    throw error;
+  }
+
+  let result;
+  let operationError;
+  try {
+    result = await operation();
+  } catch (error) {
+    operationError = error;
+  }
+
+  let cleanupError;
+  try {
+    await lockHandle.close();
+  } catch (error) {
+    cleanupError = error;
+  }
+  try {
+    await unlink(lockPath);
+  } catch (error) {
+    if (error?.code !== "ENOENT" && cleanupError === undefined) cleanupError = error;
+  }
+
+  if (operationError !== undefined) {
+    if (cleanupError !== undefined) {
+      throw new Error("release operation failed and apply lock cleanup also failed", { cause: operationError });
+    }
+    throw operationError;
+  }
+  if (cleanupError !== undefined) throw cleanupError;
+  return result;
+}
+
 export async function applyReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, expectedCurrent, contract }) {
-  const plan = await planReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, contract });
-  const observed = plan.observedCurrent === "none" ? null : plan.observedCurrent;
-  assertExpectedCurrent(observed, expectedCurrent);
-  const manifest = await loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha });
-  const target = await inspectTargetRelease(activationRoot, sourceSha);
-  if (!target.exists) await copyVerifiedRelease({ activationRoot, candidateRoot: resolve(candidateRoot), manifest });
-  await assertCurrentUnchanged(activationRoot, observed);
-  if (observed !== sourceSha) await swapCurrentPointer(activationRoot, sourceSha);
-  const finalCurrent = await inspectCurrent(activationRoot);
-  if (finalCurrent !== sourceSha) throw new Error("current pointer did not activate exact source SHA");
-  await readInstalledManifest(activationRoot, sourceSha);
-  return {
-    status: "APPLIED",
-    action: "activate",
-    sourceSha,
-    candidateSha256: manifest.candidateSha256,
-    previousRelease: expectedCurrentLabel(observed),
-    currentRelease: sourceSha,
-    releasesDeleted: 0,
-  };
+  await planReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, contract });
+  return withExclusiveApplyLock(activationRoot, async () => {
+    const plan = await planReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, contract });
+    const observed = plan.observedCurrent === "none" ? null : plan.observedCurrent;
+    assertExpectedCurrent(observed, expectedCurrent);
+    const manifest = await loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha });
+    const target = await inspectTargetRelease(activationRoot, sourceSha);
+    if (!target.exists) await copyVerifiedRelease({ activationRoot, candidateRoot: resolve(candidateRoot), manifest });
+    await assertCurrentUnchanged(activationRoot, observed);
+    if (observed !== sourceSha) await swapCurrentPointer(activationRoot, sourceSha);
+    const finalCurrent = await inspectCurrent(activationRoot);
+    if (finalCurrent !== sourceSha) throw new Error("current pointer did not activate exact source SHA");
+    await readInstalledManifest(activationRoot, sourceSha);
+    return {
+      status: "APPLIED",
+      action: "activate",
+      sourceSha,
+      candidateSha256: manifest.candidateSha256,
+      previousRelease: expectedCurrentLabel(observed),
+      currentRelease: sourceSha,
+      releasesDeleted: 0,
+    };
+  });
 }
 
 export async function planReleaseRollback({ activationRoot, rollbackSha, contract }) {
@@ -318,20 +440,23 @@ export async function planReleaseRollback({ activationRoot, rollbackSha, contrac
 }
 
 export async function applyReleaseRollback({ activationRoot, rollbackSha, expectedCurrent, contract }) {
-  const plan = await planReleaseRollback({ activationRoot, rollbackSha, contract });
-  const reviewedCurrent = assertExpectedCurrent(plan.observedCurrent, expectedCurrent);
-  await assertCurrentUnchanged(activationRoot, reviewedCurrent);
-  if (reviewedCurrent !== rollbackSha) await swapCurrentPointer(activationRoot, rollbackSha);
-  const finalCurrent = await inspectCurrent(activationRoot);
-  if (finalCurrent !== rollbackSha) throw new Error("rollback pointer did not activate exact target SHA");
-  await readInstalledManifest(activationRoot, rollbackSha);
-  return {
-    status: "ROLLED_BACK",
-    action: "rollback",
-    previousRelease: reviewedCurrent,
-    currentRelease: rollbackSha,
-    releasesDeleted: 0,
-  };
+  await planReleaseRollback({ activationRoot, rollbackSha, contract });
+  return withExclusiveApplyLock(activationRoot, async () => {
+    const plan = await planReleaseRollback({ activationRoot, rollbackSha, contract });
+    const reviewedCurrent = assertExpectedCurrent(plan.observedCurrent, expectedCurrent);
+    await assertCurrentUnchanged(activationRoot, reviewedCurrent);
+    if (reviewedCurrent !== rollbackSha) await swapCurrentPointer(activationRoot, rollbackSha);
+    const finalCurrent = await inspectCurrent(activationRoot);
+    if (finalCurrent !== rollbackSha) throw new Error("rollback pointer did not activate exact target SHA");
+    await readInstalledManifest(activationRoot, rollbackSha);
+    return {
+      status: "ROLLED_BACK",
+      action: "rollback",
+      previousRelease: reviewedCurrent,
+      currentRelease: rollbackSha,
+      releasesDeleted: 0,
+    };
+  });
 }
 
 function parseCli(argv) {
