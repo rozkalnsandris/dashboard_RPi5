@@ -1,6 +1,10 @@
 import { pathToFileURL } from "node:url";
 
 import { buildAgentApp } from "./app.js";
+import {
+  QUICK_COMMANDS_ENV,
+  areQuickCommandsEnabled,
+} from "./quick-command-activation.js";
 import { registerQuickCommandRoutes } from "./quick-command-routes.js";
 import {
   DEFAULT_AGENT_SOCKET_PATH,
@@ -10,6 +14,7 @@ import {
 
 interface StartAgentOptions {
   socketPath?: string;
+  quickCommandsSetting?: string;
 }
 
 export async function startAgent(options: StartAgentOptions = {}) {
@@ -17,11 +22,15 @@ export async function startAgent(options: StartAgentOptions = {}) {
     options.socketPath ??
     process.env.DASHBOARD_RPI5_AGENT_SOCKET ??
     DEFAULT_AGENT_SOCKET_PATH;
+  const quickCommandsSetting =
+    options.quickCommandsSetting ?? process.env[QUICK_COMMANDS_ENV];
 
   await prepareSocketPath(socketPath);
 
   const { app, operationRegistry } = buildAgentApp();
-  registerQuickCommandRoutes(app);
+  if (areQuickCommandsEnabled(quickCommandsSetting)) {
+    registerQuickCommandRoutes(app);
+  }
 
   try {
     await app.listen({
@@ -69,6 +78,12 @@ export {
   normalizeAgentError,
   runWithTimeout,
 } from "./operation-registry.js";
+export {
+  QUICK_COMMANDS_DISABLED_VALUE,
+  QUICK_COMMANDS_ENABLED_VALUE,
+  QUICK_COMMANDS_ENV,
+  areQuickCommandsEnabled,
+} from "./quick-command-activation.js";
 export { registerQuickCommandRoutes } from "./quick-command-routes.js";
 export {
   AGENT_SOCKET_MODE,
