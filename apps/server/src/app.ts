@@ -65,10 +65,17 @@ import { createGithubRpi5MainReader } from "./github-rpi5-main-client.js";
 import { createHostHistoryReader, type HostHistoryReader } from "./host-history.js";
 import { createPublicEndpointsReader, type PublicEndpointsReader } from "./public-endpoints.js";
 import {
-  createDefaultTerminalSessionAdmission,
   type TerminalSessionAdmission,
 } from "./terminal-session-admission.js";
 import { registerTerminalSessionRoute } from "./terminal-session-route.js";
+import {
+  createDefaultTerminalRuntime,
+  type TerminalRuntime,
+} from "./terminal-runtime.js";
+import {
+  registerTerminalWebSocketPlugin,
+  registerTerminalWebSocketRoute,
+} from "./terminal-websocket-route.js";
 
 interface BuildAppOptions {
   staticRoot?: string;
@@ -81,6 +88,7 @@ interface BuildAppOptions {
   logSourcesReader?: LogSourcesReader;
   logsReader?: LogsReader;
   terminalSessionAdmission?: TerminalSessionAdmission;
+  terminalRuntime?: TerminalRuntime;
 }
 
 function buildDefaultHistoryReader(): HostHistoryReader {
@@ -156,6 +164,8 @@ export function buildApp(options: BuildAppOptions = {}) {
       },
     },
   }).withTypeProvider<TypeBoxTypeProvider>();
+  registerTerminalWebSocketPlugin(app);
+
   const historyReader = options.historyReader ?? buildDefaultHistoryReader();
   const servicesReader = options.servicesReader ?? buildDefaultServicesReader();
   const activityReader = options.activityReader ?? buildDefaultActivityReader(servicesReader);
@@ -168,8 +178,9 @@ export function buildApp(options: BuildAppOptions = {}) {
       : null;
   const logSourcesReader = options.logSourcesReader ?? defaultLogsReaders?.readSources;
   const logsReader = options.logsReader ?? defaultLogsReaders?.readLogs;
+  const terminalRuntime = options.terminalRuntime ?? createDefaultTerminalRuntime();
   const terminalSessionAdmission =
-    options.terminalSessionAdmission ?? createDefaultTerminalSessionAdmission();
+    options.terminalSessionAdmission ?? terminalRuntime.sessionAdmission;
   if (logSourcesReader === undefined || logsReader === undefined) {
     throw new Error("Logs readers are not configured");
   }
@@ -404,6 +415,11 @@ export function buildApp(options: BuildAppOptions = {}) {
   );
 
   registerTerminalSessionRoute(app, terminalSessionAdmission);
+  registerTerminalWebSocketRoute(
+    app,
+    terminalRuntime.websocketAdmission,
+    terminalRuntime.sessionRegistry,
+  );
 
   if (options.staticRoot !== undefined) {
     if (!isAbsolute(options.staticRoot)) {
