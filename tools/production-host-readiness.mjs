@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { lstat, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import process from "node:process";
@@ -6,7 +7,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const HOST_READINESS_SCHEMA = "dashboard-rpi5.host-readiness.v1";
 
 const MAX_TEXT_BYTES = 4 * 1024 * 1024;
-const FULL_SHA = /^[0-9a-f]{40}$/u;
 const UNIT_NAMES = Object.freeze([
   "dashboard-rpi5-web.service",
   "dashboard-rpi5-agent.service",
@@ -41,7 +41,9 @@ function assertStringArray(value, label) {
 
 function sameStringSet(left, right) {
   if (left.length !== right.length) return false;
-  return [...left].sort().every((value, index) => value === [...right].sort()[index]);
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+  return sortedLeft.every((value, index) => value === sortedRight[index]);
 }
 
 function hostPath(fsRoot, absolutePath) {
