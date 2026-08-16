@@ -27,6 +27,7 @@ import "./reliability-states.css";
 import "./history-panel.css";
 import "./services-page.css";
 import "./quick-commands.css";
+import "./terminal-live.css";
 import "./input-mode.css";
 import "./navigation.css";
 import "./pwa.css";
