@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
-export const CLOUDFLARE_CONTRACT_SCHEMA = "dashboard-rpi5.cloudflare-launch.v1";
+export const CLOUDFLARE_CONTRACT_SCHEMA = "dashboard-rpi5.cloudflare-launch.v2";
 
 const HOSTNAME = "dash.rozkalns.net";
 const ORIGIN = "http://127.0.0.1:8787";
@@ -13,6 +13,8 @@ const TEAM_NAME_BINDING = "DASHBOARD_CLOUDFLARE_TEAM_NAME";
 const AUDIENCE_BINDING = "DASHBOARD_CLOUDFLARE_APPLICATION_AUDIENCE";
 const TUNNEL_ID_BINDING = "DASHBOARD_CLOUDFLARE_TUNNEL_ID";
 const ACCESS_HEADER = "Cf-Access-Jwt-Assertion";
+const BASE_JWT_ENFORCEMENT_POINT = "cloudflared_protect_with_access";
+const TUNNEL_JWT_VALIDATION_POINT = "before_origin_proxy";
 const MAX_FILE_BYTES = 64 * 1024;
 const TEAM_NAME_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 const AUDIENCE_PATTERN = /^[A-Za-z0-9_-]{16,64}$/u;
@@ -32,8 +34,8 @@ const ACTIVATION_ORDER = Object.freeze([
   "create_exact_owner_allow_policy",
   "verify_access_deny_by_default",
   "publish_tunnel_route",
+  "verify_tunnel_access_jwt_gate",
   "verify_unauthenticated_block",
-  "verify_origin_jwt",
   "authenticated_smoke",
 ]);
 
@@ -89,9 +91,15 @@ export function validateCloudflareContract(contractValue, launchValue) {
     throw new Error("Cloudflare Access forbidden policy mode enabled");
   }
 
-  const jwt = assertObject(access.originJwtValidation, "origin JWT contract");
-  if (jwt.required !== true || jwt.header !== ACCESS_HEADER || jwt.teamNameBinding !== TEAM_NAME_BINDING || jwt.audienceBinding !== AUDIENCE_BINDING) {
-    throw new Error("origin JWT validation invariant mismatch");
+  const baseBoundary = assertObject(access.baseApplicationJwtBoundary, "base application JWT boundary");
+  if (
+    baseBoundary.enforcementPoint !== BASE_JWT_ENFORCEMENT_POINT ||
+    baseBoundary.assertionHeader !== ACCESS_HEADER ||
+    baseBoundary.teamNameBinding !== TEAM_NAME_BINDING ||
+    baseBoundary.audienceBinding !== AUDIENCE_BINDING ||
+    baseBoundary.fastifyGlobalMiddlewareRequired !== false
+  ) {
+    throw new Error("base application JWT boundary mismatch");
   }
 
   const tunnel = assertObject(contract.tunnel, "Cloudflare Tunnel contract");
@@ -99,8 +107,22 @@ export function validateCloudflareContract(contractValue, launchValue) {
     throw new Error("Cloudflare Tunnel route invariant mismatch");
   }
   const protectWithAccess = assertObject(tunnel.protectWithAccess, "Tunnel Protect with Access contract");
-  if (protectWithAccess.required !== true || protectWithAccess.teamNameBinding !== TEAM_NAME_BINDING || protectWithAccess.audienceBinding !== AUDIENCE_BINDING) {
+  if (
+    protectWithAccess.required !== true ||
+    protectWithAccess.validationPoint !== TUNNEL_JWT_VALIDATION_POINT ||
+    protectWithAccess.assertionHeader !== ACCESS_HEADER ||
+    protectWithAccess.teamNameBinding !== TEAM_NAME_BINDING ||
+    protectWithAccess.audienceBinding !== AUDIENCE_BINDING
+  ) {
     throw new Error("Tunnel Protect with Access invariant mismatch");
+  }
+
+  if (
+    baseBoundary.teamNameBinding !== protectWithAccess.teamNameBinding ||
+    baseBoundary.audienceBinding !== protectWithAccess.audienceBinding ||
+    baseBoundary.assertionHeader !== protectWithAccess.assertionHeader
+  ) {
+    throw new Error("base JWT boundary and Tunnel Protect with Access bindings diverged");
   }
 
   const network = assertObject(contract.network, "Cloudflare network contract");
@@ -111,6 +133,7 @@ export function validateCloudflareContract(contractValue, launchValue) {
     schema: contract.schema,
     hostname: HOSTNAME,
     origin: ORIGIN,
+    baseJwtEnforcementPoint: BASE_JWT_ENFORCEMENT_POINT,
   };
 }
 
