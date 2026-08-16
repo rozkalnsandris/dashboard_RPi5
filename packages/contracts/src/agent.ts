@@ -11,6 +11,7 @@ export const AgentCapabilitySchema = Type.Union([
   Type.Literal("maintenance.events.recent"),
   Type.Literal("deploy.events.recent"),
   Type.Literal("endpoint.events.recent"),
+  Type.Literal("quick-commands.read"),
 ]);
 export type AgentCapability = Static<typeof AgentCapabilitySchema>;
 
