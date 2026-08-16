@@ -177,10 +177,20 @@ function expectedCurrentLabel(value) {
   return value === null ? "none" : value;
 }
 
-function assertExpectedCurrent(observed, expected) {
+function normalizeExpectedCurrent(expected) {
   if (expected === undefined) throw new Error("expected current release is required for apply");
-  const normalized = expected === "none" ? null : assertSha(expected, "expected current SHA");
+  return expected === "none" ? null : assertSha(expected, "expected current SHA");
+}
+
+function assertExpectedCurrent(observed, expected) {
+  const normalized = normalizeExpectedCurrent(expected);
   if (observed !== normalized) throw new Error("current release changed since reviewed plan");
+  return normalized;
+}
+
+async function assertCurrentUnchanged(activationRoot, reviewedCurrent) {
+  const current = await inspectCurrent(activationRoot);
+  if (current !== reviewedCurrent) throw new Error("current release changed during activation");
 }
 
 async function loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha }) {
@@ -274,6 +284,7 @@ export async function applyReleaseActivation({ activationRoot, candidateRoot, ma
   const manifest = await loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha });
   const target = await inspectTargetRelease(activationRoot, sourceSha);
   if (!target.exists) await copyVerifiedRelease({ activationRoot, candidateRoot: resolve(candidateRoot), manifest });
+  await assertCurrentUnchanged(activationRoot, observed);
   if (observed !== sourceSha) await swapCurrentPointer(activationRoot, sourceSha);
   const finalCurrent = await inspectCurrent(activationRoot);
   if (finalCurrent !== sourceSha) throw new Error("current pointer did not activate exact source SHA");
@@ -308,15 +319,16 @@ export async function planReleaseRollback({ activationRoot, rollbackSha, contrac
 
 export async function applyReleaseRollback({ activationRoot, rollbackSha, expectedCurrent, contract }) {
   const plan = await planReleaseRollback({ activationRoot, rollbackSha, contract });
-  assertExpectedCurrent(plan.observedCurrent, expectedCurrent);
-  if (plan.observedCurrent !== rollbackSha) await swapCurrentPointer(activationRoot, rollbackSha);
+  const reviewedCurrent = assertExpectedCurrent(plan.observedCurrent, expectedCurrent);
+  await assertCurrentUnchanged(activationRoot, reviewedCurrent);
+  if (reviewedCurrent !== rollbackSha) await swapCurrentPointer(activationRoot, rollbackSha);
   const finalCurrent = await inspectCurrent(activationRoot);
   if (finalCurrent !== rollbackSha) throw new Error("rollback pointer did not activate exact target SHA");
   await readInstalledManifest(activationRoot, rollbackSha);
   return {
     status: "ROLLED_BACK",
     action: "rollback",
-    previousRelease: plan.observedCurrent,
+    previousRelease: reviewedCurrent,
     currentRelease: rollbackSha,
     releasesDeleted: 0,
   };
