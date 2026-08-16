@@ -7,6 +7,7 @@ import {
   attachTerminalWebSocketBridge,
   TERMINAL_BRIDGE_EXIT_SEND_TIMEOUT_MS,
   TERMINAL_BRIDGE_MAX_WEBSOCKET_BUFFER_BYTES,
+  TERMINAL_BRIDGE_READY_TIMEOUT_MS,
   type TerminalBridgeWebSocket,
 } from "./terminal-websocket-bridge.js";
 import {
@@ -127,6 +128,23 @@ describe("terminal websocket Unix bridge", () => {
     expect(session.local.destroyed).toBe(true);
     expect(session.registry.activeCount()).toBe(0);
     expect(session.local.writes).toEqual([]);
+  });
+
+  it("fails closed if a connected local peer never completes ready", async () => {
+    vi.useFakeTimers();
+    const session = harness();
+    session.local.connectNow();
+
+    expect(session.local.writes).toEqual([
+      '{"v":1,"type":"open","cols":80,"rows":24}\n',
+    ]);
+    await vi.advanceTimersByTimeAsync(TERMINAL_BRIDGE_READY_TIMEOUT_MS);
+
+    expect(session.socket.closes).toEqual([
+      { code: 1011, reason: "TERMINAL_LOCAL_READY_TIMEOUT" },
+    ]);
+    expect(session.local.destroyed).toBe(true);
+    expect(session.registry.activeCount()).toBe(0);
   });
 
   it("opens fixed 80x24 locally then translates input, resize, output and exit", () => {
