@@ -38,6 +38,9 @@ type ActiveSocket = {
   generation: number;
 };
 
+const TERMINAL_CLIENT_PROTOCOL_CLOSE_CODE = 4400;
+const TERMINAL_CLIENT_ERROR_CLOSE_CODE = 4500;
+
 const phaseCopy: Record<TerminalPhase, { label: string; detail: string }> = {
   idle: {
     label: "Locked",
@@ -84,7 +87,6 @@ const phaseCopy: Record<TerminalPhase, { label: string; detail: string }> = {
 export function FullTerminalPanel() {
   const hostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<ActiveSocket | null>(null);
   const inputDisposableRef = useRef<Disposable | null>(null);
   const resizeCleanupRef = useRef<(() => void) | null>(null);
@@ -127,7 +129,6 @@ export function FullTerminalPanel() {
     cleanupRuntimeListeners();
     terminalRef.current?.dispose();
     terminalRef.current = null;
-    fitAddonRef.current = null;
     setTerminalMounted(false);
   }, [cleanupRuntimeListeners]);
 
@@ -250,7 +251,6 @@ export function FullTerminalPanel() {
       terminal.loadAddon(fitAddon);
       terminal.open(host);
       terminalRef.current = terminal;
-      fitAddonRef.current = fitAddon;
       setTerminalMounted(true);
 
       const socket = createTerminalWebSocket(grant.sessionToken);
@@ -281,13 +281,13 @@ export function FullTerminalPanel() {
       socket.addEventListener("message", (event) => {
         if (socketRef.current?.socket !== socket || generationRef.current !== generation) return;
         if (typeof event.data !== "string") {
-          closeActiveSocket(1008, "CLIENT_PROTOCOL_ERROR");
+          closeActiveSocket(TERMINAL_CLIENT_PROTOCOL_CLOSE_CODE, "CLIENT_PROTOCOL_ERROR");
           setPhase("error");
           return;
         }
         const frame = parseTerminalServerFrame(event.data);
         if (frame === null) {
-          closeActiveSocket(1008, "CLIENT_PROTOCOL_ERROR");
+          closeActiveSocket(TERMINAL_CLIENT_PROTOCOL_CLOSE_CODE, "CLIENT_PROTOCOL_ERROR");
           setPhase("error");
           return;
         }
@@ -295,7 +295,7 @@ export function FullTerminalPanel() {
         switch (frame.type) {
           case "ready":
             if (readyRef.current) {
-              closeActiveSocket(1008, "CLIENT_PROTOCOL_ERROR");
+              closeActiveSocket(TERMINAL_CLIENT_PROTOCOL_CLOSE_CODE, "CLIENT_PROTOCOL_ERROR");
               setPhase("error");
               return;
             }
@@ -306,7 +306,7 @@ export function FullTerminalPanel() {
             break;
           case "output":
             if (!readyRef.current) {
-              closeActiveSocket(1008, "CLIENT_PROTOCOL_ERROR");
+              closeActiveSocket(TERMINAL_CLIENT_PROTOCOL_CLOSE_CODE, "CLIENT_PROTOCOL_ERROR");
               setPhase("error");
               return;
             }
@@ -333,7 +333,8 @@ export function FullTerminalPanel() {
 
       socket.addEventListener("error", () => {
         if (socketRef.current?.socket !== socket || generationRef.current !== generation) return;
-        finishRemoteConnection(socket, "error");
+        closeActiveSocket(TERMINAL_CLIENT_ERROR_CLOSE_CODE, "CLIENT_CONNECTION_ERROR");
+        setPhase("error");
       });
     } catch (error) {
       if (controller.signal.aborted || generationRef.current !== generation) return;
@@ -382,7 +383,6 @@ export function FullTerminalPanel() {
     closeActiveSocket();
     terminalRef.current?.dispose();
     terminalRef.current = null;
-    fitAddonRef.current = null;
   }, [closeActiveSocket]);
 
   const isStarting = phase === "starting" || phase === "connecting";
