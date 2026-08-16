@@ -44,6 +44,7 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
 
 const FULL_SHA = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
+const INSTALLED_MANIFEST_MARKER = ".dashboard-production-candidate.json";
 
 function comparePath(left, right) {
   if (left < right) return -1;
@@ -139,6 +140,57 @@ function digestManifestCore(core) {
   return createHash(PRODUCTION_CANDIDATE_HASH).update(JSON.stringify(core), "utf8").digest("hex");
 }
 
+function validateHistoricalEntry(entry) {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    throw new Error("installed candidate manifest file must be an object");
+  }
+  if (typeof entry.path !== "string" || entry.path === "" || entry.path.startsWith("/") || entry.path.includes("\\")) {
+    throw new Error("installed candidate manifest file path is invalid");
+  }
+  const segments = entry.path.split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw new Error("installed candidate manifest file path escapes release root");
+  }
+  if (entry.path === INSTALLED_MANIFEST_MARKER || segments.includes("node_modules")) {
+    throw new Error("installed candidate manifest file path is reserved");
+  }
+  if (!Number.isSafeInteger(entry.bytes) || entry.bytes < 0) {
+    throw new Error("installed candidate manifest file size is invalid");
+  }
+  if (typeof entry.sha256 !== "string" || !SHA256.test(entry.sha256)) {
+    throw new Error("installed candidate manifest file digest is invalid");
+  }
+  return entry;
+}
+
+async function collectInstalledReleasePaths(rootDir, absoluteDirectory) {
+  const directoryStat = await lstat(absoluteDirectory);
+  if (directoryStat.isSymbolicLink() || !directoryStat.isDirectory()) {
+    throw new Error("installed release directory must be a real directory");
+  }
+
+  const entries = await readdir(absoluteDirectory, { withFileTypes: true });
+  entries.sort((left, right) => comparePath(left.name, right.name));
+
+  const files = [];
+  for (const entry of entries) {
+    const absolutePath = resolve(absoluteDirectory, entry.name);
+    const relativePath = normalizeRelative(rootDir, absolutePath);
+    if (entry.isSymbolicLink()) {
+      throw new Error(`installed release symlink is forbidden: ${relativePath}`);
+    }
+    if (entry.isDirectory()) {
+      files.push(...(await collectInstalledReleasePaths(rootDir, absolutePath)));
+      continue;
+    }
+    if (!entry.isFile()) {
+      throw new Error(`installed release entry must be regular: ${relativePath}`);
+    }
+    if (relativePath !== INSTALLED_MANIFEST_MARKER) files.push(relativePath);
+  }
+  return files;
+}
+
 export async function createProductionCandidateManifest({ rootDir, sourceSha }) {
   validateSourceSha(sourceSha);
   const root = resolve(rootDir);
@@ -194,6 +246,62 @@ export async function verifyProductionCandidateManifest({ rootDir, sourceSha, ma
     throw new Error("candidate manifest does not match exact build contents");
   }
   return expected;
+}
+
+export async function verifyInstalledProductionCandidateManifest({ rootDir, sourceSha, manifest }) {
+  validateCandidateManifestShape(manifest, sourceSha);
+  if (manifest.files.length !== manifest.fileCount) {
+    throw new Error("installed candidate manifest file count mismatch");
+  }
+
+  const files = manifest.files.map((entry) => validateHistoricalEntry(entry));
+  const sortedPaths = files.map((entry) => entry.path).sort(comparePath);
+  const manifestPaths = files.map((entry) => entry.path);
+  if (JSON.stringify(manifestPaths) !== JSON.stringify(sortedPaths)) {
+    throw new Error("installed candidate manifest files are not deterministically sorted");
+  }
+  if (new Set(manifestPaths).size !== manifestPaths.length) {
+    throw new Error("installed candidate manifest contains duplicate paths");
+  }
+
+  const core = manifestCore(sourceSha, files);
+  if (core.totalBytes !== manifest.totalBytes) {
+    throw new Error("installed candidate manifest total bytes mismatch");
+  }
+  if (digestManifestCore(core) !== manifest.candidateSha256) {
+    throw new Error("installed candidate manifest digest mismatch");
+  }
+
+  const root = resolve(rootDir);
+  const rootStat = await lstat(root);
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+    throw new Error("installed release root must be a real directory");
+  }
+
+  const actualPaths = (await collectInstalledReleasePaths(root, root)).sort(comparePath);
+  if (JSON.stringify(actualPaths) !== JSON.stringify(manifestPaths)) {
+    throw new Error("installed release tree does not match historical manifest");
+  }
+
+  for (const entry of files) {
+    const absolutePath = resolve(root, ...entry.path.split("/"));
+    const relativePath = relative(root, absolutePath);
+    if (relativePath === "" || relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
+      throw new Error("installed candidate manifest path escaped release root");
+    }
+    const stat = await lstat(absolutePath);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw new Error(`installed release file must be regular: ${entry.path}`);
+    }
+    if (stat.size !== entry.bytes) {
+      throw new Error(`installed release file size mismatch: ${entry.path}`);
+    }
+    if ((await sha256File(absolutePath)) !== entry.sha256) {
+      throw new Error(`installed release file digest mismatch: ${entry.path}`);
+    }
+  }
+
+  return manifest;
 }
 
 function parseCli(argv) {
