@@ -17,8 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout
+      - name: Checkout exact source SHA
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Node.js 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -44,6 +46,13 @@ jobs:
       - name: Production build
         run: npm run build
 
+      - name: Validate production candidate manifest
+        env:
+          DASHBOARD_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          npm run manifest:production -- --root . --sha "$DASHBOARD_CANDIDATE_SHA" > /tmp/dashboard-rpi5-production-candidate.json
+          npm run manifest:production -- --root . --sha "$DASHBOARD_CANDIDATE_SHA" --verify /tmp/dashboard-rpi5-production-candidate.json
+
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
@@ -63,8 +72,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
-      - name: Checkout
+      - name: Checkout exact source SHA
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Node.js 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
