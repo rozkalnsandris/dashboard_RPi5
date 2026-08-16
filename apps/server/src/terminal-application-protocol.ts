@@ -20,6 +20,7 @@ export type TerminalClientMessageRejection =
   | "INVALID_SHAPE"
   | "UNKNOWN_MESSAGE_TYPE"
   | "INPUT_EMPTY"
+  | "INPUT_CONTAINS_NUL"
   | "INPUT_TOO_LARGE"
   | "RESIZE_OUT_OF_RANGE";
 
@@ -32,9 +33,7 @@ export interface TerminalExitEvent {
   signal?: number;
 }
 
-export function parseTerminalClientMessage(
-  frame: string,
-): TerminalClientMessageParseResult {
+export function parseTerminalClientMessage(frame: string): TerminalClientMessageParseResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(frame) as unknown;
@@ -77,9 +76,7 @@ export function serializeTerminalExitFrame(event: TerminalExitEvent): string {
 }
 
 export function splitTerminalOutput(data: string): string[] {
-  if (data.length === 0) {
-    return [];
-  }
+  if (data.length === 0) return [];
 
   const chunks: string[] = [];
   let current = "";
@@ -87,45 +84,32 @@ export function splitTerminalOutput(data: string): string[] {
 
   for (const codePoint of data) {
     const codePointBytes = Buffer.byteLength(codePoint, "utf8");
-    if (
-      current.length > 0 &&
-      currentBytes + codePointBytes > TERMINAL_OUTPUT_FRAME_MAX_BYTES
-    ) {
+    if (current.length > 0 && currentBytes + codePointBytes > TERMINAL_OUTPUT_FRAME_MAX_BYTES) {
       chunks.push(current);
       current = "";
       currentBytes = 0;
     }
-
     current += codePoint;
     currentBytes += codePointBytes;
   }
 
-  if (current.length > 0) {
-    chunks.push(current);
-  }
-
+  if (current.length > 0) chunks.push(current);
   return chunks;
 }
 
-function parseInputMessage(
-  value: Record<string, unknown>,
-): TerminalClientMessageParseResult {
+function parseInputMessage(value: Record<string, unknown>): TerminalClientMessageParseResult {
   if (!hasExactKeys(value, ["type", "data"]) || typeof value.data !== "string") {
     return { parsed: false, reason: "INVALID_SHAPE" };
   }
-  if (value.data.length === 0) {
-    return { parsed: false, reason: "INPUT_EMPTY" };
-  }
+  if (value.data.length === 0) return { parsed: false, reason: "INPUT_EMPTY" };
+  if (value.data.includes("\0")) return { parsed: false, reason: "INPUT_CONTAINS_NUL" };
   if (Buffer.byteLength(value.data, "utf8") > TERMINAL_INPUT_MAX_BYTES) {
     return { parsed: false, reason: "INPUT_TOO_LARGE" };
   }
-
   return { parsed: true, message: { type: "input", data: value.data } };
 }
 
-function parseResizeMessage(
-  value: Record<string, unknown>,
-): TerminalClientMessageParseResult {
+function parseResizeMessage(value: Record<string, unknown>): TerminalClientMessageParseResult {
   if (
     !hasExactKeys(value, ["type", "cols", "rows"]) ||
     typeof value.cols !== "number" ||
@@ -145,10 +129,7 @@ function parseResizeMessage(
     return { parsed: false, reason: "RESIZE_OUT_OF_RANGE" };
   }
 
-  return {
-    parsed: true,
-    message: { type: "resize", cols: value.cols, rows: value.rows },
-  };
+  return { parsed: true, message: { type: "resize", cols: value.cols, rows: value.rows } };
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
