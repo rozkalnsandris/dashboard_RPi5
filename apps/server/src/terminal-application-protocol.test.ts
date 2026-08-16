@@ -32,6 +32,10 @@ describe("terminal application protocol", () => {
     ]) {
       expect(parseTerminalClientMessage(frame).parsed).toBe(false);
     }
+
+    expect(
+      parseTerminalClientMessage(JSON.stringify({ type: "input", data: "a\0b" })),
+    ).toEqual({ parsed: false, reason: "INPUT_CONTAINS_NUL" });
   });
 
   it("bounds input by UTF-8 bytes rather than JavaScript code units", () => {
