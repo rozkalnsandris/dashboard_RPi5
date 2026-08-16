@@ -1,3 +1,4 @@
+import type { QuickCommandId } from "@dashboard-rpi5/contracts/quick-commands";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ChevronRight, LockKeyhole, TerminalSquare } from "lucide-react";
 import { Button } from "react-aria-components";
@@ -18,7 +19,9 @@ export function TerminalPage() {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
-  const command = useMutation({ mutationFn: (commandId) => runQuickCommand(commandId) });
+  const command = useMutation({
+    mutationFn: (commandId: QuickCommandId) => runQuickCommand(commandId),
+  });
 
   const resultText = command.isPending
     ? "Running bounded read-only diagnostic…"
