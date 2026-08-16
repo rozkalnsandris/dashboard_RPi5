@@ -143,9 +143,6 @@ export class TerminalSessionRegistry {
   }
 
   claimTransport(input: TerminalTransportClaimInput): TerminalTransportClaimResult {
-    const now = this.#readNow();
-    this.#pruneExpired(now);
-
     const boundaryRejection = evaluateTerminalBoundary(input);
     if (boundaryRejection !== null) {
       return { claimed: false, reason: boundaryRejection };
@@ -159,6 +156,8 @@ export class TerminalSessionRegistry {
       return { claimed: false, reason: "SESSION_TOKEN_INVALID" };
     }
 
+    const now = this.#readNow();
+    this.#pruneExpired(now);
     const session = this.#sessions.get(token);
     if (session === undefined) {
       return { claimed: false, reason: "SESSION_NOT_FOUND" };
