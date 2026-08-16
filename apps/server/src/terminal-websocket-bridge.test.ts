@@ -37,11 +37,11 @@ class FakeLocalSocket extends Duplex {
   }
 
   serverSend(frame: object): void {
-    this.push(`${JSON.stringify(frame)}\n`);
+    this.emit("data", Buffer.from(`${JSON.stringify(frame)}\n`, "utf8"));
   }
 
   serverSendRaw(data: string): void {
-    this.push(data);
+    this.emit("data", Buffer.from(data, "utf8"));
   }
 }
 
