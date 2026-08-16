@@ -238,7 +238,7 @@ test("historical installed manifest rejects digest, tree, traversal and symlink 
 
   const traversalRoot = resolve(candidate.workspace, "activation-traversal");
   const traversalFixture = await installHistoricalRelease({ activationRoot: traversalRoot, candidate });
-  const traversalManifest = structuredClone(traversalFixture.manifest);
+  const traversalManifest = JSON.parse(JSON.stringify(traversalFixture.manifest));
   traversalManifest.files[0].path = "../escape";
   await assert.rejects(
     verifyInstalledProductionCandidateManifest({ rootDir: traversalFixture.releaseDir, sourceSha: SHA_A, manifest: traversalManifest }),
