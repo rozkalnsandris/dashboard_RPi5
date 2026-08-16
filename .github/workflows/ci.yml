@@ -88,5 +88,5 @@ jobs:
           npm_config_build_from_source: "true"
         run: npm rebuild node-pty --foreground-scripts
 
-      - name: Verify native PTY smoke
-        run: npm run test:terminal-native --workspace @dashboard-rpi5/agent
+      - name: Verify native PTY binding
+        run: npm run test:native --workspace @dashboard-rpi5/terminal-agent
