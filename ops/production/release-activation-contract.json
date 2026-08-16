@@ -1,0 +1,37 @@
+{
+  "schema": "dashboard-rpi5.release-activation.v1",
+  "sourceOnly": true,
+  "productionRoot": "/opt/dashboard_RPi5",
+  "releasesRoot": "/opt/dashboard_RPi5/releases",
+  "currentLink": "/opt/dashboard_RPi5/current",
+  "applyLock": "/opt/dashboard_RPi5/.dashboard-release-controller.lock",
+  "manifestMarker": ".dashboard-production-candidate.json",
+  "candidateManifestSchema": "dashboard-rpi5.production-candidate.v1",
+  "releaseDirectory": "exact-source-sha",
+  "currentLinkTargetStyle": "relative-release-path",
+  "atomicPointerSwap": true,
+  "exclusiveApplyLock": true,
+  "staleLockAutoCleanup": false,
+  "retainPreviousRelease": true,
+  "deleteReleaseDuringActivation": false,
+  "networkAllowed": false,
+  "processExecutionAllowed": false,
+  "systemdMutationAllowed": false,
+  "identityMutationAllowed": false,
+  "cloudflareMutationAllowed": false,
+  "baseCapabilities": {
+    "quickCommands": "disabled",
+    "terminal": "disabled"
+  },
+  "applyGate": {
+    "flag": "--apply",
+    "acknowledgement": "I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ACTIVATION",
+    "requiresExpectedCurrent": true
+  },
+  "rollbackGate": {
+    "flag": "--apply",
+    "acknowledgement": "I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ROLLBACK",
+    "requiresExpectedCurrent": true,
+    "requiresVerifiedExistingRelease": true
+  }
+}

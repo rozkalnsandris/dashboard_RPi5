@@ -9,7 +9,8 @@ Canonical files:
 - `terminal.env.example` — future owner-gated terminal activation inputs; intentionally incomplete/fail-closed;
 - `smoke-contract.json` — machine-readable future post-deploy acceptance baseline;
 - `cloudflare-contract.json` — exact `dash.rozkalns.net` Access/Tunnel/loopback edge contract;
-- `cloudflare.env.example` — placeholder-only out-of-repo activation binding names; never production values.
+- `cloudflare.env.example` — placeholder-only out-of-repo activation binding names; never production values;
+- `release-activation-contract.json` — exact immutable release/current-pointer, exclusive apply lock and owner acknowledgement boundary.
 
 Read-only candidate validation for an already-staged release:
 
@@ -33,10 +34,23 @@ Deterministic build candidate manifest:
 npm run manifest:production -- --root . --sha <exact-source-sha>
 ```
 
-The manifest hashes only explicit production roots, including the Cloudflare launch contract and placeholder binding example, rejects symlinks/non-regular files, records per-file SHA-256 evidence and derives the intended immutable release path from the exact source SHA.
+The manifest hashes only explicit production roots, including the Cloudflare launch contract, release activation contract and release controller source, rejects symlinks/non-regular files, records per-file SHA-256 evidence and derives the intended immutable release path from the exact source SHA.
+
+Release activation is plan-only by default:
+
+```text
+npm run release:production -- \
+  --candidate-root . \
+  --manifest <candidate-manifest.json> \
+  --sha <exact-source-sha>
+```
+
+The production CLI destination is fixed to `/opt/dashboard_RPi5`. A filesystem-changing apply additionally requires the reviewed current SHA (or `none`), `--apply`, and the exact owner acknowledgement string defined in `release-activation-contract.json`. Apply/rollback serialize through an exclusive lock under the production root; a pre-existing lock blocks and is never auto-cleared. Merge or `turpini` does not authorize apply.
 
 Phase 11B rollout/rollback and candidate integrity are documented in `docs/PHASE11B_PRODUCTION_CANDIDATE.md`.
 
 Phase 11C Access/Tunnel ordering, owner binding model and edge rollback boundary are documented in `docs/PHASE11C_CLOUDFLARE_LAUNCH.md`.
 
-The preflight and manifest tools do not activate production. Any production, systemd, host-permission or Cloudflare change still requires a separate explicit owner authorization under issue #1.
+Phase 11D exact-SHA release activation, atomic current-pointer swap and rollback behavior are documented in `docs/PHASE11D_RELEASE_ACTIVATION.md`.
+
+The preflight tools and default release plan do not activate production. Any production filesystem apply, systemd, host-permission or Cloudflare change still requires a separate explicit owner authorization under issue #1.
