@@ -151,6 +151,7 @@ export function runTerminalLocalSession(options: TerminalLocalSessionOptions): P
     input.removeAllListeners("data");
     input.removeAllListeners("end");
     input.removeAllListeners("error");
+    if (!input.destroyed) input.destroy();
 
     if (closeOptions.killPty) cleanupPty();
     else {
