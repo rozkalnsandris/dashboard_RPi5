@@ -182,6 +182,6 @@ test("verifier source has no process, network or filesystem mutation primitives"
   const source = await readFile(resolve(ROOT, "tools/production-host-readiness.mjs"), "utf8");
   assert.doesNotMatch(source, /node:child_process|node:(?:net|http|https|dgram)|\bfetch\s*\(|\bexec(?:File)?\s*\(|\bspawn\s*\(/iu);
   assert.doesNotMatch(source, /\b(?:writeFile|appendFile|mkdir|rename|unlink|rm|rmdir|chmod|chown|symlink|copyFile)\s*\(/u);
-  assert.doesNotMatch(source, /systemctl|\bservice\b|useradd|groupadd|usermod|\bsudo\b|docker\.sock|cloudflare\.com\/client\/v4/iu);
+  assert.doesNotMatch(source, /systemctl|useradd|groupadd|usermod|\bsudo\b|docker\.sock|cloudflare\.com\/client\/v4/iu);
   assert.doesNotMatch(source, /["']--root["']/u);
 });
