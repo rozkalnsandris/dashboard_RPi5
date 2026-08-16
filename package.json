@@ -16,13 +16,14 @@
     "preview:web": "npm run preview --workspace @dashboard-rpi5/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint . --max-warnings=0",
-    "test": "npm run test --workspaces --if-present && node --test tools/production-launch-preflight.test.mjs tools/production-candidate-manifest.test.mjs tools/production-smoke-contract.test.mjs tools/production-cloudflare-preflight.test.mjs",
+    "test": "npm run test --workspaces --if-present && node --test tools/production-launch-preflight.test.mjs tools/production-candidate-manifest.test.mjs tools/production-smoke-contract.test.mjs tools/production-cloudflare-preflight.test.mjs tools/production-release-controller.test.mjs",
     "build": "npm run build --workspace @dashboard-rpi5/contracts && npm run build --workspace @dashboard-rpi5/web && npm run build --workspace @dashboard-rpi5/server && npm run build --workspace @dashboard-rpi5/agent && npm run build --workspace @dashboard-rpi5/terminal-agent",
     "test:e2e": "playwright test",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build",
     "preflight:production": "node tools/production-launch-preflight.mjs",
     "preflight:cloudflare": "node tools/production-cloudflare-preflight.mjs",
-    "manifest:production": "node tools/production-candidate-manifest.mjs"
+    "manifest:production": "node tools/production-candidate-manifest.mjs",
+    "release:production": "node tools/production-release-controller.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
