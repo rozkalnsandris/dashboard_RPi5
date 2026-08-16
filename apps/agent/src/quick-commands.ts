@@ -63,11 +63,21 @@ export function listQuickCommands(): QuickCommandCatalog {
   };
 }
 
+function isDisallowedControlCode(code: number): boolean {
+  return (
+    code <= 0x08 ||
+    code === 0x0b ||
+    code === 0x0c ||
+    (code >= 0x0e && code <= 0x1f) ||
+    (code >= 0x7f && code <= 0x9f)
+  );
+}
+
 function sanitizeOutput(chunks: Buffer[]): string {
-  return Buffer.concat(chunks)
-    .toString("utf8")
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, "�")
-    .trimEnd();
+  const decoded = Buffer.concat(chunks).toString("utf8");
+  return Array.from(decoded, (character) =>
+    isDisallowedControlCode(character.charCodeAt(0)) ? "�" : character,
+  ).join("").trimEnd();
 }
 
 export async function runQuickCommand(
