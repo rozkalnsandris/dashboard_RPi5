@@ -37,7 +37,7 @@ test("Terminal runs only registered Quick Commands without exposing shell contro
   );
 
   await page.goto("/terminal");
-  await expect(page.getByRole("heading", { name: "Terminal" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Terminal", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Kernel/ })).toBeVisible();
   await expect(page.getByText(/Full terminal locked/)).toBeVisible();
   await expect(page.getByRole("textbox")).toHaveCount(0);
