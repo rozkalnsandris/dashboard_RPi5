@@ -1,21 +1,25 @@
 # SOURCE-ONLY BLUEPRINT.
 # Do not install, enable, start, restart, or otherwise activate this unit
 # without separate owner authorization under issue #1.
+#
+# The agent owns the privileged-read boundary. Its primary group is the
+# connect-only Unix-socket client group so the web identity can consume the
+# bounded agent API without sharing the agent user identity.
 
 [Unit]
 Description=dashboard_RPi5 local read agent
 After=local-fs.target
 
 [Service]
-Type=simple
-User=dashboard-rpi5
-Group=dashboard-rpi5
-WorkingDirectory=/opt/dashboard_RPi5
+Type=exec
+User=dashboard-rpi5-agent
+Group=dashboard-rpi5-agent-client
+WorkingDirectory=/opt/dashboard_RPi5/current
 Environment=DASHBOARD_RPI5_AGENT_SOCKET=/run/dashboard-rpi5/agent.sock
 # Owner-gated capability: keep OFF in the canonical blueprint. Enabling this
 # requires a separate explicit owner-authorized production configuration change.
 Environment=DASHBOARD_RPI5_QUICK_COMMANDS=disabled
-ExecStart=/usr/bin/node /opt/dashboard_RPi5/apps/agent/dist/index.js
+ExecStart=/usr/bin/node /opt/dashboard_RPi5/current/apps/agent/dist/index.js
 Restart=on-failure
 RestartSec=5s
 
