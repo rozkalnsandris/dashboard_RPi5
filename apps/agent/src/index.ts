@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 
 import { buildAgentApp } from "./app.js";
+import { registerQuickCommandRoutes } from "./quick-command-routes.js";
 import {
   DEFAULT_AGENT_SOCKET_PATH,
   prepareSocketPath,
@@ -20,6 +21,7 @@ export async function startAgent(options: StartAgentOptions = {}) {
   await prepareSocketPath(socketPath);
 
   const { app, operationRegistry } = buildAgentApp();
+  registerQuickCommandRoutes(app);
 
   try {
     await app.listen({
@@ -67,6 +69,7 @@ export {
   normalizeAgentError,
   runWithTimeout,
 } from "./operation-registry.js";
+export { registerQuickCommandRoutes } from "./quick-command-routes.js";
 export {
   AGENT_SOCKET_MODE,
   DEFAULT_AGENT_SOCKET_PATH,
