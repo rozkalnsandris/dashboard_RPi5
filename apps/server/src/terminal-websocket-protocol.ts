@@ -13,7 +13,7 @@ export type TerminalWebSocketProtocolParseResult =
   | { parsed: false; reason: TerminalWebSocketProtocolRejection };
 
 export function parseTerminalWebSocketProtocolHeader(
-  value: string | string[] | undefined,
+  value: string | readonly string[] | undefined,
 ): TerminalWebSocketProtocolParseResult {
   if (value === undefined || value.length === 0) {
     return { parsed: false, reason: "PROTOCOL_HEADER_REQUIRED" };
