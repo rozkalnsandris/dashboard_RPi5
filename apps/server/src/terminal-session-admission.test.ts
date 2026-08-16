@@ -1,7 +1,4 @@
-import type {
-  CloudflareAccessOwnerAuthOptions,
-  CloudflareAccessOwnerAuthResult,
-} from "./cloudflare-access-owner-auth.js";
+import type { CloudflareAccessOwnerAuthResult } from "./cloudflare-access-owner-auth.js";
 import {
   createDefaultTerminalSessionAdmission,
   createTerminalSessionAdmission,
@@ -37,9 +34,7 @@ function verifiedVerifier(): OwnerAuthVerifier {
 
 describe("terminal session admission", () => {
   it("stays unavailable without exact runtime activation and never constructs Access auth", async () => {
-    const verifierFactory = vi.fn(
-      (_options: CloudflareAccessOwnerAuthOptions): OwnerAuthVerifier => verifiedVerifier(),
-    );
+    const verifierFactory = vi.fn((): OwnerAuthVerifier => verifiedVerifier());
     const admission = createDefaultTerminalSessionAdmission(
       {
         DASHBOARD_TERMINAL_ENABLED: "true",
