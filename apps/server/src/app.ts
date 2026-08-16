@@ -64,6 +64,11 @@ import {
 import { createGithubRpi5MainReader } from "./github-rpi5-main-client.js";
 import { createHostHistoryReader, type HostHistoryReader } from "./host-history.js";
 import { createPublicEndpointsReader, type PublicEndpointsReader } from "./public-endpoints.js";
+import {
+  createDefaultTerminalSessionAdmission,
+  type TerminalSessionAdmission,
+} from "./terminal-session-admission.js";
+import { registerTerminalSessionRoute } from "./terminal-session-route.js";
 
 interface BuildAppOptions {
   staticRoot?: string;
@@ -75,6 +80,7 @@ interface BuildAppOptions {
   publicEndpointsReader?: PublicEndpointsReader;
   logSourcesReader?: LogSourcesReader;
   logsReader?: LogsReader;
+  terminalSessionAdmission?: TerminalSessionAdmission;
 }
 
 function buildDefaultHistoryReader(): HostHistoryReader {
@@ -162,6 +168,8 @@ export function buildApp(options: BuildAppOptions = {}) {
       : null;
   const logSourcesReader = options.logSourcesReader ?? defaultLogsReaders?.readSources;
   const logsReader = options.logsReader ?? defaultLogsReaders?.readLogs;
+  const terminalSessionAdmission =
+    options.terminalSessionAdmission ?? createDefaultTerminalSessionAdmission();
   if (logSourcesReader === undefined || logsReader === undefined) {
     throw new Error("Logs readers are not configured");
   }
@@ -394,6 +402,8 @@ export function buildApp(options: BuildAppOptions = {}) {
       }
     },
   );
+
+  registerTerminalSessionRoute(app, terminalSessionAdmission);
 
   if (options.staticRoot !== undefined) {
     if (!isAbsolute(options.staticRoot)) {
