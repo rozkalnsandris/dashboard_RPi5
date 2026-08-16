@@ -10,7 +10,8 @@ Canonical files:
 - `smoke-contract.json` — machine-readable future post-deploy acceptance baseline;
 - `cloudflare-contract.json` — exact `dash.rozkalns.net` Access/Tunnel/loopback edge contract;
 - `cloudflare.env.example` — placeholder-only out-of-repo activation binding names; never production values;
-- `release-activation-contract.json` — exact immutable release/current-pointer, exclusive apply lock and owner acknowledgement boundary.
+- `release-activation-contract.json` — exact immutable release/current-pointer, exclusive apply lock and owner acknowledgement boundary;
+- `host-readiness-contract.json` — fixed read-only RPi5 pre-bootstrap evidence contract.
 
 Read-only candidate validation for an already-staged release:
 
@@ -28,13 +29,21 @@ npm run preflight:cloudflare -- \
 
 A separately prepared activation env file outside GitHub can be syntax-validated by adding `--env <path>`. The verifier does not contact Cloudflare and does not reflect binding values in its PASS output.
 
+Read-only first-bootstrap host readiness evidence on the actual RPi5:
+
+```text
+npm run preflight:host
+```
+
+The host verifier accepts no CLI path overrides. It reads only fixed local evidence from `/etc`, `/proc`, `/run`, fixed production/socket paths and the checked-in systemd unit blueprints. It performs no process execution, network access or filesystem mutation. `READY` means the observed host is compatible with the reviewed bootstrap contract; it is not deployment authorization.
+
 Deterministic build candidate manifest:
 
 ```text
 npm run manifest:production -- --root . --sha <exact-source-sha>
 ```
 
-The manifest hashes only explicit production roots, including the Cloudflare launch contract, release activation contract and release controller source, rejects symlinks/non-regular files, records per-file SHA-256 evidence and derives the intended immutable release path from the exact source SHA.
+The manifest hashes only explicit production roots, including the Cloudflare launch contract, release activation contract/controller and host-readiness contract/verifier, rejects symlinks/non-regular files, records per-file SHA-256 evidence and derives the intended immutable release path from the exact source SHA.
 
 Release activation is plan-only by default:
 
@@ -52,5 +61,7 @@ Phase 11B rollout/rollback and candidate integrity are documented in `docs/PHASE
 Phase 11C Access/Tunnel ordering, owner binding model and edge rollback boundary are documented in `docs/PHASE11C_CLOUDFLARE_LAUNCH.md`.
 
 Phase 11D exact-SHA release activation, atomic current-pointer swap and rollback behavior are documented in `docs/PHASE11D_RELEASE_ACTIVATION.md`.
+
+Phase 11E actual-host pre-bootstrap evidence and fail-closed readiness semantics are documented in `docs/PHASE11E_HOST_READINESS.md`.
 
 The preflight tools and default release plan do not activate production. Any production filesystem apply, systemd, host-permission or Cloudflare change still requires a separate explicit owner authorization under issue #1.
