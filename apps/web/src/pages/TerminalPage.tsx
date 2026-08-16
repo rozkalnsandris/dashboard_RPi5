@@ -1,10 +1,15 @@
 import type { QuickCommandId } from "@dashboard-rpi5/contracts/quick-commands";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ChevronRight, LockKeyhole, TerminalSquare } from "lucide-react";
+import { lazy, Suspense } from "react";
 import { Button } from "react-aria-components";
 
-import { FullTerminalPanel } from "../components/FullTerminalPanel";
 import { fetchQuickCommandCatalog, QuickCommandRequestError, runQuickCommand } from "../quick-commands-api";
+
+const FullTerminalPanel = lazy(async () => {
+  const module = await import("../components/FullTerminalPanel");
+  return { default: module.FullTerminalPanel };
+});
 
 function errorText(error: unknown) {
   if (error instanceof QuickCommandRequestError && error.kind === "OPERATION_TIMEOUT") {
@@ -94,7 +99,24 @@ export function TerminalPage() {
         </section>
       </div>
 
-      <FullTerminalPanel />
+      <Suspense fallback={<FullTerminalLoadingState />}>
+        <FullTerminalPanel />
+      </Suspense>
+    </section>
+  );
+}
+
+function FullTerminalLoadingState() {
+  return (
+    <section className="panel full-terminal-panel" aria-label="Full terminal loading">
+      <div className="full-terminal-heading">
+        <div><p className="eyebrow">Owner-only · interactive PTY</p><h2>Full terminal</h2></div>
+        <span className="terminal-session-state" role="status">Loading</span>
+      </div>
+      <div className="full-terminal-summary">
+        <LockKeyhole size={18} aria-hidden="true" />
+        <p>Loading terminal controls. No session is created by loading this interface.</p>
+      </div>
     </section>
   );
 }
