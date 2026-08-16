@@ -21,6 +21,23 @@ describe("dashboard server", () => {
     await app.close();
   });
 
+  it("registers the terminal session boundary without making it available by default", async () => {
+    const app = buildApp({
+      terminalSessionAdmission: async () => ({ status: "TERMINAL_UNAVAILABLE" }),
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/terminal/session",
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.json()).toEqual({ error: "TERMINAL_UNAVAILABLE" });
+
+    await app.close();
+  });
+
   it("serves the SPA shell for a deep browser route without swallowing API 404s", async () => {
     const staticRoot = await mkdtemp(join(tmpdir(), "dashboard-rpi5-static-"));
     await writeFile(join(staticRoot, "index.html"), "<!doctype html><title>fixture shell</title>", "utf8");
