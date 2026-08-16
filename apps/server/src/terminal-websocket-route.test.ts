@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "./app.js";
 import type { OwnerAuthVerifier } from "./terminal-session-admission.js";
@@ -137,7 +137,9 @@ describe("terminal WebSocket route", () => {
     const closed = waitForClose(socket);
     socket.close();
     await closed;
-    expect(runtime.sessionRegistry.activeCount()).toBe(0);
+    await vi.waitFor(() => {
+      expect(runtime.sessionRegistry.activeCount()).toBe(0);
+    });
 
     await app.close();
   });
