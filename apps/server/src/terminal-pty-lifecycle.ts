@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 import {
   parseTerminalClientMessage,
   serializeTerminalExitFrame,
@@ -7,6 +9,7 @@ import {
   TERMINAL_DEFAULT_COLS,
   TERMINAL_DEFAULT_ROWS,
   TERMINAL_OUTPUT_BUFFER_MAX_BYTES,
+  TERMINAL_OUTPUT_EVENT_MAX_BYTES,
   type TerminalExitEvent,
 } from "./terminal-application-protocol.js";
 import {
@@ -175,6 +178,15 @@ export function attachTerminalPtyLifecycle(
 
   const sendOutput = (data: string) => {
     if (finished) {
+      return;
+    }
+    if (Buffer.byteLength(data, "utf8") > TERMINAL_OUTPUT_EVENT_MAX_BYTES) {
+      finish({
+        killPty: true,
+        closeSocket: true,
+        code: 1013,
+        reason: "TERMINAL_OUTPUT_OVERLOAD",
+      });
       return;
     }
 
