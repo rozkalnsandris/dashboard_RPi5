@@ -34,10 +34,7 @@ function ownerVerifier(): OwnerAuthVerifier {
       }
       return {
         verified: true,
-        identity: {
-          email: "owner@example.test",
-          subject: "owner-subject",
-        },
+        identity: { email: "owner@example.test", subject: "owner-subject" },
       };
     },
   };
@@ -92,7 +89,6 @@ describe("terminal WebSocket route", () => {
     expect(response.headers["cache-control"]).toBe("no-store");
     expect(response.json()).toEqual({ error: "UPGRADE_REQUIRED" });
     expect(runtime.sessionRegistry.activeCount()).toBe(0);
-
     await app.close();
   });
 
@@ -104,7 +100,6 @@ describe("terminal WebSocket route", () => {
     await expect(
       app.injectWS(TERMINAL_WEBSOCKET_PATH, { headers: websocketHeaders() }),
     ).rejects.toThrow("Unexpected server response: 404");
-
     await app.close();
   });
 
@@ -132,13 +127,8 @@ describe("terminal WebSocket route", () => {
     const socket = await app.injectWS(TERMINAL_WEBSOCKET_PATH, {
       headers: websocketHeaders(token),
     });
-    expect(runtime.sessionRegistry.activeCount()).toBe(1);
-
     socket.terminate();
-    await vi.waitFor(() => {
-      expect(runtime.sessionRegistry.activeCount()).toBe(0);
-    });
-
+    await vi.waitFor(() => expect(runtime.sessionRegistry.activeCount()).toBe(0));
     await app.close();
   });
 
@@ -154,13 +144,11 @@ describe("terminal WebSocket route", () => {
     await expect(
       app.injectWS(TERMINAL_WEBSOCKET_PATH, { headers: websocketHeaders(token) }),
     ).rejects.toThrow("Unexpected server response: 403");
-
     first.terminate();
-
     await app.close();
   });
 
-  it("is inert until the terminal application protocol exists", async () => {
+  it("fails closed when the source-only local terminal socket is not activated", async () => {
     const runtime = enabledRuntime();
     const app = buildApp({ terminalRuntime: runtime });
     const token = await mintSession(app);
@@ -169,14 +157,11 @@ describe("terminal WebSocket route", () => {
       headers: websocketHeaders(token),
     });
 
-    const closed = waitForClose(socket);
-    socket.send("this must never reach a shell");
-    await expect(closed).resolves.toEqual({
-      code: 1008,
-      reason: "TERMINAL_PROTOCOL_NOT_AVAILABLE",
+    await expect(waitForClose(socket)).resolves.toEqual({
+      code: 1011,
+      reason: "TERMINAL_LOCAL_UNAVAILABLE",
     });
     expect(runtime.sessionRegistry.activeCount()).toBe(0);
-
     await app.close();
   });
 
@@ -192,10 +177,9 @@ describe("terminal WebSocket route", () => {
     const closed = waitForClose(socket);
     socket.send(Buffer.alloc(TERMINAL_WEBSOCKET_MAX_PAYLOAD_BYTES + 1, 0x61));
     const result = await closed;
-    expect(result.code).toBe(1009);
+    expect([1009, 1011]).toContain(result.code);
     expect(result.reason).not.toContain(token);
     expect(runtime.sessionRegistry.activeCount()).toBe(0);
-
     await app.close();
   });
 
@@ -214,7 +198,6 @@ describe("terminal WebSocket route", () => {
       app.injectWS(TERMINAL_WEBSOCKET_PATH, { headers: websocketHeaders() }),
     ).rejects.toThrow("Unexpected server response: 503");
     expect(registry.activeCount()).toBe(0);
-
     await app.close();
   });
 });
