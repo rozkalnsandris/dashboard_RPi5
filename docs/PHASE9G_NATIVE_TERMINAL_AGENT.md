@@ -88,7 +88,10 @@ PATH
 TERM
 COLORTERM
 LANG
+PWD
 ```
+
+`PWD` is set explicitly to the same validated home/cwd value. This also matches node-pty's own Unix behavior, which materializes `PWD` from `cwd` before exec.
 
 It never spreads or copies `process.env`, so service secrets cannot accidentally become shell environment variables.
 
