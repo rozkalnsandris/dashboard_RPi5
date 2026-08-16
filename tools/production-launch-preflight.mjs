@@ -1,3 +1,4 @@
+import { error as logError, log as logOutput } from "node:console";
 import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import process from "node:process";
@@ -244,19 +245,19 @@ async function main() {
   try {
     input = parseCli(process.argv.slice(2));
   } catch (error) {
-    console.error(error instanceof Error ? error.message : "invalid arguments");
+    logError(error instanceof Error ? error.message : "invalid arguments");
     process.exitCode = 2;
     return;
   }
 
   const errors = await preflightCandidateRelease(input);
   if (errors.length > 0) {
-    console.error(JSON.stringify({ status: "BLOCKED", errors }));
+    logError(JSON.stringify({ status: "BLOCKED", errors }));
     process.exitCode = 1;
     return;
   }
 
-  console.log(JSON.stringify({ status: "PASS", sha: input.expectedSha }));
+  logOutput(JSON.stringify({ status: "PASS", sha: input.expectedSha }));
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
