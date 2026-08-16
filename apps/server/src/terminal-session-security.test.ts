@@ -102,7 +102,7 @@ describe("terminal admission", () => {
 
 describe("TerminalSessionRegistry", () => {
   it("creates an opaque bounded session only after admission passes", () => {
-    let now = 1_000;
+    const now = 1_000;
     const registry = new TerminalSessionRegistry({
       now: () => now,
       tokenFactory: () => TOKEN_A,
