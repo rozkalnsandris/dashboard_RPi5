@@ -74,7 +74,8 @@ export function parseTerminalLocalClientFrame(bytes: Uint8Array): TerminalLocalC
   switch (value.type) {
     case "open":
       assertExactKeys(value, ["v", "type", "cols", "rows"]);
-      assertDimensions(value.cols, value.rows);
+      assertDimension(value.cols, TERMINAL_NATIVE_MIN_COLS, TERMINAL_NATIVE_MAX_COLS);
+      assertDimension(value.rows, TERMINAL_NATIVE_MIN_ROWS, TERMINAL_NATIVE_MAX_ROWS);
       return { v: 1, type: "open", cols: value.cols, rows: value.rows };
     case "input":
       assertExactKeys(value, ["v", "type", "data"]);
@@ -89,7 +90,8 @@ export function parseTerminalLocalClientFrame(bytes: Uint8Array): TerminalLocalC
       return { v: 1, type: "input", data: value.data };
     case "resize":
       assertExactKeys(value, ["v", "type", "cols", "rows"]);
-      assertDimensions(value.cols, value.rows);
+      assertDimension(value.cols, TERMINAL_NATIVE_MIN_COLS, TERMINAL_NATIVE_MAX_COLS);
+      assertDimension(value.rows, TERMINAL_NATIVE_MIN_ROWS, TERMINAL_NATIVE_MAX_ROWS);
       return { v: 1, type: "resize", cols: value.cols, rows: value.rows };
     case "close":
       assertExactKeys(value, ["v", "type"]);
@@ -174,15 +176,8 @@ function assertExactKeys(value: Record<string, unknown>, expected: readonly stri
   }
 }
 
-function assertDimensions(cols: unknown, rows: unknown): asserts cols is number & typeof rows {
-  if (
-    !Number.isInteger(cols) ||
-    !Number.isInteger(rows) ||
-    (cols as number) < TERMINAL_NATIVE_MIN_COLS ||
-    (cols as number) > TERMINAL_NATIVE_MAX_COLS ||
-    (rows as number) < TERMINAL_NATIVE_MIN_ROWS ||
-    (rows as number) > TERMINAL_NATIVE_MAX_ROWS
-  ) {
+function assertDimension(value: unknown, min: number, max: number): asserts value is number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
     throw new TerminalLocalProtocolError();
   }
 }
