@@ -186,6 +186,18 @@ export class TerminalSessionRegistry {
     return this.#toMetadata(session);
   }
 
+  touchClaimedTransport(token: string): TerminalSessionMetadata | null {
+    const now = this.#readNow();
+    this.#pruneExpired(now);
+    const session = this.#sessions.get(token);
+    if (session === undefined || session.transportClaimedAtMs === null) {
+      return null;
+    }
+
+    session.lastActivityAtMs = now;
+    return this.#toMetadata(session);
+  }
+
   revoke(token: string): boolean {
     return this.#sessions.delete(token);
   }
