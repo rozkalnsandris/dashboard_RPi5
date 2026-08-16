@@ -80,11 +80,16 @@ describe("CloudflareAccessOwnerAuthVerifier", () => {
 
   it("rejects a service-token-only assertion without an owner identity", async () => {
     const verifier = createVerifier(async () => responseWithKeys([jwkA]));
-    const { email: _email, ...serviceClaims } = validClaims;
     const token = signJwt(
       {
-        ...serviceClaims,
+        iss: validClaims.iss,
+        aud: validClaims.aud,
+        type: validClaims.type,
         common_name: "service-token-client-id.access",
+        sub: "service-token-client-id.access",
+        iat: validClaims.iat,
+        nbf: validClaims.nbf,
+        exp: validClaims.exp,
       },
       keyPairA.privateKey,
       "key-a",
