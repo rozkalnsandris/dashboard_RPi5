@@ -21,9 +21,16 @@ const result = {
   stderr: "",
 };
 
+function createTestApp() {
+  return Fastify({
+    logger: false,
+    ajv: { customOptions: { removeAdditional: false } },
+  });
+}
+
 describe("quick command API", () => {
   it("returns normalized no-store catalog and result", async () => {
-    const app = Fastify({ logger: false });
+    const app = createTestApp();
     registerQuickCommandApiRoutes(app, {
       readCatalog: async () => catalog,
       runCommand: async (id) => ({ ...result, commandId: id }),
@@ -42,7 +49,7 @@ describe("quick command API", () => {
   });
 
   it("rejects every browser-controlled selector except commandId", async () => {
-    const app = Fastify({ logger: false });
+    const app = createTestApp();
     registerQuickCommandApiRoutes(app, {
       readCatalog: async () => catalog,
       runCommand: async () => result,
@@ -63,7 +70,7 @@ describe("quick command API", () => {
   });
 
   it("normalizes timeout without leaking internals", async () => {
-    const app = Fastify({ logger: false });
+    const app = createTestApp();
     registerQuickCommandApiRoutes(app, {
       readCatalog: async () => catalog,
       runCommand: async () => { throw new AgentQuickCommandTimeoutError(); },
