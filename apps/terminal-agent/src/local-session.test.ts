@@ -8,35 +8,29 @@ import {
   TERMINAL_LOCAL_MAX_OUTPUT_EVENT_BYTES,
 } from "./local-protocol.js";
 import { runTerminalLocalSession } from "./local-session.js";
-import type { TerminalNativePtyFactory, TerminalNativePtyProcess } from "./native-pty.js";
+import type { TerminalNativePtyFactory } from "./native-pty.js";
 
-function fakePty(): TerminalNativePtyProcess & {
-  write: ReturnType<typeof vi.fn>;
-  resize: ReturnType<typeof vi.fn>;
-  kill: ReturnType<typeof vi.fn>;
-  emitData(data: string): void;
-  emitExit(exitCode: number, signal?: number): void;
-} {
+function fakePty() {
   let dataListener: ((data: string) => void) | undefined;
   let exitListener: ((event: { exitCode: number; signal?: number }) => void) | undefined;
   return {
     pid: 321,
-    write: vi.fn(),
-    resize: vi.fn(),
-    kill: vi.fn(),
-    onData(listener) {
+    write: vi.fn((_data: string) => undefined),
+    resize: vi.fn((_cols: number, _rows: number) => undefined),
+    kill: vi.fn(() => undefined),
+    onData(listener: (data: string) => void) {
       dataListener = listener;
       return { dispose: () => (dataListener = undefined) };
     },
-    onExit(listener) {
+    onExit(listener: (event: { exitCode: number; signal?: number }) => void) {
       exitListener = listener;
       return { dispose: () => (exitListener = undefined) };
     },
-    emitData(data) {
+    emitData(data: string) {
       dataListener?.(data);
     },
-    emitExit(exitCode, signal) {
-      exitListener?.({ exitCode, signal });
+    emitExit(exitCode: number, signal?: number) {
+      exitListener?.(signal === undefined ? { exitCode } : { exitCode, signal });
     },
   };
 }
@@ -154,11 +148,11 @@ describe("terminal local session", () => {
     const session = harness();
     session.send({ v: 1, type: "open", cols: 80, rows: 24 });
 
-    for (let elapsed = 0; elapsed < TERMINAL_LOCAL_ABSOLUTE_TIMEOUT_MS - 60_000; elapsed += 4 * 60_000) {
+    for (let index = 0; index < 7; index += 1) {
       await vi.advanceTimersByTimeAsync(4 * 60_000);
       session.send({ v: 1, type: "input", data: "\r" });
     }
-    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.advanceTimersByTimeAsync(TERMINAL_LOCAL_ABSOLUTE_TIMEOUT_MS - 28 * 60_000);
     await session.done;
 
     expect(session.pty.kill).toHaveBeenCalledTimes(1);
