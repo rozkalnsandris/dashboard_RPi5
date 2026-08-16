@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { QUICK_COMMANDS_ENABLED_VALUE } from "./quick-command-activation.js";
 import { AGENT_SOCKET_MODE } from "./socket.js";
 import { startAgent } from "./index.js";
 
@@ -53,7 +54,7 @@ afterEach(async () => {
 
 describe("startAgent", () => {
   it.runIf(process.platform !== "win32")(
-    "serves the versioned protocol only over the configured Unix socket and narrows its mode",
+    "serves the versioned protocol only over the configured Unix socket and keeps Quick Commands off by default",
     async () => {
       const socketPath = await tempSocketPath();
       const running = await startAgent({ socketPath });
@@ -80,6 +81,35 @@ describe("startAgent", () => {
             "maintenance.events.recent",
             "deploy.events.recent",
             "endpoint.events.recent",
+          ],
+        });
+
+        const quickCommands = await getJson(socketPath, "/v1/quick-commands");
+        expect(quickCommands.statusCode).toBe(404);
+      } finally {
+        await running.app.close();
+      }
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
+    "registers Quick Command routes only for the exact reviewed enable value",
+    async () => {
+      const socketPath = await tempSocketPath();
+      const running = await startAgent({
+        socketPath,
+        quickCommandsSetting: QUICK_COMMANDS_ENABLED_VALUE,
+      });
+
+      try {
+        const quickCommands = await getJson(socketPath, "/v1/quick-commands");
+        expect(quickCommands.statusCode).toBe(200);
+        expect(quickCommands.body).toMatchObject({
+          commands: [
+            { id: "host.uptime" },
+            { id: "host.kernel" },
+            { id: "host.disk-root" },
+            { id: "host.failed-units" },
           ],
         });
       } finally {

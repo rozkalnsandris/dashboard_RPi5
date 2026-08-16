@@ -12,6 +12,9 @@ User=dashboard-rpi5
 Group=dashboard-rpi5
 WorkingDirectory=/opt/dashboard_RPi5
 Environment=DASHBOARD_RPI5_AGENT_SOCKET=/run/dashboard-rpi5/agent.sock
+# Owner-gated capability: keep OFF in the canonical blueprint. Enabling this
+# requires a separate explicit owner-authorized production configuration change.
+Environment=DASHBOARD_RPI5_QUICK_COMMANDS=disabled
 ExecStart=/usr/bin/node /opt/dashboard_RPi5/apps/agent/dist/index.js
 Restart=on-failure
 RestartSec=5s
