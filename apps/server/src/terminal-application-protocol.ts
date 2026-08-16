@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 
 export const TERMINAL_INPUT_MAX_BYTES = 2 * 1024;
 export const TERMINAL_OUTPUT_FRAME_MAX_BYTES = 8 * 1024;
+export const TERMINAL_OUTPUT_EVENT_MAX_BYTES = 64 * 1024;
 export const TERMINAL_OUTPUT_BUFFER_MAX_BYTES = 64 * 1024;
 export const TERMINAL_MIN_COLS = 2;
 export const TERMINAL_MAX_COLS = 300;
@@ -15,7 +16,6 @@ export type TerminalClientMessage =
   | { type: "resize"; cols: number; rows: number };
 
 export type TerminalClientMessageRejection =
-  | "FRAME_NOT_TEXT"
   | "INVALID_JSON"
   | "INVALID_SHAPE"
   | "UNKNOWN_MESSAGE_TYPE"
