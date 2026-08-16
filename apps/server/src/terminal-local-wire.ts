@@ -16,15 +16,17 @@ export const TERMINAL_LOCAL_SERVER_FRAME_MAX_BYTES = 32 * 1024;
 export const TERMINAL_LOCAL_READ_EVENT_MAX_BYTES = 64 * 1024;
 export const TERMINAL_LOCAL_OUTPUT_CHUNK_MAX_BYTES = 4 * 1024;
 
+export type TerminalLocalErrorCode =
+  | "PROTOCOL_ERROR"
+  | "PTY_UNAVAILABLE"
+  | "SESSION_EXPIRED"
+  | "OUTPUT_OVERFLOW";
+
 export type TerminalLocalServerFrame =
   | { v: 1; type: "ready" }
   | { v: 1; type: "output"; data: string }
   | { v: 1; type: "exit"; code: number | null; signal: number | null }
-  | {
-      v: 1;
-      type: "error";
-      code: "PROTOCOL_ERROR" | "PTY_UNAVAILABLE" | "SESSION_EXPIRED" | "OUTPUT_OVERFLOW";
-    };
+  | { v: 1; type: "error"; code: TerminalLocalErrorCode };
 
 export class TerminalLocalWireError extends Error {
   constructor() {
@@ -34,7 +36,7 @@ export class TerminalLocalWireError extends Error {
 }
 
 const fatalUtf8 = new TextDecoder("utf-8", { fatal: true });
-const LOCAL_ERROR_CODES = new Set([
+const LOCAL_ERROR_CODES = new Set<TerminalLocalErrorCode>([
   "PROTOCOL_ERROR",
   "PTY_UNAVAILABLE",
   "SESSION_EXPIRED",
@@ -152,14 +154,10 @@ export function parseTerminalLocalServerFrame(bytes: Uint8Array): TerminalLocalS
       return { v: 1, type: "exit", code: value.code, signal: value.signal };
     case "error":
       assertExactKeys(value, ["v", "type", "code"]);
-      if (typeof value.code !== "string" || !LOCAL_ERROR_CODES.has(value.code)) {
+      if (!isTerminalLocalErrorCode(value.code)) {
         throw new TerminalLocalWireError();
       }
-      return {
-        v: 1,
-        type: "error",
-        code: value.code as TerminalLocalServerFrame & never,
-      } as TerminalLocalServerFrame;
+      return { v: 1, type: "error", code: value.code };
     default:
       throw new TerminalLocalWireError();
   }
@@ -198,4 +196,8 @@ function assertDimension(value: number, min: number, max: number): void {
 
 function isNullableNonNegativeInteger(value: unknown): value is number | null {
   return value === null || (typeof value === "number" && Number.isInteger(value) && value >= 0);
+}
+
+function isTerminalLocalErrorCode(value: unknown): value is TerminalLocalErrorCode {
+  return typeof value === "string" && LOCAL_ERROR_CODES.has(value as TerminalLocalErrorCode);
 }
