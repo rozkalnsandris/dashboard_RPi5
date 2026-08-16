@@ -1,7 +1,10 @@
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
-import type { TerminalSessionAdmission } from "./terminal-session-admission.js";
+import type {
+  TerminalSessionAdmission,
+  TerminalSessionAdmissionResult,
+} from "./terminal-session-admission.js";
 import { registerTerminalSessionRoute } from "./terminal-session-route.js";
 
 const TOKEN = "a".repeat(64);
@@ -21,14 +24,18 @@ function buildRouteApp(admission: TerminalSessionAdmission) {
   return app;
 }
 
+function fixedAdmission(result: TerminalSessionAdmissionResult): TerminalSessionAdmission {
+  return vi.fn(async () => result);
+}
+
 describe("terminal session route", () => {
   it("passes only the security headers into admission and returns a no-store grant", async () => {
-    const admission: TerminalSessionAdmission = vi.fn(async () => ({
+    const admission = fixedAdmission({
       status: "CREATED",
       sessionToken: TOKEN,
       idleTimeoutMs: 300_000,
       maxLifetimeMs: 1_800_000,
-    }));
+    });
     const app = buildRouteApp(admission);
 
     const response = await app.inject({
@@ -62,7 +69,7 @@ describe("terminal session route", () => {
     ["SESSION_LIMIT", 409, "SESSION_LIMIT"],
     ["AUTH_UNAVAILABLE", 503, "AUTH_UNAVAILABLE"],
   ] as const)("maps %s to its bounded API status", async (status, code, error) => {
-    const admission: TerminalSessionAdmission = vi.fn(async () => ({ status }));
+    const admission = fixedAdmission({ status });
     const app = buildRouteApp(admission);
 
     const response = await app.inject({
@@ -84,9 +91,7 @@ describe("terminal session route", () => {
   });
 
   it("rejects unexpected request body fields before admission", async () => {
-    const admission: TerminalSessionAdmission = vi.fn(async () => ({
-      status: "TERMINAL_UNAVAILABLE",
-    }));
+    const admission = fixedAdmission({ status: "TERMINAL_UNAVAILABLE" });
     const app = buildRouteApp(admission);
 
     const response = await app.inject({
@@ -109,9 +114,7 @@ describe("terminal session route", () => {
   });
 
   it("sets no-store even when Fastify rejects an oversized body before the handler", async () => {
-    const admission: TerminalSessionAdmission = vi.fn(async () => ({
-      status: "TERMINAL_UNAVAILABLE",
-    }));
+    const admission = fixedAdmission({ status: "TERMINAL_UNAVAILABLE" });
     const app = buildRouteApp(admission);
 
     const response = await app.inject({
@@ -134,9 +137,7 @@ describe("terminal session route", () => {
   });
 
   it("treats missing security headers as absent instead of synthesizing identity", async () => {
-    const admission: TerminalSessionAdmission = vi.fn(async () => ({
-      status: "ADMISSION_DENIED",
-    }));
+    const admission = fixedAdmission({ status: "ADMISSION_DENIED" });
     const app = buildRouteApp(admission);
 
     const response = await app.inject({
