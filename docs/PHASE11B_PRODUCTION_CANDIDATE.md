@@ -70,10 +70,10 @@ The walker rejects symlinks and all non-regular file types. Paths are sorted det
 
 ## Generate and verify
 
-After a production build:
+After a production build, call the Node entrypoint directly when stdout is being captured so the file contains **only canonical JSON** and no package-manager banner:
 
 ```text
-npm run manifest:production -- \
+node tools/production-candidate-manifest.mjs \
   --root . \
   --sha <exact-source-sha> \
   > /tmp/dashboard-rpi5-production-candidate.json
@@ -82,11 +82,13 @@ npm run manifest:production -- \
 Verification re-hashes the exact build contents:
 
 ```text
-npm run manifest:production -- \
+node tools/production-candidate-manifest.mjs \
   --root . \
   --sha <exact-source-sha> \
   --verify /tmp/dashboard-rpi5-production-candidate.json
 ```
+
+`npm run manifest:production -- ...` remains a convenient interactive wrapper when stdout is not being treated as the JSON file itself.
 
 Any changed, missing, extra-allowlisted or symlinked candidate content causes verification to fail closed.
 
