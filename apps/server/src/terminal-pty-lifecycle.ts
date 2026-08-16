@@ -55,7 +55,7 @@ interface AttachTerminalPtyLifecycleOptions {
 export function attachTerminalPtyLifecycle(
   options: AttachTerminalPtyLifecycleOptions,
 ): TerminalPtyAttachResult {
-  const initialMetadata = options.sessionRegistry.touch(options.sessionToken);
+  const initialMetadata = options.sessionRegistry.touchClaimedTransport(options.sessionToken);
   if (initialMetadata === null) {
     return { attached: false, reason: "SESSION_NOT_LIVE" };
   }
@@ -159,7 +159,7 @@ export function attachTerminalPtyLifecycle(
   scheduleIdleTimeout();
 
   const registerActivity = (): boolean => {
-    const metadata = options.sessionRegistry.touch(options.sessionToken);
+    const metadata = options.sessionRegistry.touchClaimedTransport(options.sessionToken);
     if (metadata === null) {
       finish({
         killPty: true,
