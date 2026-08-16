@@ -10,7 +10,7 @@ Canonical files:
 - `smoke-contract.json` — machine-readable future post-deploy acceptance baseline;
 - `cloudflare-contract.json` — exact `dash.rozkalns.net` Access/Tunnel/loopback edge contract;
 - `cloudflare.env.example` — placeholder-only out-of-repo activation binding names; never production values;
-- `release-activation-contract.json` — exact immutable release/current-pointer and owner acknowledgement boundary.
+- `release-activation-contract.json` — exact immutable release/current-pointer, exclusive apply lock and owner acknowledgement boundary.
 
 Read-only candidate validation for an already-staged release:
 
@@ -45,7 +45,7 @@ npm run release:production -- \
   --sha <exact-source-sha>
 ```
 
-The production CLI destination is fixed to `/opt/dashboard_RPi5`. A filesystem-changing apply additionally requires the reviewed current SHA (or `none`), `--apply`, and the exact owner acknowledgement string defined in `release-activation-contract.json`. Merge or `turpini` does not authorize apply.
+The production CLI destination is fixed to `/opt/dashboard_RPi5`. A filesystem-changing apply additionally requires the reviewed current SHA (or `none`), `--apply`, and the exact owner acknowledgement string defined in `release-activation-contract.json`. Apply/rollback serialize through an exclusive lock under the production root; a pre-existing lock blocks and is never auto-cleared. Merge or `turpini` does not authorize apply.
 
 Phase 11B rollout/rollback and candidate integrity are documented in `docs/PHASE11B_PRODUCTION_CANDIDATE.md`.
 
