@@ -14,6 +14,8 @@ export type TerminalAdmissionRejection =
   | "ORIGIN_REJECTED"
   | "CONCURRENCY_LIMIT";
 
+type TerminalBoundaryRejection = Exclude<TerminalAdmissionRejection, "CONCURRENCY_LIMIT">;
+
 export type TerminalAdmissionDecision =
   | { allowed: true }
   | { allowed: false; reason: TerminalAdmissionRejection };
@@ -40,9 +42,28 @@ export type TerminalSessionCreateResult =
   | { created: true; session: TerminalSessionGrant }
   | { created: false; reason: TerminalAdmissionRejection };
 
+export type TerminalTransportClaimRejection =
+  | TerminalBoundaryRejection
+  | "SESSION_TOKEN_REQUIRED"
+  | "SESSION_TOKEN_INVALID"
+  | "SESSION_NOT_FOUND"
+  | "SESSION_ALREADY_CLAIMED";
+
+export interface TerminalTransportClaimInput {
+  terminalEnabled: boolean;
+  ownerAuthVerified: boolean;
+  origin: string | undefined;
+  sessionToken: string | undefined;
+}
+
+export type TerminalTransportClaimResult =
+  | { claimed: true; session: TerminalSessionMetadata }
+  | { claimed: false; reason: TerminalTransportClaimRejection };
+
 interface StoredTerminalSession {
   createdAtMs: number;
   lastActivityAtMs: number;
+  transportClaimedAtMs: number | null;
 }
 
 interface TerminalSessionRegistryOptions {
@@ -57,23 +78,16 @@ export function isTerminalExplicitlyEnabled(value: string | undefined): boolean 
   return value === "enabled";
 }
 
+export function isTerminalSessionToken(value: string): boolean {
+  return HEX_TOKEN_PATTERN.test(value);
+}
+
 export function evaluateTerminalAdmission(
   input: TerminalAdmissionInput,
 ): TerminalAdmissionDecision {
-  if (!input.terminalEnabled) {
-    return { allowed: false, reason: "TERMINAL_DISABLED" };
-  }
-
-  if (!input.ownerAuthVerified) {
-    return { allowed: false, reason: "OWNER_AUTH_REQUIRED" };
-  }
-
-  if (input.origin === undefined || input.origin.length === 0) {
-    return { allowed: false, reason: "ORIGIN_REQUIRED" };
-  }
-
-  if (input.origin !== TERMINAL_EXPECTED_ORIGIN) {
-    return { allowed: false, reason: "ORIGIN_REJECTED" };
+  const boundaryRejection = evaluateTerminalBoundary(input);
+  if (boundaryRejection !== null) {
+    return { allowed: false, reason: boundaryRejection };
   }
 
   if (
@@ -115,6 +129,7 @@ export class TerminalSessionRegistry {
     const stored: StoredTerminalSession = {
       createdAtMs: now,
       lastActivityAtMs: now,
+      transportClaimedAtMs: null,
     };
     this.#sessions.set(token, stored);
 
@@ -124,6 +139,39 @@ export class TerminalSessionRegistry {
         token,
         ...this.#toMetadata(stored),
       },
+    };
+  }
+
+  claimTransport(input: TerminalTransportClaimInput): TerminalTransportClaimResult {
+    const now = this.#readNow();
+    this.#pruneExpired(now);
+
+    const boundaryRejection = evaluateTerminalBoundary(input);
+    if (boundaryRejection !== null) {
+      return { claimed: false, reason: boundaryRejection };
+    }
+
+    const token = input.sessionToken;
+    if (token === undefined || token.length === 0) {
+      return { claimed: false, reason: "SESSION_TOKEN_REQUIRED" };
+    }
+    if (!isTerminalSessionToken(token)) {
+      return { claimed: false, reason: "SESSION_TOKEN_INVALID" };
+    }
+
+    const session = this.#sessions.get(token);
+    if (session === undefined) {
+      return { claimed: false, reason: "SESSION_NOT_FOUND" };
+    }
+    if (session.transportClaimedAtMs !== null) {
+      return { claimed: false, reason: "SESSION_ALREADY_CLAIMED" };
+    }
+
+    session.transportClaimedAtMs = now;
+    session.lastActivityAtMs = now;
+    return {
+      claimed: true,
+      session: this.#toMetadata(session),
     };
   }
 
@@ -152,7 +200,7 @@ export class TerminalSessionRegistry {
   #createUniqueToken(): string {
     for (let attempt = 0; attempt < MAX_TOKEN_GENERATION_ATTEMPTS; attempt += 1) {
       const token = this.#tokenFactory();
-      if (!HEX_TOKEN_PATTERN.test(token)) {
+      if (!isTerminalSessionToken(token)) {
         throw new Error("Terminal session token factory returned an invalid token");
       }
       if (!this.#sessions.has(token)) {
@@ -194,4 +242,28 @@ export class TerminalSessionRegistry {
     }
     return now;
   }
+}
+
+function evaluateTerminalBoundary(input: {
+  terminalEnabled: boolean;
+  ownerAuthVerified: boolean;
+  origin: string | undefined;
+}): TerminalBoundaryRejection | null {
+  if (!input.terminalEnabled) {
+    return "TERMINAL_DISABLED";
+  }
+
+  if (!input.ownerAuthVerified) {
+    return "OWNER_AUTH_REQUIRED";
+  }
+
+  if (input.origin === undefined || input.origin.length === 0) {
+    return "ORIGIN_REQUIRED";
+  }
+
+  if (input.origin !== TERMINAL_EXPECTED_ORIGIN) {
+    return "ORIGIN_REJECTED";
+  }
+
+  return null;
 }
