@@ -25,6 +25,7 @@ import type { TerminalSessionRegistry } from "./terminal-session-security.js";
 export const TERMINAL_BRIDGE_MAX_LOCAL_WRITE_BUFFER_BYTES = 64 * 1024;
 export const TERMINAL_BRIDGE_MAX_WEBSOCKET_BUFFER_BYTES = 64 * 1024;
 export const TERMINAL_BRIDGE_MAX_WEBSOCKET_FRAME_BYTES = 32 * 1024;
+export const TERMINAL_BRIDGE_READY_TIMEOUT_MS = 5_000;
 export const TERMINAL_BRIDGE_EXIT_SEND_TIMEOUT_MS = 2_000;
 
 const fatalUtf8 = new TextDecoder("utf-8", { fatal: true });
@@ -65,6 +66,7 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
   let state: TerminalBridgeState = "connecting";
   let localSocket: Socket | undefined;
   let connectTimer: NodeJS.Timeout | undefined;
+  let readyTimer: NodeJS.Timeout | undefined;
   let exitSendTimer: NodeJS.Timeout | undefined;
   let revoked = false;
 
@@ -77,6 +79,11 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
   const clearConnectTimer = () => {
     if (connectTimer !== undefined) clearTimer(connectTimer);
     connectTimer = undefined;
+  };
+
+  const clearReadyTimer = () => {
+    if (readyTimer !== undefined) clearTimer(readyTimer);
+    readyTimer = undefined;
   };
 
   const clearExitSendTimer = () => {
@@ -104,6 +111,7 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
     if (state === "closed") return;
     state = "closed";
     clearConnectTimer();
+    clearReadyTimer();
     clearExitSendTimer();
     revokeSession();
     destroyLocal();
@@ -154,6 +162,7 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
 
     state = "closing";
     clearConnectTimer();
+    clearReadyTimer();
     revokeSession();
     destroyLocal();
 
@@ -238,6 +247,7 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
           failInternal("TERMINAL_LOCAL_PROTOCOL_ERROR");
           return;
         }
+        clearReadyTimer();
         if (sessionRegistry.touchClaimedTransport(options.sessionToken) === null) {
           failPolicy("TERMINAL_SESSION_EXPIRED");
           return;
@@ -332,6 +342,11 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
     if (state === "closed" || state === "closing") return;
     clearConnectTimer();
     state = "awaiting-ready";
+    readyTimer = setTimer(
+      () => failInternal("TERMINAL_LOCAL_READY_TIMEOUT"),
+      TERMINAL_BRIDGE_READY_TIMEOUT_MS,
+    );
+    readyTimer.unref();
     writeLocalFrame(serializeTerminalLocalOpenFrame());
   });
   localSocket.on("data", (chunk: Buffer) => {
