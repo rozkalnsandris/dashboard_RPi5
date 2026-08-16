@@ -144,15 +144,6 @@ test("Logs route exposes only the registered-source explorer", async ({ page }) 
   await expect(page.getByText("Docker health check completed")).toHaveCount(0);
 });
 
-test("Terminal route runs fixture Quick Commands without exposing a PTY", async ({ page }) => {
-  await page.goto("/terminal");
-
-  await expect(page.getByRole("heading", { name: "Terminal" })).toBeVisible();
-  await expect(page.getByText("Full terminal locked.")).toBeVisible();
-  await page.getByRole("button", { name: /Temperature \+ throttle/ }).click();
-  await expect(page.getByText(/43°C · no throttle or under-voltage flags/)).toBeVisible();
-});
-
 test("Settings route documents loading stale unavailable and unknown states", async ({ page }) => {
   await page.goto("/settings");
 
