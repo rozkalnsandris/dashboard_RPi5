@@ -1,0 +1,61 @@
+{
+  "schema": "dashboard-rpi5.production-smoke.v1",
+  "target": {
+    "hostname": "dash.rozkalns.net",
+    "publicUrl": "https://dash.rozkalns.net/",
+    "loopbackWebHealthUrl": "http://127.0.0.1:8787/api/health"
+  },
+  "local": {
+    "webHealth": {
+      "method": "GET",
+      "expectedStatus": 200,
+      "expectedService": "dashboard-rpi5-server"
+    },
+    "agentHealth": {
+      "transport": "unix-http",
+      "socket": "/run/dashboard-rpi5/agent.sock",
+      "path": "/v1/health",
+      "expectedStatus": 200,
+      "expectedService": "dashboard-rpi5-agent"
+    }
+  },
+  "public": {
+    "unauthenticated": {
+      "mustNotReachOriginContent": true,
+      "acceptableAccessOutcome": [
+        "ACCESS_CHALLENGE",
+        "ACCESS_DENY"
+      ]
+    },
+    "authenticated": {
+      "rootMustLoad": true,
+      "apiHealthMustReturn200": true
+    },
+    "forbiddenExposure": [
+      "raw-agent-socket",
+      "docker-socket",
+      "terminal-socket"
+    ]
+  },
+  "capabilityDefaults": {
+    "quickCommands": "disabled",
+    "terminal": "disabled"
+  },
+  "mobile": {
+    "device": "Samsung Galaxy A55 5G",
+    "browsers": [
+      "Chrome",
+      "Samsung Internet"
+    ],
+    "orientations": [
+      "portrait",
+      "landscape"
+    ],
+    "pwaSmokeRequired": true
+  },
+  "evidence": {
+    "recordExactProductionSha": true,
+    "recordCurrentGithubMainSha": true,
+    "classifyDeploymentState": true
+  }
+}
