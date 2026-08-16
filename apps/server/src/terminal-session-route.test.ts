@@ -108,6 +108,31 @@ describe("terminal session route", () => {
     await app.close();
   });
 
+  it("sets no-store even when Fastify rejects an oversized body before the handler", async () => {
+    const admission: TerminalSessionAdmission = vi.fn(async () => ({
+      status: "TERMINAL_UNAVAILABLE",
+    }));
+    const app = buildRouteApp(admission);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/terminal/session",
+      headers: {
+        "content-type": "application/json",
+        origin: ORIGIN,
+        "cf-access-jwt-assertion": ASSERTION,
+      },
+      payload: JSON.stringify({ padding: "x".repeat(128) }),
+    });
+
+    expect(response.statusCode).toBe(413);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(admission).not.toHaveBeenCalled();
+    expect(response.body).not.toContain(ASSERTION);
+
+    await app.close();
+  });
+
   it("treats missing security headers as absent instead of synthesizing identity", async () => {
     const admission: TerminalSessionAdmission = vi.fn(async () => ({
       status: "ADMISSION_DENIED",
