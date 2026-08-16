@@ -44,16 +44,22 @@ Initial beta constants are deliberately conservative:
 
 The in-memory registry lazily removes expired sessions on access. Activity may extend the idle deadline but can never extend the absolute maximum lifetime.
 
+Session expiry uses Node.js `performance.now()`, a process-relative monotonic high-resolution clock, rather than wall-clock time. A system clock correction therefore cannot move the idle or maximum-lifetime deadline backwards.
+
 Tokens are generated with Node.js `crypto.randomBytes()` and encoded as 64 lowercase hexadecimal characters. Browser input is never used to construct a token. Test-only token factories must preserve the same shape or session creation fails closed.
 
 The registry supports explicit revoke. A revoked or expired token cannot be touched or reused to reach a replacement session.
 
 ## Data minimization
 
-Stored session metadata is limited to:
+Stored session metadata is limited to process-relative monotonic markers for:
 
-- creation timestamp;
-- last-activity timestamp.
+- creation;
+- last activity;
+- derived idle expiry;
+- derived absolute expiry.
+
+These values are lifetime bookkeeping, not wall-clock audit timestamps. A later audit layer may record bounded session metadata separately, but must not turn PTY content into a transcript by default.
 
 Phase 9A stores no:
 
@@ -106,6 +112,7 @@ Repository CI still runs deterministic dependency install, dependency audit, Typ
 
 - RFC 6455 — The WebSocket Protocol, sections 4 and 10: browser Origin semantics and origin-validation security considerations.
 - Node.js 24 `crypto.randomBytes()` documentation: cryptographically strong pseudorandom bytes.
+- Node.js 24 `performance.now()` documentation: process-relative high-resolution monotonic timing.
 - Cloudflare Access authorization-cookie documentation: application `CF_Authorization` JWT behavior.
 - Master roadmap issue #1 — terminal security contract and Phase 9 requirements.
 
