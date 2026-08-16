@@ -116,6 +116,7 @@ describe("isolated native PTY adapter", () => {
         TERM: TERMINAL_NATIVE_TERM,
         COLORTERM: "truecolor",
         LANG: TERMINAL_NATIVE_LANG,
+        PWD: "/var/lib/dashboard-terminal",
       },
       encoding: "utf8",
       handleFlowControl: false,
