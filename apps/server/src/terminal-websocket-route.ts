@@ -1,8 +1,16 @@
 import fastifyWebsocket from "@fastify/websocket";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
+import {
+  createTerminalLocalSocket,
+  type TerminalLocalConnector,
+} from "./terminal-local-client.js";
 import type { TerminalSessionRegistry } from "./terminal-session-security.js";
 import type { TerminalWebSocketAdmission } from "./terminal-websocket-admission.js";
+import {
+  attachTerminalWebSocketBridge,
+  type TerminalBridgeWebSocket,
+} from "./terminal-websocket-bridge.js";
 import { selectTerminalWebSocketApplicationProtocol } from "./terminal-websocket-protocol.js";
 
 export const TERMINAL_WEBSOCKET_PATH = "/api/terminal/ws";
@@ -22,6 +30,7 @@ export function registerTerminalWebSocketRoute(
   app: FastifyInstance,
   admission: TerminalWebSocketAdmission,
   sessionRegistry: TerminalSessionRegistry,
+  localConnector: TerminalLocalConnector = createTerminalLocalSocket,
 ): void {
   void app.register(async (routeScope) => {
     const claimedSessionByRequest = new WeakMap<FastifyRequest, string>();
@@ -31,9 +40,7 @@ export function registerTerminalWebSocketRoute(
       url: TERMINAL_WEBSOCKET_PATH,
       preValidation: async (request, reply) => {
         reply.header("Cache-Control", "no-store");
-        if (!request.ws) {
-          return;
-        }
+        if (!request.ws) return;
 
         const result = await admission({
           origin: readSingleHeader(request.raw.headers.origin),
@@ -68,20 +75,11 @@ export function registerTerminalWebSocketRoute(
           return;
         }
 
-        let revoked = false;
-        const revokeSession = () => {
-          if (revoked) {
-            return;
-          }
-          revoked = true;
-          sessionRegistry.revoke(sessionToken);
-        };
-
-        socket.once("close", revokeSession);
-        socket.once("error", revokeSession);
-        socket.once("message", () => {
-          revokeSession();
-          socket.close(1008, "TERMINAL_PROTOCOL_NOT_AVAILABLE");
+        attachTerminalWebSocketBridge({
+          socket: socket as unknown as TerminalBridgeWebSocket,
+          sessionToken,
+          sessionRegistry,
+          localConnector,
         });
       },
     });
