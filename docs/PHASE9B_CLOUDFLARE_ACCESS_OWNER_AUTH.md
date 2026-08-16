@@ -32,7 +32,7 @@ A caller cannot supply an arbitrary JWK/certificate URL. This prevents a future 
 
 `CloudflareAccessOwnerAuthVerifier.verifyAssertion()` fails closed and performs the following steps:
 
-1. require a bounded compact JWT with exactly three Base64URL segments;
+1. require a bounded compact JWT with exactly three canonical Base64URL segments;
 2. require `alg=RS256`, `typ=JWT` and a bounded `kid`;
 3. obtain the matching RSA public key only from the derived Cloudflare Access certs/JWK endpoint;
 4. verify the RSA/SHA-256 signature over the original JWT signing input;
@@ -44,18 +44,18 @@ A caller cannot supply an arbitrary JWK/certificate URL. This prevents a future 
 
 Untrusted identity claims are never accepted before signature verification.
 
-## Key rotation
+## Key rotation and request bounds
 
 Cloudflare Access signing keys rotate. The verifier therefore does not hard-code a certificate or `kid`.
 
 - parsed signing keys are cached in memory for five minutes;
 - a fresh cache hit performs no network request;
-- an unknown `kid` against a still-fresh cache triggers one controlled refresh;
+- an unknown `kid` against a still-fresh cache triggers at most one controlled refresh per 30-second cooldown window;
 - an expired cache is refreshed before key selection;
 - malformed/oversized key sets, duplicate `kid` values, non-RSA keys and incompatible `alg`/`use` declarations are ignored or fail closed;
 - a fetch failure, timeout or still-missing key yields `KEY_UNAVAILABLE`, never an auth bypass.
 
-The key fetch is bounded by a three-second abort timeout. The endpoint response is size-limited before JWK parsing.
+The unknown-`kid` cooldown prevents attacker-controlled `kid` churn from turning verification into an unbounded stream of outbound key requests while still allowing prompt normal signing-key rotation recovery. The key fetch itself is bounded by a three-second abort timeout. The endpoint response is size-limited before JWK parsing.
 
 ## Identity boundary
 
@@ -111,6 +111,7 @@ Deterministic unit tests generate local RSA key pairs and cover:
 - expiry and not-yet-valid timing;
 - malformed/non-RS256 JWT rejection before key fetch;
 - Access signing-key rotation through unknown-`kid` refresh;
+- repeated unknown-`kid` refresh throttling;
 - unavailable signing keys;
 - team-name SSRF/config rejection.
 

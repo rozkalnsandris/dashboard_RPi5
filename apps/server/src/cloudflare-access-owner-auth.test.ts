@@ -7,6 +7,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  ACCESS_UNKNOWN_KID_REFRESH_COOLDOWN_MS,
   CloudflareAccessOwnerAuthVerifier,
   type AccessFetch,
 } from "./cloudflare-access-owner-auth.js";
@@ -164,6 +165,40 @@ describe("CloudflareAccessOwnerAuthVerifier", () => {
     const tokenB = signJwt(validClaims, keyPairB.privateKey, "key-b");
     await expect(verifier.verifyAssertion(tokenB)).resolves.toMatchObject({ verified: true });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("throttles repeated unknown-kid refresh attempts", async () => {
+    let nowMs = NOW_MS;
+    const fetchImpl = vi.fn<AccessFetch>(async () => responseWithKeys([jwkA]));
+    const verifier = new CloudflareAccessOwnerAuthVerifier({
+      teamName: TEAM_NAME,
+      applicationAudience: AUDIENCE,
+      ownerEmail: OWNER_EMAIL,
+      fetchImpl,
+      nowMs: () => nowMs,
+    });
+
+    const tokenA = signJwt(validClaims, keyPairA.privateKey, "key-a");
+    await expect(verifier.verifyAssertion(tokenA)).resolves.toMatchObject({ verified: true });
+
+    const missingOne = signJwt(validClaims, keyPairB.privateKey, "missing-one");
+    const missingTwo = signJwt(validClaims, keyPairB.privateKey, "missing-two");
+    await expect(verifier.verifyAssertion(missingOne)).resolves.toEqual({
+      verified: false,
+      reason: "KEY_UNAVAILABLE",
+    });
+    await expect(verifier.verifyAssertion(missingTwo)).resolves.toEqual({
+      verified: false,
+      reason: "KEY_UNAVAILABLE",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+
+    nowMs += ACCESS_UNKNOWN_KID_REFRESH_COOLDOWN_MS;
+    await expect(verifier.verifyAssertion(missingTwo)).resolves.toEqual({
+      verified: false,
+      reason: "KEY_UNAVAILABLE",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it("fails closed when signing keys cannot be obtained", async () => {

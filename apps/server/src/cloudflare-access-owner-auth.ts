@@ -6,6 +6,7 @@ import {
 
 export const ACCESS_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 export const ACCESS_JWKS_REQUEST_TIMEOUT_MS = 3_000;
+export const ACCESS_UNKNOWN_KID_REFRESH_COOLDOWN_MS = 30_000;
 export const ACCESS_CLOCK_SKEW_SECONDS = 30;
 
 const MAX_JWT_LENGTH = 16 * 1024;
@@ -70,6 +71,7 @@ export interface CloudflareAccessOwnerAuthOptions {
   nowMs?: () => number;
   keyCacheTtlMs?: number;
   requestTimeoutMs?: number;
+  unknownKidRefreshCooldownMs?: number;
   clockSkewSeconds?: number;
 }
 
@@ -98,9 +100,11 @@ export class CloudflareAccessOwnerAuthVerifier {
   readonly #nowMs: () => number;
   readonly #keyCacheTtlMs: number;
   readonly #requestTimeoutMs: number;
+  readonly #unknownKidRefreshCooldownMs: number;
   readonly #clockSkewSeconds: number;
   #keys = new Map<string, KeyObject>();
   #keysFetchedAtMs = Number.NEGATIVE_INFINITY;
+  #lastUnknownKidRefreshAtMs = Number.NEGATIVE_INFINITY;
 
   constructor(options: CloudflareAccessOwnerAuthOptions) {
     if (!TEAM_NAME_PATTERN.test(options.teamName)) {
@@ -132,6 +136,13 @@ export class CloudflareAccessOwnerAuthVerifier {
       250,
       10_000,
       "request timeout",
+    );
+    this.#unknownKidRefreshCooldownMs = readBoundedPositiveOption(
+      options.unknownKidRefreshCooldownMs,
+      ACCESS_UNKNOWN_KID_REFRESH_COOLDOWN_MS,
+      1_000,
+      5 * 60 * 1000,
+      "unknown kid refresh cooldown",
     );
     this.#clockSkewSeconds = readBoundedPositiveOption(
       options.clockSkewSeconds,
@@ -168,18 +179,18 @@ export class CloudflareAccessOwnerAuthVerifier {
       return { verified: false, reason: "KEY_UNAVAILABLE" };
     }
 
-    let signatureValid = false;
     try {
-      signatureValid = verifySignature(
-        "RSA-SHA256",
-        Buffer.from(parsed.signingInput, "ascii"),
-        key,
-        parsed.signature,
-      );
+      if (
+        !verifySignature(
+          "RSA-SHA256",
+          Buffer.from(parsed.signingInput, "ascii"),
+          key,
+          parsed.signature,
+        )
+      ) {
+        return { verified: false, reason: "SIGNATURE_INVALID" };
+      }
     } catch {
-      return { verified: false, reason: "SIGNATURE_INVALID" };
-    }
-    if (!signatureValid) {
       return { verified: false, reason: "SIGNATURE_INVALID" };
     }
 
@@ -236,12 +247,12 @@ export class CloudflareAccessOwnerAuthVerifier {
 
   async #getSigningKey(kid: string): Promise<KeyObject | null> {
     const now = this.#readNowMs();
-    let refreshed = false;
+    let refreshedForStaleness = false;
     if (this.#keys.size === 0 || now - this.#keysFetchedAtMs >= this.#keyCacheTtlMs) {
       if (!(await this.#refreshSigningKeys())) {
         return null;
       }
-      refreshed = true;
+      refreshedForStaleness = true;
     }
 
     const cached = this.#keys.get(kid);
@@ -249,11 +260,19 @@ export class CloudflareAccessOwnerAuthVerifier {
       return cached;
     }
 
-    if (!refreshed && (await this.#refreshSigningKeys())) {
-      return this.#keys.get(kid) ?? null;
+    if (refreshedForStaleness) {
+      return null;
     }
 
-    return null;
+    if (now - this.#lastUnknownKidRefreshAtMs < this.#unknownKidRefreshCooldownMs) {
+      return null;
+    }
+
+    this.#lastUnknownKidRefreshAtMs = now;
+    if (!(await this.#refreshSigningKeys())) {
+      return null;
+    }
+    return this.#keys.get(kid) ?? null;
   }
 
   async #refreshSigningKeys(): Promise<boolean> {
@@ -459,7 +478,12 @@ function isValidEmailValue(value: string): boolean {
 }
 
 function isValidBase64urlSegment(value: string): boolean {
-  return value.length > 0 && value.length <= MAX_JWT_SEGMENT_LENGTH && BASE64URL_PATTERN.test(value);
+  return (
+    value.length > 0 &&
+    value.length <= MAX_JWT_SEGMENT_LENGTH &&
+    value.length % 4 !== 1 &&
+    BASE64URL_PATTERN.test(value)
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -474,7 +498,7 @@ function readBoundedPositiveOption(
   label: string,
 ): number {
   const resolved = value ?? fallback;
-  if (!Number.isFinite(resolved) || resolved < min || resolved > max) {
+  if (!Number.isSafeInteger(resolved) || resolved < min || resolved > max) {
     throw new Error(`Cloudflare Access ${label} is invalid`);
   }
   return resolved;
