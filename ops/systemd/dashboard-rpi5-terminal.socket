@@ -1,0 +1,20 @@
+# SOURCE-ONLY BLUEPRINT.
+# Do not install, enable, start, restart, or otherwise activate this socket
+# without separate owner authorization under issue #1.
+
+[Unit]
+Description=dashboard_RPi5 contained terminal socket
+
+[Socket]
+ListenStream=/run/dashboard-rpi5-terminal.sock
+SocketUser=root
+SocketGroup=dashboard-rpi5-terminal-client
+SocketMode=0660
+Accept=yes
+MaxConnections=1
+Backlog=1
+RemoveOnStop=yes
+Service=dashboard-rpi5-terminal@.service
+
+[Install]
+WantedBy=sockets.target

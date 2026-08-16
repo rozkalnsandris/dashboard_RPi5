@@ -40,6 +40,19 @@ Before any terminal transport is activated, the terminal agent must:
 - have process-tree/cgroup containment strong enough that disconnect/expiry cannot leave detached descendants running;
 - expose only a narrow local Unix-socket protocol after a separate security gate.
 
+Phase 9H defines the source-only containment shape without activating it:
+
+- `/run/dashboard-rpi5-terminal.sock` is a filesystem Unix socket only;
+- socket activation uses `Accept=yes`, so one accepted connection maps to one service instance and one systemd cgroup;
+- the terminal service never receives delegated cgroup write access (`Delegate=` is forbidden);
+- `ProtectControlGroups=yes` prevents the shell from managing host cgroup controls;
+- `KillMode=control-group`, `SendSIGKILL=yes` and a short stop timeout make systemd/PID 1 the final process-tree cleanup authority;
+- `RuntimeMaxSec=30min` independently caps a service instance even if the application lifecycle fails;
+- only a dedicated `dashboard-rpi5-terminal-client` group may connect to the local socket; production membership in that group is a security-sensitive, owner-authorized decision;
+- the service blocks Docker, system D-Bus and systemd private control sockets and has no network namespace access.
+
+A source merge does not create the required users/groups, install these units, start the socket or expose a browser-to-PTY bridge.
+
 ### Docker Engine
 
 High-privilege boundary. Control of the Docker daemon is effectively host administration. The application must never expose a generic Docker API proxy.

@@ -17,3 +17,26 @@ export {
   type TerminalNativePtyProcess,
   type TerminalNativeRuntime,
 } from "./native-pty.js";
+
+export {
+  parseTerminalLocalClientFrame,
+  serializeTerminalLocalServerFrame,
+  splitTerminalLocalOutput,
+  TerminalLocalLineDecoder,
+  TerminalLocalProtocolError,
+  TERMINAL_LOCAL_ABSOLUTE_TIMEOUT_MS,
+  TERMINAL_LOCAL_IDLE_TIMEOUT_MS,
+  TERMINAL_LOCAL_MAX_FRAME_BYTES,
+  TERMINAL_LOCAL_MAX_INPUT_BYTES,
+  TERMINAL_LOCAL_MAX_OUTPUT_CHUNK_BYTES,
+  TERMINAL_LOCAL_MAX_OUTPUT_EVENT_BYTES,
+  TERMINAL_LOCAL_MAX_PENDING_OUTPUT_BYTES,
+  TERMINAL_LOCAL_OPEN_TIMEOUT_MS,
+  TERMINAL_LOCAL_OUTPUT_DRAIN_TIMEOUT_MS,
+  TERMINAL_LOCAL_PROTOCOL_VERSION,
+  type TerminalLocalClientFrame,
+  type TerminalLocalErrorCode,
+  type TerminalLocalServerFrame,
+} from "./local-protocol.js";
+
+export { runTerminalLocalSession, type TerminalLocalSessionOptions } from "./local-session.js";
