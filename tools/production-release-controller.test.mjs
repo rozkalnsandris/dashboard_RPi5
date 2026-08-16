@@ -21,6 +21,7 @@ import {
 const SHA_A = "a".repeat(40);
 const SHA_B = "b".repeat(40);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const APPLY_LOCK_NAME = ".dashboard-release-controller.lock";
 
 async function loadContract() {
   return JSON.parse(await readFile(resolve(ROOT, "ops/production/release-activation-contract.json"), "utf8"));
@@ -67,6 +68,8 @@ test("release activation contract locks production and owner gates", async () =>
   const contract = await loadContract();
   assert.equal(validateReleaseActivationContract(contract), contract);
   assert.throws(() => validateReleaseActivationContract({ ...contract, productionRoot: "/tmp/dashboard" }), /production path mismatch/u);
+  assert.throws(() => validateReleaseActivationContract({ ...contract, exclusiveApplyLock: false }), /atomic\/retention/u);
+  assert.throws(() => validateReleaseActivationContract({ ...contract, staleLockAutoCleanup: true }), /atomic\/retention/u);
   assert.throws(() => validateReleaseActivationContract({ ...contract, deleteReleaseDuringActivation: true }), /atomic\/retention/u);
   assert.throws(() => validateReleaseActivationContract({ ...contract, networkAllowed: true }), /forbidden capability/u);
 });
@@ -93,8 +96,46 @@ test("apply copies only manifest files, verifies marker and activates relative c
   assert.equal(result.currentRelease, SHA_A);
   assert.equal(result.releasesDeleted, 0);
   assert.equal(await readlink(resolve(activationRoot, "current")), `releases/${SHA_A}`);
+  assert.equal(await pathExists(resolve(activationRoot, APPLY_LOCK_NAME)), false);
   const marker = JSON.parse(await readFile(resolve(activationRoot, "releases", SHA_A, ".dashboard-production-candidate.json"), "utf8"));
   assert.equal(marker.candidateSha256, candidate.manifest.candidateSha256);
+});
+
+test("pre-existing apply lock blocks and is never auto-cleared", async (t) => {
+  const contract = await loadContract();
+  const candidate = await makeCandidate(t, SHA_A, "a");
+  const activationRoot = resolve(candidate.workspace, "activation");
+  await mkdir(activationRoot, { recursive: true });
+  const lockPath = resolve(activationRoot, APPLY_LOCK_NAME);
+  await writeFile(lockPath, "review-required\n", "utf8");
+  await assert.rejects(
+    applyReleaseActivation({ activationRoot, candidateRoot: candidate.candidateRoot, manifestPath: candidate.manifestPath, sourceSha: SHA_A, expectedCurrent: "none", contract }),
+    /apply lock already exists/u,
+  );
+  assert.equal(await readFile(lockPath, "utf8"), "review-required\n");
+  assert.equal(await pathExists(resolve(activationRoot, "releases", SHA_A)), false);
+});
+
+test("activation and releases roots reject symlinks instead of following them", async (t) => {
+  const contract = await loadContract();
+  const candidate = await makeCandidate(t, SHA_A, "a");
+  const outside = resolve(candidate.workspace, "outside");
+  await mkdir(outside, { recursive: true });
+
+  const activationLink = resolve(candidate.workspace, "activation-link");
+  await symlink(outside, activationLink);
+  await assert.rejects(
+    planReleaseActivation({ activationRoot: activationLink, candidateRoot: candidate.candidateRoot, manifestPath: candidate.manifestPath, sourceSha: SHA_A, contract }),
+    /activation root must be a real directory/u,
+  );
+
+  const activationRoot = resolve(candidate.workspace, "activation-real");
+  await mkdir(activationRoot, { recursive: true });
+  await symlink(outside, resolve(activationRoot, "releases"));
+  await assert.rejects(
+    planReleaseActivation({ activationRoot, candidateRoot: candidate.candidateRoot, manifestPath: candidate.manifestPath, sourceSha: SHA_A, contract }),
+    /releases root must be a real directory/u,
+  );
 });
 
 test("stale expected-current blocks before a second release is written", async (t) => {
