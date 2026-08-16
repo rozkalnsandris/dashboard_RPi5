@@ -4,6 +4,13 @@ import { describe, expect, it } from "vitest";
 import { registerQuickCommandRoutes } from "./quick-command-routes.js";
 import { listQuickCommands, runQuickCommand } from "./quick-commands.js";
 
+function createTestApp() {
+  return Fastify({
+    logger: false,
+    ajv: { customOptions: { removeAdditional: false } },
+  });
+}
+
 describe("Quick Commands", () => {
   it("publishes only the fixed browser-safe catalog", () => {
     const catalog = listQuickCommands();
@@ -27,7 +34,7 @@ describe("Quick Commands", () => {
   });
 
   it("rejects arbitrary command, args, path, timeout and query input at the route", async () => {
-    const app = Fastify({ logger: false });
+    const app = createTestApp();
     registerQuickCommandRoutes(app);
 
     const invalidBodies = [
