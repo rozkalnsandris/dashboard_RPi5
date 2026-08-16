@@ -19,7 +19,7 @@ import { pathToFileURL } from "node:url";
 import {
   PRODUCTION_CANDIDATE_HASH,
   PRODUCTION_CANDIDATE_SCHEMA,
-  validateCandidateManifestShape,
+  verifyInstalledProductionCandidateManifest,
   verifyProductionCandidateManifest,
 } from "./production-candidate-manifest.mjs";
 
@@ -215,8 +215,7 @@ async function readInstalledManifest(activationRoot, sourceSha) {
   }
   const markerPath = resolve(releaseDir, MANIFEST_MARKER);
   const manifest = await readJsonBounded(markerPath, "installed candidate manifest");
-  validateCandidateManifestShape(manifest, sourceSha);
-  await verifyProductionCandidateManifest({ rootDir: releaseDir, sourceSha, manifest });
+  await verifyInstalledProductionCandidateManifest({ rootDir: releaseDir, sourceSha, manifest });
   return manifest;
 }
 
