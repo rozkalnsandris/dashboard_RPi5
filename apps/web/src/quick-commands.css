@@ -1,0 +1,51 @@
+.quick-command[aria-disabled="true"] {
+  cursor: progress;
+  opacity: .58;
+}
+
+.quick-command-state {
+  margin: 0;
+  padding: 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+  background: var(--surface-2);
+  font-size: .78rem;
+  line-height: 1.45;
+}
+
+.quick-command-state--error {
+  border-color: #5a342f;
+  color: #ffb4a8;
+  background: #1b0f0d;
+}
+
+.quick-command-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 9px;
+  color: var(--subtle);
+  font-size: .7rem;
+}
+
+.quick-command-meta > * {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 9px;
+  background: var(--surface-2);
+}
+
+.quick-command-meta strong {
+  color: #b8f4c9;
+}
+
+@media (min-width: 900px) {
+  .terminal-grid {
+    grid-template-columns: minmax(300px, .8fr) minmax(0, 1.2fr);
+    align-items: start;
+  }
+}
