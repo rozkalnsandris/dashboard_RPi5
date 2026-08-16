@@ -1,9 +1,15 @@
 import type { QuickCommandId } from "@dashboard-rpi5/contracts/quick-commands";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ChevronRight, LockKeyhole, TerminalSquare } from "lucide-react";
+import { lazy, Suspense } from "react";
 import { Button } from "react-aria-components";
 
 import { fetchQuickCommandCatalog, QuickCommandRequestError, runQuickCommand } from "../quick-commands-api";
+
+const FullTerminalPanel = lazy(async () => {
+  const module = await import("../components/FullTerminalPanel");
+  return { default: module.FullTerminalPanel };
+});
 
 function errorText(error: unknown) {
   if (error instanceof QuickCommandRequestError && error.kind === "OPERATION_TIMEOUT") {
@@ -28,7 +34,7 @@ export function TerminalPage() {
     : command.isError
       ? errorText(command.error)
       : command.data === undefined
-        ? "Select a registered Quick Command. Free-form shell input is not accepted."
+        ? "Select a registered Quick Command. Free-form shell input is not accepted here."
         : [
             command.data.stdout,
             command.data.stderr === "" ? "" : `stderr:\n${command.data.stderr}`,
@@ -37,9 +43,9 @@ export function TerminalPage() {
   return (
     <section className="page-stack" aria-labelledby="terminal-title">
       <div className="page-heading">
-        <p className="eyebrow">Owner diagnostics · registered only</p>
+        <p className="eyebrow">Owner diagnostics · explicit sessions only</p>
         <h1 id="terminal-title">Terminal</h1>
-        <p>Run a small allowlist of read-only diagnostics. Executables, arguments, paths and timeouts are fixed on the RPi5 agent.</p>
+        <p>Use registered read-only diagnostics first. The full PTY below is a separate owner-only session and never starts just by opening this page.</p>
       </div>
 
       <div className="terminal-grid">
@@ -73,7 +79,7 @@ export function TerminalPage() {
 
         <section className="panel terminal-result-panel" aria-labelledby="terminal-output-title">
           <div className="panel-heading">
-            <div><p className="eyebrow">Untrusted plain-text output</p><h2 id="terminal-output-title">Output</h2></div>
+            <div><p className="eyebrow">Untrusted plain-text output</p><h2 id="terminal-output-title">Quick Command output</h2></div>
             <span className="count-pill">READ ONLY</span>
           </div>
 
@@ -88,9 +94,28 @@ export function TerminalPage() {
 
           <div className="terminal-lock-note">
             <LockKeyhole size={18} aria-hidden="true" />
-            <p><strong>Full terminal locked.</strong> No PTY, sudo, Docker exec, arbitrary executable, arguments, paths or shell strings are accepted.</p>
+            <p><strong>Quick Commands stay bounded.</strong> This panel never accepts a shell string, executable, arguments or paths from the browser.</p>
           </div>
         </section>
+      </div>
+
+      <Suspense fallback={<FullTerminalLoadingState />}>
+        <FullTerminalPanel />
+      </Suspense>
+    </section>
+  );
+}
+
+function FullTerminalLoadingState() {
+  return (
+    <section className="panel full-terminal-panel" aria-label="Full terminal loading">
+      <div className="full-terminal-heading">
+        <div><p className="eyebrow">Owner-only · interactive PTY</p><h2>Full terminal</h2></div>
+        <span className="terminal-session-state" role="status">Loading</span>
+      </div>
+      <div className="full-terminal-summary">
+        <LockKeyhole size={18} aria-hidden="true" />
+        <p>Loading terminal controls. No session is created by loading this interface.</p>
       </div>
     </section>
   );

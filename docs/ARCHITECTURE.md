@@ -142,6 +142,29 @@ POST /api/terminal/session              # implemented, production-disabled by de
 WS   /api/terminal/ws                   # authenticated bridge; production local socket still inactive
 ```
 
+## Browser full-terminal surface
+
+Phase 9J adds a source-only xterm surface to the existing `/terminal` page while keeping Quick Commands as the first read-only diagnostic path.
+
+Opening the route does not create a terminal session. The owner must explicitly press **Start terminal**. Each attempt then:
+
+1. POSTs the exact empty request to `/api/terminal/session`;
+2. strictly validates the returned one-time 64-hex capability and fixed lifetime contract;
+3. connects to the fixed same-origin `/api/terminal/ws` endpoint;
+4. supplies the capability only through the existing `session.<token>` WebSocket subprotocol alongside `dashboard-rpi5-terminal-v1`;
+5. keeps xterm stdin disabled until the server emits `ready`;
+6. translates xterm input only to bounded `input` frames and fitted dimensions only to bounded `resize` frames.
+
+The browser does not put the token in the URL, DOM, React state, localStorage or sessionStorage. There is no automatic reconnect: every new start attempt must mint a fresh capability.
+
+The UI uses stable `@xterm/xterm` as the VT renderer/input surface and `@xterm/addon-fit` for terminal-grid measurement. It deliberately does not use `@xterm/addon-attach`, because raw WebSocket attachment would bypass the authenticated bounded application protocol already defined by Phases 9E–9I.
+
+The browser independently bounds one xterm input event, splits it so both the server's 2 KiB UTF-8 input-data limit and 4 KiB serialized WebSocket-frame limit hold, rejects NUL input, and accepts only strict `ready`, bounded `output` and non-negative `exit` frames. These checks improve UX and reduce accidental invalid traffic; the server remains authoritative for security.
+
+Samsung Galaxy A55-class mobile handling uses the existing `412x915` acceptance viewport, 48 px touch controls, xterm keyboard focus support, `ResizeObserver`, `visualViewport.resize` and `FitAddon.fit()` through one animation-frame-coalesced resize path. The page must not horizontally overflow, and reduced mobile viewport height must produce a fresh bounded terminal resize rather than a page-layout break.
+
+Terminal output remains ephemeral in the page's xterm buffer. The dashboard does not copy it into app history, storage or telemetry. Route teardown aborts pending admission, closes the active WebSocket and disposes xterm.
+
 ## Read-agent interface
 
 Purpose-built operations only; no arbitrary method/proxy endpoint.
@@ -197,4 +220,4 @@ cloudflared -> 127.0.0.1:<dashboard-port>
 
 Cloudflare Access protects `dash.rozkalns.net` before public use.
 
-The exact tunnel/DNS/Access mutation, terminal-agent user/group creation, web-service connector-group membership, socket/service installation, execution identity and activation are separate owner-authorized production steps.
+The exact tunnel/DNS/Access mutation, terminal-agent user/group creation, web-service connector-group membership, socket/service installation, execution identity, feature-gate enablement and activation are separate owner-authorized production steps.

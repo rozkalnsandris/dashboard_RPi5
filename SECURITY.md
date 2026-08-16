@@ -12,6 +12,21 @@ Because the product can eventually expose logs, Docker state and a terminal, it 
 
 Untrusted for secrets and host privileges. It receives normalized data only.
 
+Phase 9J adds a source-only xterm browser surface. Xterm is only a VT renderer/input component; the browser still cannot choose executable, argv, cwd, env, uid/gid, shell or local socket path. Browser-side validation is UX hardening only and never replaces the server security boundary.
+
+The full-terminal browser contract is:
+
+- opening `/terminal` does not mint a session or start a PTY;
+- the owner must explicitly press **Start terminal**;
+- every attempt POSTs for a fresh one-time capability;
+- the 64-hex capability is kept out of the URL, DOM, React state, localStorage and sessionStorage and is used only to construct the WebSocket subprotocol;
+- there is no automatic reconnect or claimed-token reuse;
+- xterm input is split so both the 2 KiB input-data bound and 4 KiB serialized WebSocket-frame bound hold, including JSON escaping;
+- NUL input and oversized input events are rejected before send;
+- only strict `ready`, bounded `output` and non-negative `exit` frames are accepted from the server;
+- terminal output is rendered as ephemeral untrusted terminal data and is not persisted by dashboard history/storage/telemetry;
+- route teardown aborts pending admission and closes the active WebSocket.
+
 ### Cloudflare Access + Tunnel
 
 Authenticates the human-facing application and provides an outbound-only path from the home network. No new router port-forward is required.
@@ -64,7 +79,9 @@ Phase 9I defines the source-only authenticated bridge without activating product
 - browser close/error and every bridge failure revoke the claimed session and destroy the local connection;
 - terminal tokens and terminal frame contents are not logged or reflected in close reasons.
 
-A source merge does not create the required users/groups, grant the web process connector-group membership, install these units, start the socket or expose a usable production PTY.
+Phase 9J adds only the browser UI on top of those gates. It deliberately does not use `@xterm/addon-attach`; all xterm input/output remains inside the existing bounded Phase 9I application protocol. `FitAddon` is used only for terminal-grid sizing, and resize frames remain bounded by the server contract.
+
+A source merge does not create the required users/groups, grant the web process connector-group membership, install these units, start the socket, enable the terminal feature gate or expose a usable production PTY.
 
 ### Docker Engine
 
@@ -72,7 +89,7 @@ High-privilege boundary. Control of the Docker daemon is effectively host admini
 
 ### Full PTY terminal
 
-Highest-risk feature. It is implemented only after read-only monitoring and log flows are stable and reviewed.
+Highest-risk feature. Source implementation must remain fail-closed until the owner separately authorizes production identities, connector permissions, systemd socket/service activation and the terminal feature gate.
 
 ## Non-negotiable requirements
 
