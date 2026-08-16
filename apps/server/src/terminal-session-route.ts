@@ -19,6 +19,9 @@ export function registerTerminalSessionRoute(
     {
       attachValidation: true,
       bodyLimit: 64,
+      onRequest: async (_request, reply) => {
+        reply.header("Cache-Control", "no-store");
+      },
       schema: {
         body: TerminalSessionCreateRequestSchema,
         response: {
@@ -32,7 +35,6 @@ export function registerTerminalSessionRoute(
       },
     },
     async (request, reply) => {
-      reply.header("Cache-Control", "no-store");
       if (request.validationError !== undefined) {
         return reply.code(400).send({ error: "INVALID_REQUEST" });
       }
