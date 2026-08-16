@@ -134,9 +134,7 @@ describe("terminal WebSocket route", () => {
     });
     expect(runtime.sessionRegistry.activeCount()).toBe(1);
 
-    const closed = waitForClose(socket);
-    socket.close();
-    await closed;
+    socket.terminate();
     await vi.waitFor(() => {
       expect(runtime.sessionRegistry.activeCount()).toBe(0);
     });
@@ -157,9 +155,7 @@ describe("terminal WebSocket route", () => {
       app.injectWS(TERMINAL_WEBSOCKET_PATH, { headers: websocketHeaders(token) }),
     ).rejects.toThrow("Unexpected server response: 403");
 
-    const closed = waitForClose(first);
-    first.close();
-    await closed;
+    first.terminate();
 
     await app.close();
   });
