@@ -20,6 +20,8 @@ Authenticates the human-facing application and provides an outbound-only path fr
 
 Internet-facing application process behind Access. It must not have unrestricted host, shell or Docker privileges and must not load the native PTY module.
 
+Phase 9I adds only a protocol-translating local terminal client to this process. It may connect to the fixed filesystem Unix socket `/run/dashboard-rpi5-terminal.sock`; the browser cannot choose a socket path or pass executable, argv, cwd, env, uid/gid or shell configuration through this bridge.
+
 ### Local RPi5 read agent
 
 Narrow trusted helper. It owns the minimum local privileges needed to read host/Docker/systemd evidence. It is reachable only locally, preferably through a Unix socket.
@@ -51,7 +53,18 @@ Phase 9H defines the source-only containment shape without activating it:
 - only a dedicated `dashboard-rpi5-terminal-client` group may connect to the local socket; production membership in that group is a security-sensitive, owner-authorized decision;
 - the service blocks Docker, system D-Bus and systemd private control sockets and has no network namespace access.
 
-A source merge does not create the required users/groups, install these units, start the socket or expose a browser-to-PTY bridge.
+Phase 9I defines the source-only authenticated bridge without activating production access:
+
+- the Phase 9A–9E owner-auth, exact-Origin and one-time session claim remain mandatory before a local connection is attempted;
+- WebSocket handlers are attached before asynchronous Unix-socket connection work begins;
+- browser bytes are never raw-proxied to the terminal agent;
+- the server itself emits the fixed versioned `open` frame and waits for local `ready` before browser input/resize is accepted;
+- browser binary frames, malformed input, NUL input, pre-ready input, unexpected local frames and protocol widening fail closed;
+- local-connect time, local read size, local write buffering, WebSocket output frames and WebSocket buffered output are bounded;
+- browser close/error and every bridge failure revoke the claimed session and destroy the local connection;
+- terminal tokens and terminal frame contents are not logged or reflected in close reasons.
+
+A source merge does not create the required users/groups, grant the web process connector-group membership, install these units, start the socket or expose a usable production PTY.
 
 ### Docker Engine
 

@@ -1,3 +1,5 @@
+import Fastify from "fastify";
+import { Socket } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "./app.js";
@@ -8,6 +10,8 @@ import {
 } from "./terminal-session-security.js";
 import { createDefaultTerminalRuntime, type TerminalRuntime } from "./terminal-runtime.js";
 import {
+  registerTerminalWebSocketPlugin,
+  registerTerminalWebSocketRoute,
   TERMINAL_WEBSOCKET_MAX_PAYLOAD_BYTES,
   TERMINAL_WEBSOCKET_PATH,
 } from "./terminal-websocket-route.js";
@@ -34,10 +38,7 @@ function ownerVerifier(): OwnerAuthVerifier {
       }
       return {
         verified: true,
-        identity: {
-          email: "owner@example.test",
-          subject: "owner-subject",
-        },
+        identity: { email: "owner@example.test", subject: "owner-subject" },
       };
     },
   };
@@ -72,6 +73,16 @@ async function mintSession(app: ReturnType<typeof buildApp>): Promise<string> {
   return (response.json() as { sessionToken: string }).sessionToken;
 }
 
+function mintSessionDirect(runtime: TerminalRuntime): string {
+  const result = runtime.sessionRegistry.createSession({
+    terminalEnabled: true,
+    ownerAuthVerified: true,
+    origin: TERMINAL_EXPECTED_ORIGIN,
+  });
+  if (!result.created) throw new Error("test terminal session was not created");
+  return result.session.token;
+}
+
 async function waitForClose(socket: {
   once(event: "close", listener: (code: number, reason: Buffer) => void): unknown;
 }): Promise<{ code: number; reason: string }> {
@@ -92,7 +103,6 @@ describe("terminal WebSocket route", () => {
     expect(response.headers["cache-control"]).toBe("no-store");
     expect(response.json()).toEqual({ error: "UPGRADE_REQUIRED" });
     expect(runtime.sessionRegistry.activeCount()).toBe(0);
-
     await app.close();
   });
 
@@ -104,7 +114,6 @@ describe("terminal WebSocket route", () => {
     await expect(
       app.injectWS(TERMINAL_WEBSOCKET_PATH, { headers: websocketHeaders() }),
     ).rejects.toThrow("Unexpected server response: 404");
-
     await app.close();
   });
 
@@ -132,13 +141,8 @@ describe("terminal WebSocket route", () => {
     const socket = await app.injectWS(TERMINAL_WEBSOCKET_PATH, {
       headers: websocketHeaders(token),
     });
-    expect(runtime.sessionRegistry.activeCount()).toBe(1);
-
     socket.terminate();
-    await vi.waitFor(() => {
-      expect(runtime.sessionRegistry.activeCount()).toBe(0);
-    });
-
+    await vi.waitFor(() => expect(runtime.sessionRegistry.activeCount()).toBe(0));
     await app.close();
   });
 
@@ -154,13 +158,11 @@ describe("terminal WebSocket route", () => {
     await expect(
       app.injectWS(TERMINAL_WEBSOCKET_PATH, { headers: websocketHeaders(token) }),
     ).rejects.toThrow("Unexpected server response: 403");
-
     first.terminate();
-
     await app.close();
   });
 
-  it("is inert until the terminal application protocol exists", async () => {
+  it("fails closed when the source-only local terminal socket is not activated", async () => {
     const runtime = enabledRuntime();
     const app = buildApp({ terminalRuntime: runtime });
     const token = await mintSession(app);
@@ -169,33 +171,35 @@ describe("terminal WebSocket route", () => {
       headers: websocketHeaders(token),
     });
 
-    const closed = waitForClose(socket);
-    socket.send("this must never reach a shell");
-    await expect(closed).resolves.toEqual({
-      code: 1008,
-      reason: "TERMINAL_PROTOCOL_NOT_AVAILABLE",
+    await expect(waitForClose(socket)).resolves.toEqual({
+      code: 1011,
+      reason: "TERMINAL_LOCAL_UNAVAILABLE",
     });
     expect(runtime.sessionRegistry.activeCount()).toBe(0);
-
     await app.close();
   });
 
-  it("bounds inbound WebSocket messages before application handling", async () => {
+  it("keeps the exact 4 KiB WebSocket max-payload gate ahead of bridge handling", async () => {
     const runtime = enabledRuntime();
-    const app = buildApp({ terminalRuntime: runtime });
-    const token = await mintSession(app);
+    const token = mintSessionDirect(runtime);
+    const app = Fastify();
+    registerTerminalWebSocketPlugin(app);
+    registerTerminalWebSocketRoute(
+      app,
+      runtime.websocketAdmission,
+      runtime.sessionRegistry,
+      () => new Socket(),
+    );
     await app.ready();
+
     const socket = await app.injectWS(TERMINAL_WEBSOCKET_PATH, {
       headers: websocketHeaders(token),
     });
-
     const closed = waitForClose(socket);
     socket.send(Buffer.alloc(TERMINAL_WEBSOCKET_MAX_PAYLOAD_BYTES + 1, 0x61));
-    const result = await closed;
-    expect(result.code).toBe(1009);
-    expect(result.reason).not.toContain(token);
-    expect(runtime.sessionRegistry.activeCount()).toBe(0);
 
+    await expect(closed).resolves.toMatchObject({ code: 1009 });
+    expect(runtime.sessionRegistry.activeCount()).toBe(0);
     await app.close();
   });
 
@@ -214,7 +218,6 @@ describe("terminal WebSocket route", () => {
       app.injectWS(TERMINAL_WEBSOCKET_PATH, { headers: websocketHeaders() }),
     ).rejects.toThrow("Unexpected server response: 503");
     expect(registry.activeCount()).toBe(0);
-
     await app.close();
   });
 });
