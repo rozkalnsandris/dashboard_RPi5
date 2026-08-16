@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import process from "node:process";
@@ -50,6 +51,14 @@ function assertExactArray(value, expected, label) {
   for (let index = 0; index < expected.length; index += 1) {
     if (value[index] !== expected[index]) throw new Error(`${label} mismatch`);
   }
+}
+
+function hasAsciiControl(value) {
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (code < 32 || code === 127) return true;
+  }
+  return false;
 }
 
 export function validateCloudflareContract(contractValue, launchValue) {
@@ -121,7 +130,7 @@ export function parseActivationBindings(text) {
     const value = line.slice(separator + 1);
     if (!REQUIRED_BINDINGS.includes(key)) throw new Error("activation binding key is not allowed");
     if (values.has(key)) throw new Error("activation binding key is duplicated");
-    if (value === "" || value.length > 512 || /[\u0000-\u001f\u007f\s]/u.test(value) || PLACEHOLDER_PATTERN.test(value)) {
+    if (value === "" || value.length > 512 || /\s/u.test(value) || hasAsciiControl(value) || PLACEHOLDER_PATTERN.test(value)) {
       throw new Error("activation binding value is invalid");
     }
     values.set(key, value);
