@@ -33,7 +33,7 @@ The only production connector target represented in source is:
 
 Node `net.createConnection({ path })` is used for filesystem Unix-domain IPC. There is no HTTP parameter, environment override or browser field for this path.
 
-The bridge has a 3-second local-connect deadline. Browser close/error or any bridge failure destroys the local socket and revokes the terminal capability.
+The bridge has a 3-second local-connect deadline. After connect it has a separate 5-second deadline for the local peer to return exact `ready`. Browser close/error or any bridge failure destroys the local socket and revokes the terminal capability.
 
 ## Protocol translation
 
@@ -61,14 +61,17 @@ The local worker can send only exact `ready`, `output`, `exit` and fixed `error`
 ## Backpressure and bounds
 
 - inbound browser WebSocket payload: 4 KiB via `@fastify/websocket`;
+- local connect deadline: 3 seconds;
+- local `ready` handshake deadline after connect: 5 seconds;
 - local server read event: max 64 KiB;
 - one serialized local server frame: max 32 KiB;
 - local PTY output data chunk accepted by bridge: max 4 KiB UTF-8;
 - local pending write buffer hard cap: 64 KiB;
 - browser WebSocket `bufferedAmount` hard cap: 64 KiB;
-- browser outbound serialized frame hard cap: 32 KiB.
+- browser outbound serialized frame hard cap: 32 KiB;
+- normal-exit browser frame send deadline: 2 seconds.
 
-Crossing a hard cap fails closed and tears down both sides.
+Crossing a hard cap or deadline fails closed and tears down both sides.
 
 ## Close classification
 
@@ -77,7 +80,8 @@ The bridge uses fixed close reasons only; it never reflects tokens, filesystem p
 - policy/protocol/pre-ready/session-expiry: WebSocket 1008;
 - local/PTY/internal bridge failure: 1011;
 - output/backpressure overload: 1013;
-- normal PTY exit: browser exit frame followed by 1000.
+- normal PTY exit: browser exit frame is queued, its send callback must succeed, then WebSocket 1000 is sent;
+- if the normal-exit frame send does not complete within 2 seconds, the WebSocket is terminated instead of waiting without bound.
 
 ## Important non-goals / still absent
 
