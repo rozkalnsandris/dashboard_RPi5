@@ -1,10 +1,11 @@
-import { Duplex } from "node:stream";
 import { EventEmitter } from "node:events";
 import type { Socket } from "node:net";
-import { describe, expect, it } from "vitest";
+import { Duplex } from "node:stream";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   attachTerminalWebSocketBridge,
+  TERMINAL_BRIDGE_EXIT_SEND_TIMEOUT_MS,
   TERMINAL_BRIDGE_MAX_WEBSOCKET_BUFFER_BYTES,
   type TerminalBridgeWebSocket,
 } from "./terminal-websocket-bridge.js";
@@ -22,9 +23,10 @@ class FakeLocalSocket extends Duplex {
 
   override _write(
     chunk: Buffer | string,
-    _encoding: BufferEncoding,
+    encoding: BufferEncoding,
     callback: (error?: Error | null) => void,
   ): void {
+    void encoding;
     this.writes.push(chunk.toString());
     callback();
   }
@@ -44,13 +46,25 @@ class FakeLocalSocket extends Duplex {
 
 class FakeWebSocket extends EventEmitter implements TerminalBridgeWebSocket {
   bufferedAmount = 0;
+  deferSendCallbacks = false;
   readonly sent: string[] = [];
   readonly closes: Array<{ code: number; reason: string }> = [];
+  readonly pendingSendCallbacks: Array<(error?: Error) => void> = [];
   terminated = false;
 
   send(data: string, callback?: (error?: Error) => void): void {
     this.sent.push(data);
-    callback?.();
+    if (callback === undefined) return;
+    if (this.deferSendCallbacks) {
+      this.pendingSendCallbacks.push(callback);
+      return;
+    }
+    callback();
+  }
+
+  completeNextSend(error?: Error): void {
+    const callback = this.pendingSendCallbacks.shift();
+    callback?.(error);
   }
 
   close(code: number, reason: string): void {
@@ -100,6 +114,10 @@ function harness() {
   return { socket, local, registry };
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("terminal websocket Unix bridge", () => {
   it("rejects browser frames synchronously until the local worker is ready", () => {
     const session = harness();
@@ -138,6 +156,37 @@ describe("terminal websocket Unix bridge", () => {
     expect(session.socket.closes.at(-1)).toEqual({ code: 1000, reason: "TERMINAL_EXIT" });
     expect(session.registry.activeCount()).toBe(0);
     expect(session.local.destroyed).toBe(true);
+  });
+
+  it("does not close normally until the exit frame send callback succeeds", () => {
+    const session = harness();
+    session.local.connectNow();
+    session.local.serverSend({ v: 1, type: "ready" });
+    session.socket.deferSendCallbacks = true;
+
+    session.local.serverSend({ v: 1, type: "exit", code: 0, signal: null });
+    expect(session.socket.sent.at(-1)).toBe('{"type":"exit","exitCode":0}');
+    expect(session.socket.closes).toEqual([]);
+    expect(session.registry.activeCount()).toBe(0);
+    expect(session.local.destroyed).toBe(true);
+
+    session.socket.completeNextSend();
+    expect(session.socket.closes).toEqual([{ code: 1000, reason: "TERMINAL_EXIT" }]);
+  });
+
+  it("terminates if an exit frame cannot complete within the bounded deadline", async () => {
+    vi.useFakeTimers();
+    const session = harness();
+    session.local.connectNow();
+    session.local.serverSend({ v: 1, type: "ready" });
+    session.socket.deferSendCallbacks = true;
+
+    session.local.serverSend({ v: 1, type: "exit", code: 0, signal: null });
+    await vi.advanceTimersByTimeAsync(TERMINAL_BRIDGE_EXIT_SEND_TIMEOUT_MS);
+
+    expect(session.socket.terminated).toBe(true);
+    expect(session.socket.closes).toEqual([]);
+    expect(session.registry.activeCount()).toBe(0);
   });
 
   it("rejects binary and NUL browser input before it reaches the local worker", () => {
