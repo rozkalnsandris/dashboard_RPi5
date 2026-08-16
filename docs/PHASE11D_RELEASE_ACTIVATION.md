@@ -10,6 +10,7 @@ The release controller owns exactly one production filesystem boundary:
 
 ```text
 /opt/dashboard_RPi5/
+  .dashboard-release-controller.lock
   releases/<40-char-exact-source-sha>/
   current -> releases/<40-char-exact-source-sha>
 ```
@@ -25,6 +26,8 @@ It does not own:
 - terminal activation.
 
 Those remain separate owner-authorized operations.
+
+The production root and `releases` root must be real directories. The controller refuses symlinks at those trust boundaries instead of following them.
 
 ## Candidate requirement
 
@@ -52,7 +55,7 @@ Do not capture a manifest through `npm run ... > file.json`; npm lifecycle banne
 
 ## Plan is the default
 
-Without `--apply`, the controller performs validation and prints a bounded JSON plan. It does not create `/opt/dashboard_RPi5`, copy a release, or modify `current`.
+Without `--apply`, the controller performs validation and prints a bounded JSON plan. It does not create `/opt/dashboard_RPi5`, acquire an apply lock, copy a release, or modify `current`.
 
 ```text
 npm run release:production -- \
@@ -98,9 +101,13 @@ npm run release:production -- \
 
 The production CLI destination is not configurable. It is fixed by the reviewed contract to `/opt/dashboard_RPi5`.
 
-Before copying, the candidate is reverified. Each copied file is restricted to the candidate manifest, must remain a regular non-symlink file, and is verified by byte count and SHA-256 before and after copy. The completed release is then reverified as a whole and receives a private manifest marker.
+Before any apply lock or release write, the candidate is verified read-only. Apply then acquires `/opt/dashboard_RPi5/.dashboard-release-controller.lock` with exclusive create semantics and repeats the reviewed validation while holding that lock. A second activation or rollback cannot run concurrently through this controller.
 
-Immediately before switching `current`, the controller re-reads the current pointer. If it changed since the reviewed plan, activation blocks. The new pointer is created as a relative symlink and moved into place with a same-directory rename.
+A pre-existing lock is fail-closed. The controller does not infer whether it is stale and does not auto-delete it. A leftover lock after a crash requires separate owner evidence review and explicit cleanup before any retry.
+
+Each copied file is restricted to the candidate manifest, must remain a regular non-symlink file, and is verified by byte count and SHA-256 before and after copy. Destination parent directories are also checked as real directories rather than followed through symlinks. The completed release is then reverified as a whole and receives a private manifest marker.
+
+Immediately before switching `current`, the controller re-reads the current pointer while still holding the exclusive apply lock. If it changed since the reviewed plan, activation blocks. The new pointer is created as a relative symlink and moved into place with a same-directory rename.
 
 The activation operation never deletes the previous or new release.
 
@@ -109,6 +116,8 @@ The activation operation never deletes the previous or new release.
 If copying fails after a new release directory was created, the controller fails closed and leaves that incomplete directory in place. It does not recursively delete production data as part of error recovery.
 
 A later attempt will see the existing but unverified target and block. Cleanup of such a partial release is a separate explicit owner action after evidence review.
+
+On an ordinary handled error the controller closes and removes the lock it acquired. A process crash can leave the lock behind; that lock is deliberately not auto-recovered.
 
 ## Rollback plan
 
@@ -120,7 +129,7 @@ Plan first:
 npm run release:production -- --rollback <verified-rollback-sha>
 ```
 
-The plan reports the observed current SHA and the verified rollback candidate digest.
+The plan reports the observed current SHA and the verified rollback candidate digest. Rollback planning is read-only and does not acquire the apply lock.
 
 ## Rollback apply — future explicit owner authorization only
 
@@ -143,7 +152,7 @@ npm run release:production -- \
   --ack I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ROLLBACK
 ```
 
-Rollback atomically repoints `current` only. It does not delete either release and does not restart services.
+Rollback acquires the same exclusive apply lock, revalidates the current and rollback releases while holding it, then atomically repoints `current` only. It does not delete either release and does not restart services.
 
 ## Separate activation gates after release pointer change
 
