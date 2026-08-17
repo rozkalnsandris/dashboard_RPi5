@@ -63,6 +63,7 @@ export function LiveOverviewPage() {
   if (docker === undefined && dockerQuery.isError) attention.push("Docker current-state evidence unavailable");
   if (hostStale || hostQuery.isRefetchError) attention.push("Host evidence is stale or refresh failed");
   if (dockerStale || dockerQuery.isRefetchError) attention.push("Docker evidence is stale or refresh failed");
+  if (throttle !== null && !throttle.available) attention.push("Throttle evidence unavailable");
   if (throttle?.active) attention.push(`Power flags active: ${throttle.detail}`);
   if (docker !== undefined) {
     const affected = docker.containers.filter(containerNeedsAttention).length;
@@ -87,7 +88,7 @@ export function LiveOverviewPage() {
       value: host === undefined ? "Unavailable" : `${host.cpu.usagePercent.toFixed(0)}%`,
       detail: host === undefined
         ? "No trustworthy evidence"
-        : `load ${host.loadAverage.oneMinute.toFixed(2)} / ${host.loadAverage.fiveMinutes.toFixed(2)} / ${host.loadAverage.fifteenMinutes.toFixed(2)}`,
+        : `load ${host.loadAverage.oneMinute.toFixed(2)} / ${host.loadAverage.fiveMinute.toFixed(2)} / ${host.loadAverage.fifteenMinutes.toFixed(2)}`,
       icon: Cpu,
     },
     {
