@@ -1,6 +1,6 @@
 # SOURCE-ONLY BLUEPRINT.
 # Do not install, enable, start, restart, or otherwise activate this unit
-# without separate owner authorization under issue #1.
+# without a separate explicit owner-authorized production gate.
 #
 # The agent owns the bounded host-read boundary. Its primary group lets the web
 # identity consume the agent Unix API. For Docker current-state it receives only
