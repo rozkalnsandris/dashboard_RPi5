@@ -1,5 +1,10 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -20,12 +25,14 @@ import {
 const ID = "a".repeat(64);
 const cleanups: Array<() => Promise<void>> = [];
 
+type RequestListener = (request: IncomingMessage, response: ServerResponse) => void;
+
 afterEach(async () => {
   while (cleanups.length > 0) await cleanups.pop()?.();
 });
 
 async function withUnixServer(
-  handler: Parameters<typeof createServer>[0],
+  handler: RequestListener,
 ): Promise<{ socketPath: string; server: Server }> {
   const root = await mkdtemp(resolve(tmpdir(), "dashboard-rpi5-broker-client-"));
   const socketPath = resolve(root, "broker.sock");
