@@ -4,6 +4,7 @@ import {
   CPU_SAMPLE_WINDOW_MS,
   HostEvidenceParseError,
   HostSourceUnavailableError,
+  THERMAL_ZONE_TEMP_PATH,
   VCGENCMD_MAX_BUFFER_BYTES,
   VCGENCMD_PATH,
   VCGENCMD_TIMEOUT_MS,
@@ -11,7 +12,7 @@ import {
   calculateFilesystemUsage,
   parseCpuSnapshot,
   parseMemoryInfo,
-  parseTemperature,
+  parseThermalZoneTemperature,
   parseThrottleState,
   readHostSummary,
   type HostReadDependencies,
@@ -41,13 +42,13 @@ function makeDependencies(
       }
       if (path === "/proc/loadavg") return "0.25 0.50 0.75 1/100 123\n";
       if (path === "/proc/uptime") return "12345.67 45678.90\n";
+      if (path === THERMAL_ZONE_TEMP_PATH) return "43200\n";
       throw new Error("unexpected test path");
     },
     async statFilesystem() {
       return { bsize: 4096n, blocks: 1000n, bavail: 250n };
     },
     async execFile(_file, args) {
-      if (args[0] === "measure_temp") return { stdout: "temp=43.2'C\n" };
       if (args[0] === "get_throttled") return { stdout: "throttled=0x50005\n" };
       throw new Error("unexpected test command");
     },
@@ -126,13 +127,15 @@ describe("host evidence parsers", () => {
     });
   });
 
-  it("strictly parses Raspberry Pi temperature evidence", () => {
-    expect(parseTemperature("temp=43.2'C\n")).toBe(43.2);
-    expect(() => parseTemperature("43.2")).toThrow(HostEvidenceParseError);
-    expect(() => parseTemperature("temp=999'C")).toThrow(HostEvidenceParseError);
+  it("strictly parses the unprivileged thermal-zone millidegree source", () => {
+    expect(parseThermalZoneTemperature("43200\n")).toBe(43.2);
+    expect(parseThermalZoneTemperature("-5000\n")).toBe(-5);
+    expect(() => parseThermalZoneTemperature("43.2")).toThrow(HostEvidenceParseError);
+    expect(() => parseThermalZoneTemperature("temp=43.2'C")).toThrow(HostEvidenceParseError);
+    expect(() => parseThermalZoneTemperature("999000")).toThrow(HostEvidenceParseError);
   });
 
-  it("decodes current and historical Raspberry Pi throttle flags", () => {
+  it("decodes current and historical Raspberry Pi throttle flags when evidence is available", () => {
     expect(parseThrottleState("throttled=0xf000f\n")).toEqual({
       rawHex: "0xf000f",
       rawValue: 0xf000f,
@@ -149,29 +152,19 @@ describe("host evidence parsers", () => {
         softTemperatureLimit: true,
       },
     });
-
-    expect(parseThrottleState("throttled=0x0")).toMatchObject({
-      current: {
-        underVoltage: false,
-        armFrequencyCapped: false,
-        throttled: false,
-        softTemperatureLimit: false,
-      },
-      occurred: {
-        underVoltage: false,
-        armFrequencyCapped: false,
-        throttled: false,
-        softTemperatureLimit: false,
-      },
-    });
   });
 });
 
 describe("readHostSummary", () => {
-  it("returns one strict fresh host summary from fixed read-only sources", async () => {
-    const execFile = vi.fn(makeDependencies().execFile);
+  it("returns required host metrics from least-privilege sources and keeps available throttle evidence", async () => {
+    const dependencies = makeDependencies();
+    const readTextFile = vi.fn(dependencies.readTextFile);
+    const execFile = vi.fn(dependencies.execFile);
     const sleep = vi.fn(async () => undefined);
-    const summary = await readHostSummary(makeDependencies({ execFile, sleep }));
+
+    const summary = await readHostSummary(
+      makeDependencies({ readTextFile, execFile, sleep }),
+    );
 
     expect(summary).toEqual({
       observedAt: "2026-08-15T13:00:00.000Z",
@@ -218,20 +211,10 @@ describe("readHostSummary", () => {
       },
     });
 
+    expect(readTextFile).toHaveBeenCalledWith(THERMAL_ZONE_TEMP_PATH);
     expect(sleep).toHaveBeenCalledWith(CPU_SAMPLE_WINDOW_MS, undefined);
-    expect(execFile).toHaveBeenNthCalledWith(
-      1,
-      VCGENCMD_PATH,
-      ["measure_temp"],
-      {
-        timeout: VCGENCMD_TIMEOUT_MS,
-        maxBuffer: VCGENCMD_MAX_BUFFER_BYTES,
-        encoding: "utf8",
-        shell: false,
-      },
-    );
-    expect(execFile).toHaveBeenNthCalledWith(
-      2,
+    expect(execFile).toHaveBeenCalledTimes(1);
+    expect(execFile).toHaveBeenCalledWith(
       VCGENCMD_PATH,
       ["get_throttled"],
       {
@@ -243,15 +226,66 @@ describe("readHostSummary", () => {
     );
   });
 
-  it("fails closed when a required source is malformed", async () => {
+  it("keeps required live host metrics when firmware throttle evidence is inaccessible", async () => {
+    const summary = await readHostSummary(
+      makeDependencies({
+        async execFile() {
+          throw new Error("permission denied");
+        },
+      }),
+    );
+
+    expect(summary.temperature).toEqual({ celsius: 43.2 });
+    expect(summary.cpu.usagePercent).toBe(37.5);
+    expect(summary.throttle).toEqual({ state: "UNAVAILABLE" });
+  });
+
+  it("does not fabricate throttle evidence when firmware output is malformed", async () => {
+    const summary = await readHostSummary(
+      makeDependencies({
+        async execFile() {
+          return { stdout: "throttled=not-a-value\n" };
+        },
+      }),
+    );
+
+    expect(summary.throttle).toEqual({ state: "UNAVAILABLE" });
+  });
+
+  it("still fails closed when a required source is malformed", async () => {
+    const base = makeDependencies();
     const dependencies = makeDependencies({
       async readTextFile(path) {
         if (path === "/proc/meminfo") return "MemTotal: 1000 kB\n";
-        return makeDependencies().readTextFile(path);
+        return base.readTextFile(path);
       },
     });
 
     await expect(readHostSummary(dependencies)).rejects.toBeInstanceOf(
+      HostSourceUnavailableError,
+    );
+  });
+
+  it("fails closed when the required sysfs temperature is missing or malformed", async () => {
+    const base = makeDependencies();
+    const malformed = makeDependencies({
+      async readTextFile(path) {
+        if (path === THERMAL_ZONE_TEMP_PATH) return "43.2\n";
+        return base.readTextFile(path);
+      },
+    });
+    await expect(readHostSummary(malformed)).rejects.toBeInstanceOf(
+      HostSourceUnavailableError,
+    );
+
+    const missingBase = makeDependencies();
+    const missing = makeDependencies({
+      async readTextFile(path) {
+        if (path === THERMAL_ZONE_TEMP_PATH) throw new Error("not found");
+        return missingBase.readTextFile(path);
+      },
+    });
+    await expect(readHostSummary(missing)).rejects.toBeInstanceOf(
       HostSourceUnavailableError,
     );
   });

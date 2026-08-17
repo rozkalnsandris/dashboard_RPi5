@@ -31,10 +31,26 @@ describe("current-state UI helpers", () => {
     expect(formatUptime(90_000)).toBe("1d 1h");
   });
 
-  it("classifies throttle and Docker attention from real state", () => {
-    expect(throttleSummary(host)).toEqual({ label: "None", detail: "No current power flags", active: false });
+  it("classifies available throttle and Docker attention from real state", () => {
+    expect(throttleSummary(host)).toEqual({
+      label: "None",
+      detail: "No current power flags",
+      active: false,
+      available: true,
+    });
     expect(containerStatusLabel(container)).toBe("healthy");
     expect(containerNeedsAttention(container)).toBe(false);
     expect(containerNeedsAttention({ ...container, state: "EXITED" })).toBe(true);
+  });
+
+  it("shows unavailable throttle evidence without inventing a healthy state", () => {
+    expect(
+      throttleSummary({ throttle: { state: "UNAVAILABLE" } } as Parameters<typeof throttleSummary>[0]),
+    ).toEqual({
+      label: "Unavailable",
+      detail: "Firmware throttle evidence unavailable",
+      active: false,
+      available: false,
+    });
   });
 });

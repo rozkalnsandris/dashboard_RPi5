@@ -31,15 +31,31 @@ export function formatUptime(seconds: number | null): string {
   return `${minutes}m`;
 }
 
-export function throttleSummary(host: HostSummary): { label: string; detail: string; active: boolean } {
+export interface ThrottleSummary {
+  label: string;
+  detail: string;
+  active: boolean;
+  available: boolean;
+}
+
+export function throttleSummary(host: HostSummary): ThrottleSummary {
+  if (!("current" in host.throttle)) {
+    return {
+      label: "Unavailable",
+      detail: "Firmware throttle evidence unavailable",
+      active: false,
+      available: false,
+    };
+  }
+
   const labels: string[] = [];
   if (host.throttle.current.underVoltage) labels.push("under-voltage");
   if (host.throttle.current.armFrequencyCapped) labels.push("frequency capped");
   if (host.throttle.current.throttled) labels.push("throttled");
   if (host.throttle.current.softTemperatureLimit) labels.push("temperature limit");
   return labels.length === 0
-    ? { label: "None", detail: "No current power flags", active: false }
-    : { label: "Active", detail: labels.join(", "), active: true };
+    ? { label: "None", detail: "No current power flags", active: false, available: true }
+    : { label: "Active", detail: labels.join(", "), active: true, available: true };
 }
 
 export function containerStatusLabel(container: DockerContainerSnapshot): string {

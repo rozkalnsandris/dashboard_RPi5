@@ -6,7 +6,7 @@ Production deployment: **NO**
 
 ## Purpose
 
-Phase 2B adds the first real host-evidence adapter to the source tree. It does **not** activate the agent on the production Raspberry Pi.
+Phase 2B adds the first real host-evidence adapter to the source tree. It does **not** by itself authorize agent activation or privilege expansion on the production Raspberry Pi.
 
 The local agent exposes one purpose-built route:
 
@@ -14,19 +14,19 @@ The local agent exposes one purpose-built route:
 GET /v1/host/summary
 ```
 
-There is still no generic host command, file, process, systemd, Docker or shell proxy.
+There is no generic host command, file, process, systemd, Docker or shell proxy.
 
 ## Authoritative evidence sources
 
-| Evidence | Source | Notes |
-|---|---|---|
-| uptime | `/proc/uptime` | first numeric field |
-| load | `/proc/loadavg` | 1m / 5m / 15m |
-| CPU usage | `/proc/stat` | aggregate `cpu` line, two monotonic snapshots |
-| RAM + swap | `/proc/meminfo` | `MemTotal`, `MemAvailable`, `SwapTotal`, `SwapFree` |
-| root filesystem | Node `fs.statfs("/")` | reports blocks available to the service identity |
-| SoC temperature | `/usr/bin/vcgencmd measure_temp` | Raspberry Pi firmware signal |
-| power/thermal flags | `/usr/bin/vcgencmd get_throttled` | current and occurred-since-boot bit fields |
+| Evidence | Source | Required | Notes |
+|---|---|---:|---|
+| uptime | `/proc/uptime` | yes | first numeric field |
+| load | `/proc/loadavg` | yes | 1m / 5m / 15m |
+| CPU usage | `/proc/stat` | yes | aggregate `cpu` line, two monotonic snapshots |
+| RAM + swap | `/proc/meminfo` | yes | `MemTotal`, `MemAvailable`, `SwapTotal`, `SwapFree` |
+| root filesystem | Node `fs.statfs("/")` | yes | blocks available to the service identity |
+| SoC temperature | `/sys/class/thermal/thermal_zone0/temp` | yes | unprivileged kernel thermal-zone signal, millidegrees Celsius |
+| power/thermal flags | `/usr/bin/vcgencmd get_throttled` | no | current and occurred-since-boot firmware bit fields; explicit unavailable state when the mailbox cannot be read |
 
 Prometheus remains the planned historical time-series authority. These reads are for a current local snapshot, not a second metrics database.
 
@@ -68,33 +68,27 @@ usedBytes      = totalBytes - availableBytes
 
 ## Raspberry Pi temperature
 
-Raspberry Pi documentation recommends `vcgencmd measure_temp` for an accurate instantaneous SoC temperature reading.
+Production evidence from #117 showed that the dedicated agent can read ordinary kernel host evidence but cannot open `/dev/vcio`, which is intentionally not made available through a new privileged supplementary group.
 
-The adapter uses the fixed executable:
-
-```text
-/usr/bin/vcgencmd
-```
-
-and an exact argument array:
+Temperature therefore uses the fixed unprivileged kernel path:
 
 ```text
-["measure_temp"]
+/sys/class/thermal/thermal_zone0/temp
 ```
 
-No shell is used. Output is bounded to 4096 bytes and command execution to 1 second.
-
-Expected response form:
+The source is parsed strictly as a signed integer number of millidegrees Celsius. For example:
 
 ```text
-temp=43.2'C
+43200
 ```
 
-Malformed or implausible evidence fails closed.
+becomes `43.2°C`.
 
-## `get_throttled` decoding
+Malformed, missing or implausible temperature evidence remains a required-source failure and returns `SOURCE_UNAVAILABLE`. The implementation does not fall back to fabricated data or to privilege expansion.
 
-Raspberry Pi defines these current flags:
+## `get_throttled` decoding and availability
+
+Raspberry Pi firmware defines these current flags:
 
 | Bit | Meaning |
 |---:|---|
@@ -105,20 +99,26 @@ Raspberry Pi defines these current flags:
 
 and matching historical “has occurred” flags at bits 16–19.
 
-The API preserves:
+When firmware evidence is readable, the API preserves the existing available payload:
 
 - normalized raw hex;
 - raw numeric value;
 - four current booleans;
 - four occurred-since-boot booleans.
 
+When the firmware mailbox is inaccessible or `get_throttled` output is malformed, the API returns only:
+
+```json
+{ "state": "UNAVAILABLE" }
+```
+
+It must never fabricate `0x0`, `false` flags or a healthy-looking “None” state when firmware evidence was not observed.
+
 Historical bits must not be presented as a current active incident by the UI.
 
 ## Failure model
 
-Every field in a fresh `HostSummary` is required evidence.
-
-If any required source is unreadable, malformed, non-monotonic, times out, exceeds bounds or returns an invalid value, the fresh summary fails as:
+CPU/load, memory, uptime, filesystem and sysfs temperature remain required evidence. If one of those sources is unreadable, malformed, non-monotonic, times out or returns an invalid value, the fresh summary fails as:
 
 ```json
 { "error": "SOURCE_UNAVAILABLE" }
@@ -126,32 +126,40 @@ If any required source is unreadable, malformed, non-monotonic, times out, excee
 
 The route returns HTTP 503. Internal filesystem paths, stderr, command output, stack traces and raw exception strings are not returned to the client.
 
-The dashboard/server layer can later retain a previously proven snapshot and label it stale. Phase 2B itself never fabricates zeroes for missing evidence.
+Throttle firmware evidence is the one explicitly degradable field because production least-privilege evidence proved that granting `/dev/vcio` access would widen the agent trust boundary. Its absence is represented as `UNAVAILABLE`, and the UI must raise an attention signal rather than showing an all-clear throttle state.
 
-## Activation preflight — future owner gate
+The dashboard/server layer can retain a previously proven snapshot and label it stale. Phase 2B never fabricates zeroes for missing evidence.
 
-Before the first live RPi activation, a separate owner-authorized procedure must verify at minimum:
+## Production trust boundary
 
-1. exact merged `main` and exact-main CI;
-2. `/usr/bin/node` and `/usr/bin/vcgencmd` paths on the actual Pi;
-3. the dedicated service identity can read `/proc/*` and stat `/`;
-4. the dedicated service identity can execute both `vcgencmd measure_temp` and `vcgencmd get_throttled`;
-5. required VideoCore device permissions are available to the service identity without root/sudo;
-6. the Unix socket runtime directory and ownership are correct;
-7. no Docker/systemd/journal privilege is introduced accidentally;
-8. source-only systemd blueprint hardening is re-reviewed against the actual host.
+The main read agent must not be added to `video` merely to make `vcgencmd` work. Device permissions must not be broadened as a side effect of host telemetry collection.
 
-If `vcgencmd` requires additional group/device permission, that permission change is a separate trust-boundary decision. This source PR does not add a user to `video`, `docker`, `sudo` or any other privileged group.
+Any future decision to grant firmware-mailbox access is a separate owner-authorized trust-boundary change and must be reviewed independently.
 
-## Official references checked 2026-08-15
+Docker access is also separate and remains governed by its own trust boundary; this host-health remediation does not grant the main agent Docker socket access.
+
+## Validation requirements
+
+Focused regression coverage must prove:
+
+1. strict sysfs millidegree parsing;
+2. missing/malformed sysfs temperature fails the host summary;
+3. inaccessible or malformed throttle evidence produces exactly `{ "state": "UNAVAILABLE" }`;
+4. unavailable throttle evidence does not hide CPU/RAM/load/uptime/filesystem/temperature;
+5. available `get_throttled` evidence keeps the decoded current/historical contract;
+6. the UI labels unavailable throttle evidence and prevents a false “All clear” state;
+7. no fixture/default substitution is introduced.
+
+## Official references
 
 - Raspberry Pi computer hardware / temperature: https://www.raspberrypi.com/documentation/computers/raspberry-pi.html
 - Raspberry Pi OS `vcgencmd` and `get_throttled`: https://www.raspberrypi.com/documentation/computers/os.html
+- Linux thermal sysfs ABI / thermal framework: https://docs.kernel.org/driver-api/thermal/sysfs-api.html
 - Linux `/proc` filesystem: https://docs.kernel.org/filesystems/proc.html
-- Node.js 24 `fs.statfs`: https://nodejs.org/docs/latest-v24.x/api/fs.html
+- Node.js `fs.statfs`: https://nodejs.org/docs/latest-v24.x/api/fs.html
 
 ## Explicit non-authorization
 
-This document and its source code do **not** authorize installation, service activation, group changes, device permission changes, Docker access, Cloudflare changes, terminal access or any production/host mutation.
+This document and its source code do **not** authorize installation, service activation/restart, group changes, device permission changes, Docker access, Cloudflare changes, terminal access or any production/host mutation.
 
 **Production deploy: NO.**

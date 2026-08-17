@@ -4,6 +4,7 @@ import { readFile, statfs } from "node:fs/promises";
 import { setTimeout as sleepTimer } from "node:timers/promises";
 
 export const CPU_SAMPLE_WINDOW_MS = 200;
+export const THERMAL_ZONE_TEMP_PATH = "/sys/class/thermal/thermal_zone0/temp";
 export const VCGENCMD_PATH = "/usr/bin/vcgencmd";
 export const VCGENCMD_TIMEOUT_MS = 1_000;
 export const VCGENCMD_MAX_BUFFER_BYTES = 4_096;
@@ -245,11 +246,14 @@ export function calculateFilesystemUsage(
   };
 }
 
-export function parseTemperature(input: string): number {
-  const match = /^temp=(-?\d+(?:\.\d+)?)'C$/.exec(input.trim());
-  if (match === null) throw new HostEvidenceParseError();
+export function parseThermalZoneTemperature(input: string): number {
+  const raw = input.trim();
+  if (!/^-?\d+$/.test(raw)) throw new HostEvidenceParseError();
 
-  const celsius = Number(match[1]);
+  const millidegrees = Number(raw);
+  if (!Number.isSafeInteger(millidegrees)) throw new HostEvidenceParseError();
+
+  const celsius = millidegrees / 1_000;
   if (!Number.isFinite(celsius) || celsius < -40 || celsius > 150) {
     throw new HostEvidenceParseError();
   }
@@ -265,7 +269,7 @@ function decodeThrottleFlags(value: number, offset: 0 | 16): HostThrottleFlags {
   };
 }
 
-export function parseThrottleState(input: string): HostSummary["throttle"] {
+export function parseThrottleState(input: string): Exclude<HostSummary["throttle"], { state: "UNAVAILABLE" }> {
   const match = /^throttled=(0x[0-9a-fA-F]+)$/.exec(input.trim());
   if (match === null) throw new HostEvidenceParseError();
 
@@ -283,19 +287,23 @@ export function parseThrottleState(input: string): HostSummary["throttle"] {
   };
 }
 
-async function readVcgencmd(
-  command: "measure_temp" | "get_throttled",
+async function readThrottleState(
   dependencies: HostReadDependencies,
   signal?: AbortSignal,
-): Promise<string> {
-  const { stdout } = await dependencies.execFile(VCGENCMD_PATH, [command], {
-    timeout: VCGENCMD_TIMEOUT_MS,
-    maxBuffer: VCGENCMD_MAX_BUFFER_BYTES,
-    encoding: "utf8",
-    shell: false,
-    ...(signal === undefined ? {} : { signal }),
-  });
-  return stdout;
+): Promise<HostSummary["throttle"]> {
+  try {
+    const { stdout } = await dependencies.execFile(VCGENCMD_PATH, ["get_throttled"], {
+      timeout: VCGENCMD_TIMEOUT_MS,
+      maxBuffer: VCGENCMD_MAX_BUFFER_BYTES,
+      encoding: "utf8",
+      shell: false,
+      ...(signal === undefined ? {} : { signal }),
+    });
+    return parseThrottleState(stdout);
+  } catch {
+    signal?.throwIfAborted();
+    return { state: "UNAVAILABLE" };
+  }
 }
 
 async function sampleCpuUsage(
@@ -322,15 +330,15 @@ export async function readHostSummary(
       uptimeText,
       filesystemStat,
       temperatureText,
-      throttleText,
+      throttle,
     ] = await Promise.all([
       sampleCpuUsage(dependencies, signal),
       dependencies.readTextFile("/proc/meminfo"),
       dependencies.readTextFile("/proc/loadavg"),
       dependencies.readTextFile("/proc/uptime"),
       dependencies.statFilesystem("/"),
-      readVcgencmd("measure_temp", dependencies, signal),
-      readVcgencmd("get_throttled", dependencies, signal),
+      dependencies.readTextFile(THERMAL_ZONE_TEMP_PATH),
+      readThrottleState(dependencies, signal),
     ]);
 
     signal?.throwIfAborted();
@@ -345,8 +353,8 @@ export async function readHostSummary(
       },
       memory: parseMemoryInfo(memoryText),
       filesystem: calculateFilesystemUsage(filesystemStat),
-      temperature: { celsius: parseTemperature(temperatureText) },
-      throttle: parseThrottleState(throttleText),
+      temperature: { celsius: parseThermalZoneTemperature(temperatureText) },
+      throttle,
     };
   } catch (error: unknown) {
     if (error instanceof HostSourceUnavailableError) throw error;

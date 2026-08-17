@@ -63,6 +63,7 @@ export function LiveOverviewPage() {
   if (docker === undefined && dockerQuery.isError) attention.push("Docker current-state evidence unavailable");
   if (hostStale || hostQuery.isRefetchError) attention.push("Host evidence is stale or refresh failed");
   if (dockerStale || dockerQuery.isRefetchError) attention.push("Docker evidence is stale or refresh failed");
+  if (throttle !== null && !throttle.available) attention.push("Throttle evidence unavailable");
   if (throttle?.active) attention.push(`Power flags active: ${throttle.detail}`);
   if (docker !== undefined) {
     const affected = docker.containers.filter(containerNeedsAttention).length;
