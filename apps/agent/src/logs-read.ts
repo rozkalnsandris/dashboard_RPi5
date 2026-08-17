@@ -11,9 +11,8 @@ import type {
 import { execFile as nodeExecFile } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { request } from "node:http";
 
-import { DOCKER_API_PREFIX, DOCKER_SOCKET_PATH } from "./docker-read.js";
+import { DOCKER_API_PREFIX } from "./docker-api.js";
 
 export const LOG_MAX_ENTRIES = 400;
 export const LOG_MAX_MESSAGE_CHARS = 8_192;
@@ -502,61 +501,19 @@ async function defaultReadDockerLogs(
   sinceSeconds: number,
   signal?: AbortSignal,
 ): Promise<Buffer> {
+  signal?.throwIfAborted();
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(containerName)) {
     throw new LogSourceUnavailableError();
   }
   if (!Number.isSafeInteger(sinceSeconds) || sinceSeconds < 0) {
     throw new LogSourceUnavailableError();
   }
-  const path = `${DOCKER_API_PREFIX}/containers/${encodeURIComponent(containerName)}/logs?stdout=true&stderr=true&since=${sinceSeconds}&timestamps=true&tail=${LOG_MAX_ENTRIES}`;
 
-  return new Promise<Buffer>((resolve, reject) => {
-    let settled = false;
-    const fail = () => {
-      if (settled) return;
-      settled = true;
-      reject(new LogSourceUnavailableError());
-    };
-    const succeed = (body: Buffer) => {
-      if (settled) return;
-      settled = true;
-      resolve(body);
-    };
-
-    const req = request(
-      {
-        socketPath: DOCKER_SOCKET_PATH,
-        path,
-        method: "GET",
-        ...(signal === undefined ? {} : { signal }),
-      },
-      (response) => {
-        if (response.statusCode !== 200) {
-          response.resume();
-          fail();
-          return;
-        }
-        const chunks: Buffer[] = [];
-        let total = 0;
-        response.on("data", (chunk: Buffer | string) => {
-          if (settled) return;
-          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          total += buffer.length;
-          if (total > LOG_MAX_SOURCE_BYTES) {
-            response.destroy();
-            fail();
-            return;
-          }
-          chunks.push(buffer);
-        });
-        response.once("error", fail);
-        response.once("end", () => succeed(Buffer.concat(chunks)));
-      },
-    );
-    req.setTimeout(LOG_SOURCE_TIMEOUT_MS, () => req.destroy(new LogSourceUnavailableError()));
-    req.once("error", fail);
-    req.end();
-  });
+  // Phase 3C deliberately removes Docker Engine socket authority from the main
+  // agent. Docker log retrieval is outside #119's reviewed broker allowlist, so
+  // the default source remains fail-closed until a separate bounded capability
+  // is designed. Tests may still inject readDockerLogs to exercise parsing.
+  throw new LogSourceUnavailableError();
 }
 
 async function defaultReadFileTail(
