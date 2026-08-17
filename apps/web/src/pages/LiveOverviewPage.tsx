@@ -88,7 +88,7 @@ export function LiveOverviewPage() {
       value: host === undefined ? "Unavailable" : `${host.cpu.usagePercent.toFixed(0)}%`,
       detail: host === undefined
         ? "No trustworthy evidence"
-        : `load ${host.loadAverage.oneMinute.toFixed(2)} / ${host.loadAverage.fiveMinute.toFixed(2)} / ${host.loadAverage.fifteenMinutes.toFixed(2)}`,
+        : `load ${host.loadAverage.oneMinute.toFixed(2)} / ${host.loadAverage.fiveMinutes.toFixed(2)} / ${host.loadAverage.fifteenMinutes.toFixed(2)}`,
       icon: Cpu,
     },
     {
