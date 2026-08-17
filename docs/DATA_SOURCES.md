@@ -12,8 +12,8 @@ Use the authoritative source that already owns the data. Avoid duplicate collect
 | Root filesystem | Prometheus/node_exporter | current + history |
 | Disk I/O | Prometheus/node_exporter | history/topology |
 | Network | Prometheus/node_exporter | current + history |
-| SoC temperature | `vcgencmd measure_temp` | exact current Pi temperature |
-| Thermal/power flags | `vcgencmd get_throttled` | current + since-boot evidence |
+| SoC temperature | `/sys/class/thermal/thermal_zone0/temp` for local current state | exact current Pi temperature |
+| Thermal/power flags | `vcgencmd get_throttled` when the firmware mailbox is readable | current + since-boot evidence, otherwise explicit unavailable |
 | Docker live stats | Docker Engine stats API | CPU/RAM/net/block/PIDs |
 | Docker lifecycle | Docker Engine events API | activity timeline |
 | Docker logs | Docker Engine logs API | log explorer |
@@ -24,7 +24,7 @@ Use the authoritative source that already owns the data. Avoid duplicate collect
 
 ## Raspberry Pi-specific health
 
-Decode `get_throttled` rather than showing only hex.
+Decode `get_throttled` rather than showing only hex when firmware evidence is available.
 
 Relevant flags include current and historical evidence for:
 
@@ -32,6 +32,10 @@ Relevant flags include current and historical evidence for:
 - Arm frequency capped;
 - throttling;
 - soft temperature limit.
+
+The production read agent does not gain `video` membership merely to access `/dev/vcio`. If the firmware mailbox is inaccessible, throttle evidence is reported as `UNAVAILABLE`; the dashboard must not manufacture `0x0` or a healthy-looking all-clear state.
+
+Current SoC temperature uses the unprivileged kernel thermal-zone signal at `/sys/class/thermal/thermal_zone0/temp`, parsed strictly from millidegrees Celsius. Missing or malformed temperature remains a required-source failure.
 
 Temperature is displayed with the actual value and a textual state. Threshold configuration belongs server-side.
 
@@ -49,6 +53,8 @@ Expose normalized values for:
 
 The API and CLI differ in how Linux memory cache is reported; normalization must be documented and tested so the dashboard does not compare unlike values.
 
+Docker daemon access is a separate high-privilege boundary. The main read agent must not be placed in the `docker` group merely to satisfy current-state reads; any Docker access design must preserve the no-generic-proxy contract and be separately reviewed.
+
 ## Refresh cadence starting point
 
 | Data | Visible page | Hidden tab |
@@ -63,7 +69,7 @@ The API and CLI differ in how Linux memory cache is reported; normalization must
 
 Never overlap passive polling requests indefinitely. Abort stale requests and back off on failure.
 
-## Stale state
+## Stale and unavailable state
 
 Missing evidence is not zero.
 
@@ -71,9 +77,10 @@ Examples:
 
 ```text
 CPU: unavailable
+Throttle: unavailable
 Docker: stale · last seen 4m ago
 Backup: unknown
 Agent: unavailable
 ```
 
-If required health inputs are stale/unavailable, overall state cannot remain falsely `Healthy`.
+If required health inputs are stale/unavailable, overall state cannot remain falsely `Healthy`. A partially unavailable field such as throttle evidence must be surfaced as attention while independently trustworthy host metrics remain usable.
