@@ -1,34 +1,55 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  DOCKER_API_PREFIX,
+  DockerBrokerRequestError,
+  type DockerBrokerTransport,
+} from "./docker-broker-client.js";
+import {
   DockerSourceUnavailableError,
   calculateDockerBlockIo,
   calculateDockerCpuPercent,
   calculateDockerMemory,
   calculateDockerNetwork,
-  isAllowedDockerPath,
   parseDockerContainerIds,
   parseDockerStats,
   parseDockerVersion,
   readDockerContainers,
-  type DockerTransport,
 } from "./docker-read.js";
 
 const RUNNING_ID = "a".repeat(64);
 const STOPPED_ID = "b".repeat(64);
 
-class FakeDockerTransport implements DockerTransport {
-  readonly paths: string[] = [];
+class FakeDockerBrokerTransport implements DockerBrokerTransport {
+  readonly operations: string[] = [];
 
   constructor(readonly responses: Map<string, unknown>) {}
 
-  async get(path: string): Promise<unknown> {
-    this.paths.push(path);
-    const response = this.responses.get(path);
+  async #read(key: string): Promise<unknown> {
+    this.operations.push(key);
+    const response = this.responses.get(key);
     if (response instanceof Error) throw response;
-    if (response === undefined) throw new Error(`unexpected path: ${path}`);
+    if (response === undefined) throw new Error(`unexpected operation: ${key}`);
     return response;
+  }
+
+  async ping(): Promise<void> {
+    await this.#read("ping");
+  }
+
+  version(): Promise<unknown> {
+    return this.#read("version");
+  }
+
+  listContainers(): Promise<unknown> {
+    return this.#read("containers");
+  }
+
+  inspectContainer(id: string): Promise<unknown> {
+    return this.#read(`inspect:${id}`);
+  }
+
+  statsContainer(id: string): Promise<unknown> {
+    return this.#read(`stats:${id}`);
   }
 }
 
@@ -105,23 +126,6 @@ function runningStats() {
     pids_stats: { current: 12 },
   };
 }
-
-describe("Docker path allowlist", () => {
-  it("allows only the fixed read-only API paths", () => {
-    expect(isAllowedDockerPath(`${DOCKER_API_PREFIX}/version`)).toBe(true);
-    expect(isAllowedDockerPath(`${DOCKER_API_PREFIX}/containers/json?all=true`)).toBe(true);
-    expect(isAllowedDockerPath(`${DOCKER_API_PREFIX}/containers/${RUNNING_ID}/json`)).toBe(true);
-    expect(
-      isAllowedDockerPath(
-        `${DOCKER_API_PREFIX}/containers/${RUNNING_ID}/stats?stream=false`,
-      ),
-    ).toBe(true);
-
-    expect(isAllowedDockerPath(`${DOCKER_API_PREFIX}/containers/${RUNNING_ID}/stop`)).toBe(false);
-    expect(isAllowedDockerPath(`${DOCKER_API_PREFIX}/containers/../json`)).toBe(false);
-    expect(isAllowedDockerPath(`/v1.55/containers/json?all=true`)).toBe(false);
-  });
-});
 
 describe("Docker version and inventory parsing", () => {
   it("accepts a daemon whose supported range includes API v1.40", () => {
@@ -206,18 +210,16 @@ describe("Docker stats normalization", () => {
   });
 });
 
-describe("Docker container snapshot", () => {
-  it("uses only daemon IDs for inspect/stats paths and skips stats for stopped containers", async () => {
-    const transport = new FakeDockerTransport(
+describe("Docker container snapshot through typed broker", () => {
+  it("uses only typed broker operations and skips stats for stopped containers", async () => {
+    const transport = new FakeDockerBrokerTransport(
       new Map<string, unknown>([
-        [`${DOCKER_API_PREFIX}/version`, versionEvidence],
-        [
-          `${DOCKER_API_PREFIX}/containers/json?all=true`,
-          [{ Id: STOPPED_ID }, { Id: RUNNING_ID }],
-        ],
-        [`${DOCKER_API_PREFIX}/containers/${RUNNING_ID}/json`, runningInspect()],
-        [`${DOCKER_API_PREFIX}/containers/${RUNNING_ID}/stats?stream=false`, runningStats()],
-        [`${DOCKER_API_PREFIX}/containers/${STOPPED_ID}/json`, stoppedInspect()],
+        ["ping", true],
+        ["version", versionEvidence],
+        ["containers", [{ Id: STOPPED_ID }, { Id: RUNNING_ID }]],
+        [`inspect:${RUNNING_ID}`, runningInspect()],
+        [`stats:${RUNNING_ID}`, runningStats()],
+        [`inspect:${STOPPED_ID}`, stoppedInspect()],
       ]),
     );
 
@@ -256,22 +258,25 @@ describe("Docker container snapshot", () => {
       stats: null,
     });
 
-    expect(transport.paths).not.toContain(
-      `${DOCKER_API_PREFIX}/containers/${STOPPED_ID}/stats?stream=false`,
-    );
-    expect(transport.paths.every(isAllowedDockerPath)).toBe(true);
+    expect(transport.operations).toEqual([
+      "ping",
+      "version",
+      "containers",
+      `inspect:${RUNNING_ID}`,
+      `inspect:${STOPPED_ID}`,
+      `stats:${RUNNING_ID}`,
+    ]);
+    expect(transport.operations).not.toContain(`stats:${STOPPED_ID}`);
   });
 
   it("marks one running container's stats unavailable without fabricating zeros", async () => {
-    const transport = new FakeDockerTransport(
+    const transport = new FakeDockerBrokerTransport(
       new Map<string, unknown>([
-        [`${DOCKER_API_PREFIX}/version`, versionEvidence],
-        [`${DOCKER_API_PREFIX}/containers/json?all=true`, [{ Id: RUNNING_ID }]],
-        [`${DOCKER_API_PREFIX}/containers/${RUNNING_ID}/json`, runningInspect()],
-        [
-          `${DOCKER_API_PREFIX}/containers/${RUNNING_ID}/stats?stream=false`,
-          new Error("stats unavailable"),
-        ],
+        ["ping", true],
+        ["version", versionEvidence],
+        ["containers", [{ Id: RUNNING_ID }]],
+        [`inspect:${RUNNING_ID}`, runningInspect()],
+        [`stats:${RUNNING_ID}`, new DockerBrokerRequestError(503)],
       ]),
     );
 
@@ -282,20 +287,32 @@ describe("Docker container snapshot", () => {
     });
   });
 
-  it("fails before constructing inspect paths for an invalid daemon ID", async () => {
-    const transport = new FakeDockerTransport(
+  it("skips a container that disappears between list and inspect", async () => {
+    const transport = new FakeDockerBrokerTransport(
       new Map<string, unknown>([
-        [`${DOCKER_API_PREFIX}/version`, versionEvidence],
-        [`${DOCKER_API_PREFIX}/containers/json?all=true`, [{ Id: "not-an-id" }]],
+        ["ping", true],
+        ["version", versionEvidence],
+        ["containers", [{ Id: RUNNING_ID }]],
+        [`inspect:${RUNNING_ID}`, new DockerBrokerRequestError(404)],
+      ]),
+    );
+
+    const snapshot = await readDockerContainers(transport);
+    expect(snapshot.containers).toEqual([]);
+  });
+
+  it("fails before constructing inspect capabilities for an invalid daemon ID", async () => {
+    const transport = new FakeDockerBrokerTransport(
+      new Map<string, unknown>([
+        ["ping", true],
+        ["version", versionEvidence],
+        ["containers", [{ Id: "not-an-id" }]],
       ]),
     );
 
     await expect(readDockerContainers(transport)).rejects.toBeInstanceOf(
       DockerSourceUnavailableError,
     );
-    expect(transport.paths).toEqual([
-      `${DOCKER_API_PREFIX}/version`,
-      `${DOCKER_API_PREFIX}/containers/json?all=true`,
-    ]);
+    expect(transport.operations).toEqual(["ping", "version", "containers"]);
   });
 });
