@@ -63,6 +63,30 @@ export const HostThrottleFlagsSchema = Type.Object(
 
 export type HostThrottleFlags = Static<typeof HostThrottleFlagsSchema>;
 
+export const HostThrottleAvailableSchema = Type.Object(
+  {
+    rawHex: Type.String({ pattern: "^0x[0-9a-f]+$" }),
+    rawValue: Type.Integer({ minimum: 0, maximum: 4_294_967_295 }),
+    current: HostThrottleFlagsSchema,
+    occurred: HostThrottleFlagsSchema,
+  },
+  { additionalProperties: false },
+);
+
+export const HostThrottleUnavailableSchema = Type.Object(
+  {
+    state: Type.Literal("UNAVAILABLE"),
+  },
+  { additionalProperties: false },
+);
+
+export const HostThrottleSchema = Type.Union([
+  HostThrottleAvailableSchema,
+  HostThrottleUnavailableSchema,
+]);
+
+export type HostThrottle = Static<typeof HostThrottleSchema>;
+
 export const HostSummarySchema = Type.Object(
   {
     observedAt: Type.String({ format: "date-time" }),
@@ -111,15 +135,7 @@ export const HostSummarySchema = Type.Object(
       },
       { additionalProperties: false },
     ),
-    throttle: Type.Object(
-      {
-        rawHex: Type.String({ pattern: "^0x[0-9a-f]+$" }),
-        rawValue: Type.Integer({ minimum: 0, maximum: 4_294_967_295 }),
-        current: HostThrottleFlagsSchema,
-        occurred: HostThrottleFlagsSchema,
-      },
-      { additionalProperties: false },
-    ),
+    throttle: HostThrottleSchema,
   },
   { additionalProperties: false },
 );
