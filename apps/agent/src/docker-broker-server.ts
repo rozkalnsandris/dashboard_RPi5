@@ -299,7 +299,6 @@ export function createDockerBrokerServer(
       const controller = new AbortController();
       const abort = () => controller.abort();
       incoming.once("aborted", abort);
-      incoming.once("close", abort);
 
       try {
         const value = await dispatchRoute(route, engineReader, controller.signal);
@@ -317,7 +316,6 @@ export function createDockerBrokerServer(
         });
       } finally {
         incoming.off("aborted", abort);
-        incoming.off("close", abort);
         activeRequests -= 1;
       }
     })().catch(() => {
