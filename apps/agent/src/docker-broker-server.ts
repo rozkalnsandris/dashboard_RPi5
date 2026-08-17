@@ -126,11 +126,11 @@ async function readDockerEngineBody(
         const chunks: Buffer[] = [];
         let totalBytes = 0;
         response.on("data", (chunk: Buffer) => {
+          if (settled) return;
           totalBytes += chunk.length;
           if (totalBytes > maxResponseBytes) {
-            const error = new DockerEngineUnavailableError();
-            fail(error);
-            req.destroy(error);
+            fail(new DockerEngineUnavailableError());
+            response.destroy();
             return;
           }
           chunks.push(chunk);
@@ -141,9 +141,8 @@ async function readDockerEngineBody(
     );
 
     req.setTimeout(requestTimeoutMs, () => {
-      const error = new DockerEngineUnavailableError();
-      fail(error);
-      req.destroy(error);
+      fail(new DockerEngineUnavailableError());
+      req.destroy();
     });
     req.once("error", fail);
     req.end();
