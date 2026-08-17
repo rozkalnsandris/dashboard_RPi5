@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import { buildApp } from "./app.js";
+import { registerCurrentStateApiRoutes } from "./current-state-routes.js";
 import { registerQuickCommandApiRoutes } from "./quick-command-routes.js";
 
 const host = "127.0.0.1";
@@ -10,11 +11,12 @@ const app = buildApp({
   ...(staticRoot === undefined ? {} : { staticRoot: resolve(staticRoot) }),
 });
 
-registerQuickCommandApiRoutes(app, {
-  ...(process.env.DASHBOARD_AGENT_SOCKET_PATH === undefined
-    ? {}
-    : { socketPath: process.env.DASHBOARD_AGENT_SOCKET_PATH }),
-});
+const agentSocketOptions = process.env.DASHBOARD_AGENT_SOCKET_PATH === undefined
+  ? {}
+  : { socketPath: process.env.DASHBOARD_AGENT_SOCKET_PATH };
+
+registerCurrentStateApiRoutes(app, agentSocketOptions);
+registerQuickCommandApiRoutes(app, agentSocketOptions);
 
 try {
   await app.listen({ host, port });
