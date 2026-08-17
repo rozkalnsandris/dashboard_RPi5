@@ -61,11 +61,13 @@ The source contract fixes or caps:
 
 Malformed, unavailable, timed-out, or oversized evidence fails closed. The dashboard must never substitute fixture/default container values.
 
-## Docker events are intentionally excluded
+## Docker events and Docker logs are intentionally excluded
 
-`/v1/docker/events/recent` previously had its own direct Docker Unix-socket transport. That direct authority is removed in this phase.
+`/v1/docker/events/recent` previously had its own direct Docker Unix-socket transport. Docker-backed registered log sources also had a direct Engine log transport. Both direct authority paths are removed in this phase.
 
-The Phase 3C broker does **not** expose Docker `/events` because #119's reviewed capability allowlist covers only ping/version/list/inspect/stats. The default Docker event reader therefore remains explicit unavailable until a separate bounded events design is reviewed and implemented.
+The Phase 3C broker does **not** expose Docker `/events` or `/containers/{id}/logs` because #119's reviewed capability allowlist covers only ping/version/list/inspect/stats. The default Docker event reader and default Docker log reader therefore remain explicit unavailable until separate bounded designs are reviewed and implemented.
+
+Event normalization, log parsing and injectable test dependencies remain in source so future capabilities can reuse their validation logic without restoring direct Engine authority.
 
 This is intentional privilege minimization, not a regression to fixture data.
 
