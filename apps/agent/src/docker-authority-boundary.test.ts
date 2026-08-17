@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const dockerReadSource = readFileSync(new URL("./docker-read.ts", import.meta.url), "utf8");
 const dockerEventsSource = readFileSync(new URL("./docker-events.ts", import.meta.url), "utf8");
+const logsReadSource = readFileSync(new URL("./logs-read.ts", import.meta.url), "utf8");
 const brokerServerSource = readFileSync(new URL("./docker-broker-server.ts", import.meta.url), "utf8");
 
 describe("Docker Engine authority boundary", () => {
@@ -22,6 +23,17 @@ describe("Docker Engine authority boundary", () => {
     const { DockerSourceUnavailableError } = await import("./docker-read.js");
     const { readRecentDockerEvents } = await import("./docker-events.js");
     await expect(readRecentDockerEvents()).rejects.toBeInstanceOf(DockerSourceUnavailableError);
+  });
+
+  it("keeps Docker log defaults fail-closed without an Engine socket transport", async () => {
+    expect(logsReadSource).not.toContain("/var/run/docker.sock");
+    expect(logsReadSource).not.toContain('from "node:http"');
+    expect(logsReadSource).toContain("Docker log retrieval is outside #119's reviewed broker allowlist");
+
+    const { LogSourceUnavailableError, readLogSnapshot } = await import("./logs-read.js");
+    await expect(readLogSnapshot("docker:homeassistant", "15m")).rejects.toBeInstanceOf(
+      LogSourceUnavailableError,
+    );
   });
 
   it("confines Docker Engine socket configuration to the dedicated broker reader", () => {
