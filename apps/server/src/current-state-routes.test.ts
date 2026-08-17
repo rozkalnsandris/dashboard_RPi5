@@ -1,9 +1,13 @@
+import type {
+  DockerContainersSnapshot,
+  HostSummary,
+} from "@dashboard-rpi5/contracts";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 
 import { registerCurrentStateApiRoutes } from "./current-state-routes.js";
 
-const hostPayload = {
+const hostPayload: HostSummary = {
   observedAt: "2026-08-17T18:00:00.000Z",
   uptimeSeconds: 60,
   loadAverage: { oneMinute: 0.1, fiveMinutes: 0.2, fifteenMinutes: 0.3 },
@@ -28,7 +32,7 @@ const hostPayload = {
   },
 };
 
-const dockerPayload = {
+const dockerPayload: DockerContainersSnapshot = {
   observedAt: "2026-08-17T18:00:00.000Z",
   apiVersion: "1.40",
   engineVersion: "28.3.3",
