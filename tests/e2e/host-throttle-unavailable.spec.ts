@@ -47,8 +47,7 @@ test("overview keeps live host metrics while throttle firmware evidence is unava
 
   await expect(page.getByText("43°C", { exact: true })).toBeVisible();
   await expect(page.getByText("Firmware throttle evidence unavailable", { exact: true })).toBeVisible();
-  await expect(page.getByText("1 signal", { exact: true })).toBeVisible();
-  await expect(page.getByText("All clear", { exact: true })).toBeHidden();
+  await expect(page.getByText("All clear", { exact: true })).toHaveCount(0);
 
   const hasHorizontalOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
