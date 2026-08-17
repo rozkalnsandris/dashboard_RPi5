@@ -7,11 +7,8 @@ import type {
 } from "@dashboard-rpi5/contracts";
 
 import {
-  DOCKER_API_PREFIX,
   DOCKER_API_VERSION,
   DOCKER_CONTAINER_CONCURRENCY,
-  DOCKER_MAX_RESPONSE_BYTES,
-  DOCKER_REQUEST_TIMEOUT_MS,
   isDockerContainerId,
 } from "./docker-api.js";
 import {
