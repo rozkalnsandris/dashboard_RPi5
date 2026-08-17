@@ -11,12 +11,17 @@ const agentUnit = readFileSync(
   "utf8",
 );
 
+function supplementaryGroups(unit: string): string[] {
+  const value = /^SupplementaryGroups=(.*)$/m.exec(unit)?.[1]?.trim();
+  return value === undefined || value === "" ? [] : value.split(/\s+/u);
+}
+
 describe("Docker broker systemd source-only boundary", () => {
   it("confines Docker group authority to the dedicated broker identity", () => {
     expect(brokerUnit).toContain("# SOURCE-ONLY BLUEPRINT.");
     expect(brokerUnit).toContain("User=dashboard-rpi5-docker-broker");
     expect(brokerUnit).toContain("Group=dashboard-rpi5-docker-broker-client");
-    expect(brokerUnit).toMatch(/^SupplementaryGroups=docker$/m);
+    expect(supplementaryGroups(brokerUnit)).toEqual(["docker"]);
     expect(brokerUnit).toContain("Environment=DASHBOARD_DOCKER_SOCKET_PATH=/var/run/docker.sock");
     expect(brokerUnit).toContain(
       "ExecStart=/usr/bin/node /opt/dashboard_RPi5/current/apps/agent/dist/docker-broker-entry.js",
@@ -24,9 +29,10 @@ describe("Docker broker systemd source-only boundary", () => {
 
     expect(agentUnit).toContain("User=dashboard-rpi5-agent");
     expect(agentUnit).toContain("Group=dashboard-rpi5-agent-client");
-    expect(agentUnit).toMatch(/^SupplementaryGroups=dashboard-rpi5-docker-broker-client$/m);
-    expect(agentUnit).not.toMatch(/^SupplementaryGroups=.*\bdocker\b/m);
-    expect(agentUnit).not.toMatch(/^SupplementaryGroups=.*\bvideo\b/m);
+    const agentSupplementaryGroups = supplementaryGroups(agentUnit);
+    expect(agentSupplementaryGroups).toEqual(["dashboard-rpi5-docker-broker-client"]);
+    expect(agentSupplementaryGroups).not.toContain("docker");
+    expect(agentSupplementaryGroups).not.toContain("video");
     expect(agentUnit).not.toContain("DASHBOARD_DOCKER_SOCKET_PATH");
     expect(agentUnit).toContain(
       "Environment=DASHBOARD_DOCKER_BROKER_SOCKET=/run/dashboard-rpi5-docker-broker/broker.sock",
