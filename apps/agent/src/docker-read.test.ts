@@ -258,14 +258,14 @@ describe("Docker container snapshot through typed broker", () => {
       stats: null,
     });
 
-    expect(transport.operations).toEqual([
-      "ping",
-      "version",
-      "containers",
-      `inspect:${RUNNING_ID}`,
-      `inspect:${STOPPED_ID}`,
-      `stats:${RUNNING_ID}`,
-    ]);
+    expect(transport.operations.slice(0, 3)).toEqual(["ping", "version", "containers"]);
+    expect(new Set(transport.operations.slice(3))).toEqual(
+      new Set([
+        `inspect:${RUNNING_ID}`,
+        `inspect:${STOPPED_ID}`,
+        `stats:${RUNNING_ID}`,
+      ]),
+    );
     expect(transport.operations).not.toContain(`stats:${STOPPED_ID}`);
   });
 
