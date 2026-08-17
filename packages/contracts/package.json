@@ -9,6 +9,7 @@
     "./agent": "./src/agent.ts",
     "./backups": "./src/backups.ts",
     "./backup-status": "./src/backup-status.ts",
+    "./current-state": "./src/current-state.ts",
     "./deploy": "./src/deploy.ts",
     "./deployment-status": "./src/deployment-status.ts",
     "./endpoints": "./src/endpoints.ts",
@@ -21,7 +22,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsup src/index.ts src/activity.ts src/agent.ts src/backups.ts src/backup-status.ts src/deploy.ts src/deployment-status.ts src/endpoints.ts src/history.ts src/logs.ts src/maintenance.ts src/quick-commands.ts src/services.ts src/terminal.ts --format esm --platform neutral --clean"
+    "build": "tsup src/index.ts src/activity.ts src/agent.ts src/backups.ts src/backup-status.ts src/current-state.ts src/deploy.ts src/deployment-status.ts src/endpoints.ts src/history.ts src/logs.ts src/maintenance.ts src/quick-commands.ts src/services.ts src/terminal.ts --format esm --platform neutral --clean"
   },
   "dependencies": {
     "@sinclair/typebox": "0.34.52"

@@ -4,10 +4,11 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter } from "react-router";
 import { RouterProvider } from "react-router/dom";
 
-import { AppShell, DockerPage, RouteErrorPage } from "./App";
+import { LiveAppShell, RouteErrorPage } from "./LiveShell";
 import { ActivityPage } from "./pages/ActivityPage";
 import { BackupsPage } from "./pages/BackupsPage";
 import { DeploymentsPage } from "./pages/DeploymentsPage";
+import { LiveDockerPage } from "./pages/LiveDockerPage";
 import { LogsPage } from "./pages/LogsPage";
 import { OverviewHistoryPage } from "./pages/OverviewHistoryPage";
 import { ReliabilityStatesPage } from "./pages/ReliabilityStatesPage";
@@ -45,11 +46,11 @@ const queryClient = new QueryClient({
 const router = createBrowserRouter([
   {
     path: "/",
-    element: <AppShell />,
+    element: <LiveAppShell />,
     errorElement: <RouteErrorPage />,
     children: [
       { index: true, element: <OverviewHistoryPage /> },
-      { path: "docker", element: <DockerPage /> },
+      { path: "docker", element: <LiveDockerPage /> },
       { path: "services", element: <ServicesPage /> },
       { path: "logs", element: <LogsPage /> },
       { path: "terminal", element: <TerminalPage /> },
