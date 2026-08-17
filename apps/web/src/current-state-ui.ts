@@ -39,7 +39,7 @@ export interface ThrottleSummary {
 }
 
 export function throttleSummary(host: HostSummary): ThrottleSummary {
-  if ("state" in host.throttle && host.throttle.state === "UNAVAILABLE") {
+  if (!("current" in host.throttle)) {
     return {
       label: "Unavailable",
       detail: "Firmware throttle evidence unavailable",
