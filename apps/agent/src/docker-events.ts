@@ -5,20 +5,17 @@ import type {
   DockerRecentEvent,
   DockerRecentEventsSnapshot,
 } from "@dashboard-rpi5/contracts";
-import { request } from "node:http";
 import { StringDecoder } from "node:string_decoder";
 
 import {
   DOCKER_API_PREFIX,
   DOCKER_API_VERSION,
   DOCKER_MAX_RESPONSE_BYTES,
-  DOCKER_SOCKET_PATH,
-  DockerSourceUnavailableError,
-} from "./docker-read.js";
+} from "./docker-api.js";
+import { DockerSourceUnavailableError } from "./docker-read.js";
 
 export const DOCKER_EVENTS_LOOKBACK_SECONDS = 60 * 60;
 export const DOCKER_EVENTS_MAX_ITEMS = 256;
-export const DOCKER_EVENTS_REQUEST_TIMEOUT_MS = 2_500;
 
 export const DOCKER_EVENT_FILTER_ACTIONS = Object.freeze([
   "create",
@@ -178,78 +175,10 @@ export interface DockerEventsTransport {
   read(path: string, signal?: AbortSignal): Promise<unknown[]>;
 }
 
-export function createDockerEventsUnixTransport(): DockerEventsTransport {
+export function createUnavailableDockerEventsTransport(): DockerEventsTransport {
   return {
-    async read(path: string, signal?: AbortSignal): Promise<unknown[]> {
-      if (!isAllowedDockerEventsPath(path)) throw new DockerSourceUnavailableError();
-
-      return new Promise<unknown[]>((resolve, reject) => {
-        const decoder = new DockerEventStreamDecoder();
-        let settled = false;
-
-        const fail = (error: unknown) => {
-          if (settled) return;
-          settled = true;
-          reject(
-            error instanceof DockerSourceUnavailableError
-              ? error
-              : new DockerSourceUnavailableError(),
-          );
-        };
-
-        const succeed = (value: unknown[]) => {
-          if (settled) return;
-          settled = true;
-          resolve(value);
-        };
-
-        const req = request(
-          {
-            socketPath: DOCKER_SOCKET_PATH,
-            path,
-            method: "GET",
-            headers: { accept: "application/json" },
-            ...(signal === undefined ? {} : { signal }),
-          },
-          (response) => {
-            const statusCode = response.statusCode ?? 0;
-            if (statusCode < 200 || statusCode >= 300) {
-              response.resume();
-              fail(new DockerSourceUnavailableError());
-              return;
-            }
-
-            response.on("data", (chunk: Buffer) => {
-              try {
-                decoder.push(chunk);
-              } catch (error: unknown) {
-                const normalizedError =
-                  error instanceof DockerSourceUnavailableError
-                    ? error
-                    : new DockerSourceUnavailableError();
-                fail(normalizedError);
-                req.destroy(normalizedError);
-              }
-            });
-            response.once("error", fail);
-            response.once("end", () => {
-              try {
-                succeed(decoder.finish());
-              } catch (error: unknown) {
-                fail(error);
-              }
-            });
-          },
-        );
-
-        req.setTimeout(DOCKER_EVENTS_REQUEST_TIMEOUT_MS, () => {
-          const timeoutError = new DockerSourceUnavailableError();
-          fail(timeoutError);
-          req.destroy(timeoutError);
-        });
-        req.once("error", fail);
-        req.end();
-      });
+    async read(): Promise<unknown[]> {
+      throw new DockerSourceUnavailableError();
     },
   };
 }
@@ -364,7 +293,7 @@ function eventIdentity(event: DockerRecentEvent): string {
 }
 
 export async function readRecentDockerEvents(
-  transport: DockerEventsTransport = createDockerEventsUnixTransport(),
+  transport: DockerEventsTransport = createUnavailableDockerEventsTransport(),
   signal?: AbortSignal,
   now: () => Date = () => new Date(),
 ): Promise<DockerRecentEventsSnapshot> {
