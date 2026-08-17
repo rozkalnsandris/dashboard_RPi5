@@ -86,11 +86,11 @@ async function getBrokerJson(
         const chunks: Buffer[] = [];
         let totalBytes = 0;
         response.on("data", (chunk: Buffer) => {
+          if (settled) return;
           totalBytes += chunk.length;
           if (totalBytes > maxResponseBytes) {
-            const error = new DockerBrokerRequestError();
-            fail(error);
-            req.destroy(error);
+            fail(new DockerBrokerRequestError());
+            response.destroy();
             return;
           }
           chunks.push(chunk);
@@ -107,9 +107,8 @@ async function getBrokerJson(
     );
 
     req.setTimeout(requestTimeoutMs, () => {
-      const error = new DockerBrokerRequestError();
-      fail(error);
-      req.destroy(error);
+      fail(new DockerBrokerRequestError());
+      req.destroy();
     });
     req.once("error", fail);
     req.end();
