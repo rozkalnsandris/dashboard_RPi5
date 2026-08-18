@@ -17,7 +17,7 @@ trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "PHASE128_PREP_EXIT=$rc PRODUCTION_MU
 need() { command -v "$1" >/dev/null 2>&1 || blocked "missing command: $1"; }
 for c in curl jq git node npm sha256sum systemctl readlink stat id getent grep mktemp; do need "$c"; done
 [ "$(id -u)" -ne 0 ] || blocked "run as normal operator, not root"
-[ "$(node -p 'process.versions.node.split(\".\")[0]')" = 24 ] || blocked "Node major is not 24"
+[ "$(node -p 'process.versions.node.split(".")[0]')" = 24 ] || blocked "Node major is not 24"
 
 echo "PHASE128_PREP_START target=$TARGET expected_current=$EXPECTED_CURRENT"
 
