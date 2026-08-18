@@ -14,7 +14,7 @@ After=local-fs.target
 Type=exec
 User=dashboard-rpi5-agent
 Group=dashboard-rpi5-agent-client
-SupplementaryGroups=dashboard-rpi5-docker-broker-client
+SupplementaryGroups=dashboard-rpi5-docker-client
 WorkingDirectory=/opt/dashboard_RPi5/current
 Environment=DASHBOARD_RPI5_AGENT_SOCKET=/run/dashboard-rpi5/agent.sock
 Environment=DASHBOARD_DOCKER_BROKER_SOCKET=/run/dashboard-rpi5-docker-broker/broker.sock
