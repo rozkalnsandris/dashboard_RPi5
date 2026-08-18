@@ -11,16 +11,28 @@ const agentUnit = readFileSync(
   "utf8",
 );
 
+const LINUX_ACCOUNT_NAME_MAX = 32;
+
 function supplementaryGroups(unit: string): string[] {
   const value = /^SupplementaryGroups=(.*)$/m.exec(unit)?.[1]?.trim();
   return value === undefined || value === "" ? [] : value.split(/\s+/u);
+}
+
+function systemAccountNames(unit: string): string[] {
+  const names: string[] = [];
+  for (const match of unit.matchAll(/^(?:User|Group|SupplementaryGroups)=(.*)$/gmu)) {
+    const value = match[1]?.trim();
+    if (value === undefined || value === "") continue;
+    names.push(...value.split(/\s+/u));
+  }
+  return names;
 }
 
 describe("Docker broker systemd source-only boundary", () => {
   it("confines Docker group authority to the dedicated broker identity", () => {
     expect(brokerUnit).toContain("# SOURCE-ONLY BLUEPRINT.");
     expect(brokerUnit).toContain("User=dashboard-rpi5-docker-broker");
-    expect(brokerUnit).toContain("Group=dashboard-rpi5-docker-broker-client");
+    expect(brokerUnit).toContain("Group=dashboard-rpi5-docker-client");
     expect(supplementaryGroups(brokerUnit)).toEqual(["docker"]);
     expect(brokerUnit).toContain("Environment=DASHBOARD_DOCKER_SOCKET_PATH=/var/run/docker.sock");
     expect(brokerUnit).toContain(
@@ -30,13 +42,23 @@ describe("Docker broker systemd source-only boundary", () => {
     expect(agentUnit).toContain("User=dashboard-rpi5-agent");
     expect(agentUnit).toContain("Group=dashboard-rpi5-agent-client");
     const agentSupplementaryGroups = supplementaryGroups(agentUnit);
-    expect(agentSupplementaryGroups).toEqual(["dashboard-rpi5-docker-broker-client"]);
+    expect(agentSupplementaryGroups).toEqual(["dashboard-rpi5-docker-client"]);
     expect(agentSupplementaryGroups).not.toContain("docker");
     expect(agentSupplementaryGroups).not.toContain("video");
     expect(agentUnit).not.toContain("DASHBOARD_DOCKER_SOCKET_PATH");
     expect(agentUnit).toContain(
       "Environment=DASHBOARD_DOCKER_BROKER_SOCKET=/run/dashboard-rpi5-docker-broker/broker.sock",
     );
+  });
+
+  it("keeps deploy-time account names within the Linux/Debian bound", () => {
+    const names = [...systemAccountNames(brokerUnit), ...systemAccountNames(agentUnit)];
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      expect(name.length, `${name} exceeds ${LINUX_ACCOUNT_NAME_MAX} characters`).toBeLessThanOrEqual(
+        LINUX_ACCOUNT_NAME_MAX,
+      );
+    }
   });
 
   it("keeps the broker local-only and strongly sandboxed", () => {

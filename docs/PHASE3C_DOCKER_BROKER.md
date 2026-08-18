@@ -20,7 +20,7 @@ web/server
 dashboard-rpi5-agent
   groups:
     - dashboard-rpi5-agent-client (primary)
-    - dashboard-rpi5-docker-broker-client (supplementary)
+    - dashboard-rpi5-docker-client (supplementary)
     |
     | fixed typed broker calls only
     v
@@ -28,7 +28,7 @@ dashboard-rpi5-agent
     |
     v
 dashboard-rpi5-docker-broker
-  primary group: dashboard-rpi5-docker-broker-client
+  primary group: dashboard-rpi5-docker-client
   supplementary group: docker
     |
     | hard-coded GET operations only
@@ -75,7 +75,7 @@ This is intentional privilege minimization, not a regression to fixture data.
 
 `ops/systemd/dashboard-rpi5-docker-broker.service` is a source-only blueprint. It defines a dedicated broker identity and is the only Dashboard unit permitted to inherit the `docker` supplementary group.
 
-The main agent blueprint receives only `dashboard-rpi5-docker-broker-client`. It must never inherit `docker` or `video`.
+The main agent blueprint receives only `dashboard-rpi5-docker-client`. The canonical broker-client group name is intentionally kept within the 32-character Linux/Debian account-name bound. The main agent must never inherit `docker` or `video`.
 
 The broker blueprint includes local-only `AF_UNIX` restriction, empty capability sets, `NoNewPrivileges`, filesystem/kernel/control-group protections, namespace restrictions, bounded tasks/memory, and a private runtime directory.
 
