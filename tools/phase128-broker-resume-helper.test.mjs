@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { URL } from "node:url";
 
 const helperUrl = new URL(
   "./operator/phase128-broker-production-resume-a53.sh",
