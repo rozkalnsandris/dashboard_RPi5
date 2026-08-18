@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { URL } from "node:url";
+import { URL, fileURLToPath } from "node:url";
 
 const helperUrl = new URL(
   "./operator/phase128-post136-production-prep.sh",
@@ -9,6 +10,13 @@ const helperUrl = new URL(
 );
 const source = await readFile(helperUrl, "utf8");
 const lines = source.split("\n").map((line) => line.trim());
+
+test("post-#136 prep helper has valid Bash syntax", () => {
+  const result = spawnSync("bash", ["-n", fileURLToPath(helperUrl)], {
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
 
 test("post-#136 prep helper is preparation-only", () => {
   assert.equal(source.includes("--apply"), false);
