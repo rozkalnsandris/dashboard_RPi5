@@ -1,19 +1,27 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { URL } from "node:url";
+import { fileURLToPath, URL } from "node:url";
 
 const helperUrl = new URL(
   "./operator/phase128-post136-production-activate.sh",
   import.meta.url,
 );
+const helperPath = fileURLToPath(helperUrl);
 const source = await readFile(helperUrl, "utf8");
 const lines = source.split("\n").map((line) => line.trim());
+
+test("post-#136 activation helper has valid bash syntax", () => {
+  const result = spawnSync("bash", ["-n", helperPath], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+});
 
 test("post-#136 activation helper binds exact source, candidate and incident baseline", () => {
   for (const required of [
     'TARGET="15f44e3a6fdda8f2e97b26501a283f6bba915e86"',
     'EXPECTED_CURRENT="a53fb31c33d872ec4b434d5c999d5469e1989f14"',
+    'EXPECTED_CURRENT_CANDIDATE="73c531ab3023e7072dddf60361c77f759ab675e64652932180ef4fc21e257b32"',
     'OLD_WEB_RELEASE="73c51f3446395c51ea010831c4614777264fae3e"',
     'EXPECTED_CI_RUN="305"',
     'EXPECTED_CI_RUN_ID="32177354491"',
@@ -51,12 +59,14 @@ test("activation helper has exactly the reviewed production mutation surface", (
   ]);
 
   assert.equal(
-    lines.filter((line) => line.includes("--expected-current \"$EXPECTED_CURRENT\" --apply")).length,
+    lines.filter((line) =>
+      line.includes('--expected-current "$EXPECTED_CURRENT" --apply'),
+    ).length,
     1,
   );
 
   for (const forbidden of [
-    "systemctl restart \"$BROKER_SERVICE\"",
+    'systemctl restart "$BROKER_SERVICE"',
     "systemctl daemon-reload",
     "systemctl enable",
     "systemctl disable",
