@@ -9,6 +9,7 @@ import { LogSourceUnavailableError } from "./logs-read.js";
 import { MaintenanceSourceUnavailableError } from "./maintenance-events.js";
 import {
   DEFAULT_OPERATION_TIMEOUT_MS,
+  DOCKER_CONTAINERS_OPERATION_TIMEOUT_MS,
   MAX_OPERATION_TIMEOUT_MS,
 } from "./protocol.js";
 import { SystemdSourceUnavailableError } from "./systemd-services.js";
@@ -46,6 +47,12 @@ function validateTimeout(timeoutMs: number) {
   ) {
     throw new RangeError("Agent operation timeout is outside the allowed range");
   }
+}
+
+export function defaultOperationTimeoutMs(id: string): number {
+  return id === "docker.containers"
+    ? DOCKER_CONTAINERS_OPERATION_TIMEOUT_MS
+    : DEFAULT_OPERATION_TIMEOUT_MS;
 }
 
 export async function runWithTimeout<T>(
@@ -110,7 +117,7 @@ export class OperationRegistry {
 
     return runWithTimeout(
       handler as AgentOperationHandler<T>,
-      options.timeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS,
+      options.timeoutMs ?? defaultOperationTimeoutMs(id),
     );
   }
 }
