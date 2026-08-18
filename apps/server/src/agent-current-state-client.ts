@@ -13,6 +13,7 @@ export const DEFAULT_AGENT_SOCKET_PATH = "/run/dashboard-rpi5/agent.sock";
 export const AGENT_HOST_SUMMARY_PATH = "/v1/host/summary";
 export const AGENT_DOCKER_CONTAINERS_PATH = "/v1/docker/containers";
 export const AGENT_CURRENT_STATE_TIMEOUT_MS = 1_500;
+export const AGENT_DOCKER_CURRENT_STATE_TIMEOUT_MS = 10_000;
 export const AGENT_HOST_SUMMARY_MAX_BYTES = 64 * 1024;
 export const AGENT_DOCKER_CONTAINERS_MAX_BYTES = 2 * 1024 * 1024;
 
@@ -133,7 +134,8 @@ export function createAgentHostSummaryReader(
     256 * 1024,
     "maxBytes",
   );
-  return () => readSnapshotFromAgent(socketPath, AGENT_HOST_SUMMARY_PATH, timeoutMs, maxBytes, parseHostSummary);
+  return () =>
+    readSnapshotFromAgent(socketPath, AGENT_HOST_SUMMARY_PATH, timeoutMs, maxBytes, parseHostSummary);
 }
 
 export function createAgentDockerContainersReader(
@@ -141,9 +143,9 @@ export function createAgentDockerContainersReader(
 ): DockerContainersReader {
   const socketPath = validateSocketPath(options.socketPath ?? DEFAULT_AGENT_SOCKET_PATH);
   const timeoutMs = validateBound(
-    options.timeoutMs ?? AGENT_CURRENT_STATE_TIMEOUT_MS,
+    options.timeoutMs ?? AGENT_DOCKER_CURRENT_STATE_TIMEOUT_MS,
     10,
-    5_000,
+    15_000,
     "timeoutMs",
   );
   const maxBytes = validateBound(
@@ -152,11 +154,12 @@ export function createAgentDockerContainersReader(
     4 * 1024 * 1024,
     "maxBytes",
   );
-  return () => readSnapshotFromAgent(
-    socketPath,
-    AGENT_DOCKER_CONTAINERS_PATH,
-    timeoutMs,
-    maxBytes,
-    parseDockerContainersSnapshot,
-  );
+  return () =>
+    readSnapshotFromAgent(
+      socketPath,
+      AGENT_DOCKER_CONTAINERS_PATH,
+      timeoutMs,
+      maxBytes,
+      parseDockerContainersSnapshot,
+    );
 }
