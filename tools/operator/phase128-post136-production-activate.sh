@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 TARGET="15f44e3a6fdda8f2e97b26501a283f6bba915e86"
 EXPECTED_CURRENT="a53fb31c33d872ec4b434d5c999d5469e1989f14"
+EXPECTED_CURRENT_CANDIDATE="73c531ab3023e7072dddf60361c77f759ab675e64652932180ef4fc21e257b32"
 OLD_WEB_RELEASE="73c51f3446395c51ea010831c4614777264fae3e"
 EXPECTED_CI_RUN="305"
 EXPECTED_CI_RUN_ID="32177354491"
@@ -69,7 +70,7 @@ need() {
   command -v "$1" >/dev/null 2>&1 || stop "missing command: $1"
 }
 
-for command_name in curl jq git node sha256sum systemctl readlink stat id getent grep awk sed sudo tail tr; do
+for command_name in curl jq git node sha256sum systemctl readlink stat id getent grep awk sed sudo tail tr sleep; do
   need "$command_name"
 done
 
@@ -107,19 +108,27 @@ access_probe() {
   curl -sS --max-time 10 -D - -o /dev/null -w $'\nPHASE128_ACCESS_CODE:%{http_code}\n' https://dash.rozkalns.net/
 }
 
-wait_for_socket() {
-  local socket="$1" index
+wait_service_active() {
+  local service="$1" index
   for ((index=0; index<50; index+=1)); do
-    [ -S "$socket" ] && return 0
+    [ "$(systemctl is-active "$service" 2>/dev/null || true)" = active ] && return 0
     sleep 0.2
   done
   return 1
 }
 
-wait_service_active() {
-  local service="$1" index
+wait_unix_status() {
+  local user="$1" socket="$2" path="$3" expected="$4" timeout="$5" index response status
   for ((index=0; index<50; index+=1)); do
-    [ "$(systemctl is-active "$service" 2>/dev/null || true)" = active ] && return 0
+    response="$(unix_response "$user" "$socket" "$path" GET "$timeout" 2>/dev/null || true)"
+    status="$(response_status "$response")"
+    if [ "$status" = "$expected" ]; then
+      printf '%s' "$response"
+      return 0
+    fi
+    if [[ "$status" =~ ^[0-9]{3}$ ]] && [ "$status" != 000 ]; then
+      return 2
+    fi
     sleep 0.2
   done
   return 1
@@ -190,6 +199,13 @@ CURRENT_STAGE="preauth-production"
 [ -d "$OLD_WEB_RELEASE_PATH" ] || stop "old web release missing"
 [ ! -e "$TARGET_RELEASE" ] || stop "target release already exists before authorization"
 [ ! -e "$LOCK_PATH" ] || stop "release-controller lock exists"
+
+sudo /usr/bin/node "$CURRENT_RELEASE/tools/production-candidate-manifest.mjs" \
+  --root "$CURRENT_RELEASE" --sha "$EXPECTED_CURRENT" \
+  --verify "$CURRENT_RELEASE/.dashboard-production-candidate.json" \
+  | grep -q '"status":"PASS"' || stop "current A53 installed manifest verify failed"
+[ "$(sudo /usr/bin/jq -er '.candidateSha256' "$CURRENT_RELEASE/.dashboard-production-candidate.json")" = "$EXPECTED_CURRENT_CANDIDATE" ] \
+  || stop "current A53 candidate digest drift"
 
 for service_name in "$BROKER_SERVICE" "$AGENT_SERVICE" "$WEB_SERVICE"; do
   [ "$(systemctl is-enabled "$service_name")" = enabled ] || stop "$service_name not enabled"
@@ -296,9 +312,10 @@ apply="$(cd "$REPO" && sudo /usr/bin/node tools/production-release-controller.mj
 [ "$(printf '%s' "$apply" | jq -er '.currentRelease')" = "$TARGET" ] || stop "release apply current mismatch"
 [ "$(readlink "$PROD_ROOT/current")" = "releases/$TARGET" ] || stop "current pointer did not move to target"
 [ -d "$TARGET_RELEASE" ] || stop "target release missing after apply"
-node "$TARGET_RELEASE/tools/production-candidate-manifest.mjs" --root "$TARGET_RELEASE" --sha "$TARGET" \
+sudo /usr/bin/node "$TARGET_RELEASE/tools/production-candidate-manifest.mjs" --root "$TARGET_RELEASE" --sha "$TARGET" \
   --verify "$TARGET_RELEASE/.dashboard-production-candidate.json" | grep -q '"status":"PASS"' || stop "installed target manifest verify failed"
-[ "$(jq -er '.candidateSha256' "$TARGET_RELEASE/.dashboard-production-candidate.json")" = "$EXPECTED_CANDIDATE" ] || stop "installed target candidate digest mismatch"
+[ "$(sudo /usr/bin/jq -er '.candidateSha256' "$TARGET_RELEASE/.dashboard-production-candidate.json")" = "$EXPECTED_CANDIDATE" ] \
+  || stop "installed target candidate digest mismatch"
 [ "$(systemctl show "$BROKER_SERVICE" -p MainPID --value)" = "$broker_pid" ] || stop "broker PID changed during release activation"
 [ "$(sudo readlink -f "/proc/$broker_pid/cwd")" = "$CURRENT_RELEASE" ] || stop "broker cwd changed during release activation"
 
@@ -306,7 +323,7 @@ node "$TARGET_RELEASE/tools/production-candidate-manifest.mjs" --root "$TARGET_R
 CURRENT_STAGE="mutation-restart-agent"
 sudo /usr/bin/systemctl restart "$AGENT_SERVICE" || stop "agent restart command failed"
 wait_service_active "$AGENT_SERVICE" || stop "agent did not become active"
-wait_for_socket "$AGENT_SOCKET" || stop "agent socket did not become ready"
+new_agent_health="$(wait_unix_status "$WEB_USER" "$AGENT_SOCKET" '/v1/health' 200 5)" || stop "new agent health did not become ready"
 new_agent_pid="$(systemctl show "$AGENT_SERVICE" -p MainPID --value)"
 [[ "$new_agent_pid" =~ ^[1-9][0-9]*$ ]] || stop "invalid new agent PID"
 [ "$new_agent_pid" != "$agent_pid" ] || stop "agent PID did not change"
@@ -318,7 +335,6 @@ for forbidden_group in docker video "$BROKER_GROUP"; do
   if id -nG "$AGENT_USER" | tr ' ' '\n' | grep -qx "$forbidden_group"; then stop "main agent acquired forbidden persistent group: $forbidden_group"; fi
 done
 
-new_agent_health="$(unix_response "$WEB_USER" "$AGENT_SOCKET" '/v1/health' GET 5)" || stop "new agent health probe failed"
 [ "$(response_status "$new_agent_health")" = 200 ] || stop "new agent health not 200"
 new_agent_host="$(unix_response "$WEB_USER" "$AGENT_SOCKET" '/v1/host/summary' GET 5)" || stop "new agent host probe failed"
 [ "$(response_status "$new_agent_host")" = 200 ] || stop "new agent host not 200"
