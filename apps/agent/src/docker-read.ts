@@ -5,16 +5,26 @@ import type {
   DockerHealthStatus,
   DockerResourceStats,
 } from "@dashboard-rpi5/contracts";
-import { request } from "node:http";
 
-export const DOCKER_SOCKET_PATH = "/var/run/docker.sock";
-export const DOCKER_API_VERSION = "1.40" as const;
-export const DOCKER_API_PREFIX = `/v${DOCKER_API_VERSION}` as const;
-export const DOCKER_REQUEST_TIMEOUT_MS = 1_500;
-export const DOCKER_MAX_RESPONSE_BYTES = 1_048_576;
-export const DOCKER_CONTAINER_CONCURRENCY = 4;
+import {
+  DOCKER_API_VERSION,
+  DOCKER_CONTAINER_CONCURRENCY,
+  isDockerContainerId,
+} from "./docker-api.js";
+import {
+  createDockerBrokerTransport,
+  DockerBrokerRequestError,
+  type DockerBrokerTransport,
+} from "./docker-broker-client.js";
 
-const CONTAINER_ID_PATTERN = /^[0-9a-f]{64}$/;
+export {
+  DOCKER_API_PREFIX,
+  DOCKER_API_VERSION,
+  DOCKER_CONTAINER_CONCURRENCY,
+  DOCKER_MAX_RESPONSE_BYTES,
+  DOCKER_REQUEST_TIMEOUT_MS,
+} from "./docker-api.js";
+
 const VERSION_PATTERN = /^\d+\.\d+$/;
 const ZERO_TIME_PREFIX = "0001-01-01T00:00:00";
 
@@ -23,17 +33,6 @@ export class DockerSourceUnavailableError extends Error {
     super("Required Docker evidence is unavailable");
     this.name = "DockerSourceUnavailableError";
   }
-}
-
-class DockerHttpStatusError extends Error {
-  constructor(readonly statusCode: number) {
-    super("Docker Engine returned an unexpected HTTP status");
-    this.name = "DockerHttpStatusError";
-  }
-}
-
-export interface DockerTransport {
-  get(path: string, signal?: AbortSignal): Promise<unknown>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -99,96 +98,6 @@ function compareApiVersions(left: string, right: string): number {
   return leftMinor - rightMinor;
 }
 
-export function isAllowedDockerPath(path: string): boolean {
-  if (
-    path === `${DOCKER_API_PREFIX}/_ping` ||
-    path === `${DOCKER_API_PREFIX}/version` ||
-    path === `${DOCKER_API_PREFIX}/containers/json?all=true`
-  ) {
-    return true;
-  }
-
-  const match = new RegExp(
-    `^${DOCKER_API_PREFIX.replace(".", "\\.")}/containers/([0-9a-f]{64})/(json|stats\\?stream=false)$`,
-  ).exec(path);
-
-  return match !== null && CONTAINER_ID_PATTERN.test(match[1] ?? "");
-}
-
-function parseJsonBody(body: Buffer): unknown {
-  try {
-    return JSON.parse(body.toString("utf8")) as unknown;
-  } catch {
-    throw new DockerSourceUnavailableError();
-  }
-}
-
-export function createDockerUnixTransport(): DockerTransport {
-  return {
-    async get(path: string, signal?: AbortSignal): Promise<unknown> {
-      if (!isAllowedDockerPath(path)) throw new DockerSourceUnavailableError();
-
-      return new Promise<unknown>((resolve, reject) => {
-        let settled = false;
-        const fail = (error: unknown) => {
-          if (settled) return;
-          settled = true;
-          reject(error);
-        };
-        const succeed = (value: unknown) => {
-          if (settled) return;
-          settled = true;
-          resolve(value);
-        };
-
-        const req = request(
-          {
-            socketPath: DOCKER_SOCKET_PATH,
-            path,
-            method: "GET",
-            headers: { accept: "application/json" },
-            ...(signal === undefined ? {} : { signal }),
-          },
-          (response) => {
-            const statusCode = response.statusCode ?? 0;
-            const chunks: Buffer[] = [];
-            let totalBytes = 0;
-
-            response.on("data", (chunk: Buffer) => {
-              totalBytes += chunk.length;
-              if (totalBytes > DOCKER_MAX_RESPONSE_BYTES) {
-                req.destroy(new DockerSourceUnavailableError());
-                return;
-              }
-              chunks.push(chunk);
-            });
-
-            response.once("error", fail);
-            response.once("end", () => {
-              if (statusCode < 200 || statusCode >= 300) {
-                fail(new DockerHttpStatusError(statusCode));
-                return;
-              }
-
-              try {
-                succeed(parseJsonBody(Buffer.concat(chunks)));
-              } catch (error: unknown) {
-                fail(error);
-              }
-            });
-          },
-        );
-
-        req.setTimeout(DOCKER_REQUEST_TIMEOUT_MS, () => {
-          req.destroy(new DockerSourceUnavailableError());
-        });
-        req.once("error", fail);
-        req.end();
-      });
-    },
-  };
-}
-
 interface DockerVersionEvidence {
   engineVersion: string;
   daemonApiVersion: string;
@@ -217,7 +126,7 @@ export function parseDockerContainerIds(value: unknown): string[] {
 
   const ids = value.map((entry) => {
     const id = requireString(requireRecord(entry).Id).toLowerCase();
-    if (!CONTAINER_ID_PATTERN.test(id)) throw new DockerSourceUnavailableError();
+    if (!isDockerContainerId(id)) throw new DockerSourceUnavailableError();
     return id;
   });
 
@@ -277,7 +186,7 @@ interface DockerInspectEvidence {
 }
 
 export function parseDockerInspect(value: unknown, expectedId: string): DockerInspectEvidence {
-  if (!CONTAINER_ID_PATTERN.test(expectedId)) throw new DockerSourceUnavailableError();
+  if (!isDockerContainerId(expectedId)) throw new DockerSourceUnavailableError();
 
   const record = requireRecord(value);
   const id = requireString(record.Id).toLowerCase();
@@ -485,19 +394,16 @@ function calculateUptimeSeconds(startedAt: string | null, observedAt: Date): num
 }
 
 export async function readDockerContainers(
-  transport: DockerTransport = createDockerUnixTransport(),
+  transport: DockerBrokerTransport = createDockerBrokerTransport(),
   signal?: AbortSignal,
   now: () => Date = () => new Date(),
 ): Promise<DockerContainersSnapshot> {
   try {
     signal?.throwIfAborted();
 
-    const version = parseDockerVersion(
-      await transport.get(`${DOCKER_API_PREFIX}/version`, signal),
-    );
-    const ids = parseDockerContainerIds(
-      await transport.get(`${DOCKER_API_PREFIX}/containers/json?all=true`, signal),
-    );
+    await transport.ping(signal);
+    const version = parseDockerVersion(await transport.version(signal));
+    const ids = parseDockerContainerIds(await transport.listContainers(signal));
     const observedAt = now();
     if (!Number.isFinite(observedAt.getTime())) throw new DockerSourceUnavailableError();
 
@@ -507,12 +413,9 @@ export async function readDockerContainers(
       async (id): Promise<DockerContainerSnapshot | null> => {
         let inspect: DockerInspectEvidence;
         try {
-          inspect = parseDockerInspect(
-            await transport.get(`${DOCKER_API_PREFIX}/containers/${id}/json`, signal),
-            id,
-          );
+          inspect = parseDockerInspect(await transport.inspectContainer(id, signal), id);
         } catch (error: unknown) {
-          if (error instanceof DockerHttpStatusError && error.statusCode === 404) return null;
+          if (error instanceof DockerBrokerRequestError && error.statusCode === 404) return null;
           throw error;
         }
 
@@ -520,12 +423,7 @@ export async function readDockerContainers(
         let stats: DockerResourceStats | null = null;
         if (inspect.running) {
           try {
-            stats = parseDockerStats(
-              await transport.get(
-                `${DOCKER_API_PREFIX}/containers/${id}/stats?stream=false`,
-                signal,
-              ),
-            );
+            stats = parseDockerStats(await transport.statsContainer(id, signal));
             statsState = "AVAILABLE";
           } catch {
             statsState = "UNAVAILABLE";

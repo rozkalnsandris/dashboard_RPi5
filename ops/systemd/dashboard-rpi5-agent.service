@@ -1,10 +1,10 @@
 # SOURCE-ONLY BLUEPRINT.
 # Do not install, enable, start, restart, or otherwise activate this unit
-# without separate owner authorization under issue #1.
+# without a separate explicit owner-authorized production gate.
 #
-# The agent owns the privileged-read boundary. Its primary group is the
-# connect-only Unix-socket client group so the web identity can consume the
-# bounded agent API without sharing the agent user identity.
+# The agent owns the bounded host-read boundary. Its primary group lets the web
+# identity consume the agent Unix API. For Docker current-state it receives only
+# the dedicated broker-client group; it must never inherit docker or video.
 
 [Unit]
 Description=dashboard_RPi5 local read agent
@@ -14,8 +14,10 @@ After=local-fs.target
 Type=exec
 User=dashboard-rpi5-agent
 Group=dashboard-rpi5-agent-client
+SupplementaryGroups=dashboard-rpi5-docker-broker-client
 WorkingDirectory=/opt/dashboard_RPi5/current
 Environment=DASHBOARD_RPI5_AGENT_SOCKET=/run/dashboard-rpi5/agent.sock
+Environment=DASHBOARD_DOCKER_BROKER_SOCKET=/run/dashboard-rpi5-docker-broker/broker.sock
 # Owner-gated capability: keep OFF in the canonical blueprint. Enabling this
 # requires a separate explicit owner-authorized production configuration change.
 Environment=DASHBOARD_RPI5_QUICK_COMMANDS=disabled

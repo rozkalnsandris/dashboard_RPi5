@@ -34,6 +34,7 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
   "ops/production/host-readiness-contract.json",
   "ops/systemd/dashboard-rpi5-web.service",
   "ops/systemd/dashboard-rpi5-agent.service",
+  "ops/systemd/dashboard-rpi5-docker-broker.service",
   "ops/systemd/dashboard-rpi5-terminal.socket",
   "ops/systemd/dashboard-rpi5-terminal@.service",
   "tools/production-candidate-manifest.mjs",

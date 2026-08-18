@@ -312,6 +312,15 @@ async function runSmoke({ rootDir, manifestPath, sourceSha }) {
       );
     }
 
+    const agentDocker = await request({ socketPath: agentSocket, path: "/v1/docker/containers" });
+    if (agentDocker.statusCode !== 503) {
+      throw runtimeFailure(
+        "agent runtime smoke failed",
+        agentRuntime,
+        `Docker must fail closed before broker activation: ${agentDocker.statusCode} ${agentDocker.body}`,
+      );
+    }
+
     const port = await reserveLoopbackPort();
     webRuntime = spawnRuntime(
       resolve(currentRoot, "apps/server/dist/index.js"),
@@ -335,6 +344,15 @@ async function runSmoke({ rootDir, manifestPath, sourceSha }) {
 
     await assertExactLoopbackListener(port);
 
+    const webDocker = await request({ host: "127.0.0.1", port, path: "/api/current/docker" });
+    if (webDocker.statusCode !== 503) {
+      throw runtimeFailure(
+        "web runtime smoke failed",
+        webRuntime,
+        `Docker web route must fail closed before broker activation: ${webDocker.statusCode} ${webDocker.body}`,
+      );
+    }
+
     const spa = await request({ host: "127.0.0.1", port, path: "/" });
     if (spa.statusCode !== 200 || !String(spa.headers["content-type"] ?? "").includes("text/html")) {
       throw runtimeFailure(
@@ -352,9 +370,11 @@ async function runSmoke({ rootDir, manifestPath, sourceSha }) {
       agent: {
         healthStatus: agentHealth.statusCode,
         quickCommandsStatus: quickCommands.statusCode,
+        dockerStatus: agentDocker.statusCode,
       },
       web: {
         healthStatus: webHealth.statusCode,
+        dockerStatus: webDocker.statusCode,
         listener: `127.0.0.1:${port}`,
         spaStatus: spa.statusCode,
       },
