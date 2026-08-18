@@ -19,4 +19,5 @@ export const AGENT_CAPABILITIES = Object.freeze<AgentCapability[]>([
 ]);
 
 export const DEFAULT_OPERATION_TIMEOUT_MS = 5_000;
+export const DOCKER_CONTAINERS_OPERATION_TIMEOUT_MS = 8_000;
 export const MAX_OPERATION_TIMEOUT_MS = 30_000;
