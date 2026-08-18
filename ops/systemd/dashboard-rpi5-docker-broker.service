@@ -13,7 +13,7 @@ After=local-fs.target docker.service
 [Service]
 Type=exec
 User=dashboard-rpi5-docker-broker
-Group=dashboard-rpi5-docker-broker-client
+Group=dashboard-rpi5-docker-client
 SupplementaryGroups=docker
 WorkingDirectory=/opt/dashboard_RPi5/current
 Environment=DASHBOARD_DOCKER_BROKER_SOCKET=/run/dashboard-rpi5-docker-broker/broker.sock
