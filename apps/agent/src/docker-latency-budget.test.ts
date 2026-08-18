@@ -86,7 +86,7 @@ class BoundedLatencyTransport implements DockerBrokerTransport {
     return this.#bounded(inspectEvidence(id, index));
   }
 
-  statsContainer(_id: string): Promise<unknown> {
+  statsContainer(): Promise<unknown> {
     return this.#bounded(statsEvidence());
   }
 }
