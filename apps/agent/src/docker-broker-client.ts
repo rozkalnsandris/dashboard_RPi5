@@ -30,12 +30,17 @@ export interface DockerBrokerTransport {
   listContainers(signal?: AbortSignal): Promise<unknown>;
   inspectContainer(id: string, signal?: AbortSignal): Promise<unknown>;
   statsContainer(id: string, signal?: AbortSignal): Promise<unknown>;
+}
+
+export interface DockerBrokerLogTransport {
   readLogs(
     source: DockerBrokerLogSource,
     range: DockerBrokerLogRange,
     signal?: AbortSignal,
   ): Promise<Buffer>;
 }
+
+export type DockerBrokerFullTransport = DockerBrokerTransport & DockerBrokerLogTransport;
 
 interface DockerBrokerTransportOptions {
   socketPath?: string;
@@ -132,7 +137,7 @@ async function getBrokerJson(
 
 export function createDockerBrokerTransport(
   options: DockerBrokerTransportOptions = {},
-): DockerBrokerTransport {
+): DockerBrokerFullTransport {
   const socketPath =
     options.socketPath ?? process.env[DOCKER_BROKER_SOCKET_ENV] ?? DEFAULT_DOCKER_BROKER_SOCKET_PATH;
   const requestTimeoutMs = validatePositiveBound(
