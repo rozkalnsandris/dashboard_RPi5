@@ -46,6 +46,9 @@ test("preflight proves the observed CHDIR incident and stops before mutation", a
   assert.ok(source.includes('-p ExecMainStatus --value)" = 200'));
   assert.ok(source.includes('-p Result --value)" = exit-code'));
   assert.ok(source.includes('AUTHORIZATION_CONSUMED=NO BROKER_STOP=NO OWNERSHIP_MUTATION=NO PERMISSION_MUTATION=NO'));
+  assert.ok(source.includes('sudo test -f "$MANIFEST_MARKER" || stop "installed manifest marker missing"'));
+  assert.equal(source.includes('[ -f "$MANIFEST_MARKER" ]'), false);
+  assert.ok(source.includes('sudo find "$SERVER_DIST" -type f -print0 | sort -z | sudo xargs -0 sha256sum | sha256sum'));
 });
 
 test("recovery metadata normalization is exact and bounded to the verified target", async () => {
