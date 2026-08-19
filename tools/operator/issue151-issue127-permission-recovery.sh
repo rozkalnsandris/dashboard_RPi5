@@ -194,14 +194,14 @@ main_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Ap
 
 [ "$(readlink "$CURRENT_LINK")" = "releases/$TARGET" ] || stop "current pointer is not exact target"
 [ -d "$TARGET_RELEASE" ] || stop "target release missing"
-[ -f "$MANIFEST_MARKER" ] || stop "installed manifest marker missing"
+sudo test -f "$MANIFEST_MARKER" || stop "installed manifest marker missing"
 [ "$(sudo sha256sum "$MANIFEST_MARKER" | awk '{print $1}')" = "$EXPECTED_MANIFEST_SHA" ] || stop "installed manifest file digest drift"
 [ "$(sudo jq -er '.candidateSha256' "$MANIFEST_MARKER")" = "$EXPECTED_CANDIDATE" ] || stop "installed candidate digest drift"
 [ "$(sudo jq -er '.sourceSha' "$MANIFEST_MARKER")" = "$TARGET" ] || stop "installed source SHA drift"
 verify_target_manifest || stop "installed target manifest verification failed"
 [ "$(sudo sha256sum "$BROKER_ENTRY" | awk '{print $1}')" = "$EXPECTED_BROKER_ENTRY_SHA" ] || stop "broker entry digest drift"
 [ "$(manifest_sha_for 'apps/agent/dist/index.js')" = "$EXPECTED_AGENT_ENTRY_SHA" ] || stop "agent entry manifest digest drift"
-server_dist_sha="$(sudo find "$SERVER_DIST" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
+server_dist_sha="$(sudo find "$SERVER_DIST" -type f -print0 | sort -z | sudo xargs -0 sha256sum | sha256sum | awk '{print $1}')"
 [ "$server_dist_sha" = "$EXPECTED_SERVER_DIST_SHA" ] || stop "server dist aggregate drift"
 
 release_mode="$(sudo stat -Lc '%a' "$TARGET_RELEASE")"
