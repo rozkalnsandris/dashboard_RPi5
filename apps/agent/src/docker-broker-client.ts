@@ -4,11 +4,15 @@ import { DOCKER_MAX_RESPONSE_BYTES, isDockerContainerId } from "./docker-api.js"
 import {
   DEFAULT_DOCKER_BROKER_SOCKET_PATH,
   DOCKER_BROKER_CONTAINERS_PATH,
+  DOCKER_BROKER_LOG_MAX_RESPONSE_BYTES,
   DOCKER_BROKER_PING_PATH,
   DOCKER_BROKER_SOCKET_ENV,
   DOCKER_BROKER_VERSION_PATH,
   dockerBrokerInspectPath,
+  dockerBrokerLogsPath,
   dockerBrokerStatsPath,
+  type DockerBrokerLogRange,
+  type DockerBrokerLogSource,
 } from "./docker-broker-protocol.js";
 
 export const DOCKER_BROKER_REQUEST_TIMEOUT_MS = 1_500;
@@ -26,6 +30,11 @@ export interface DockerBrokerTransport {
   listContainers(signal?: AbortSignal): Promise<unknown>;
   inspectContainer(id: string, signal?: AbortSignal): Promise<unknown>;
   statsContainer(id: string, signal?: AbortSignal): Promise<unknown>;
+  readLogs(
+    source: DockerBrokerLogSource,
+    range: DockerBrokerLogRange,
+    signal?: AbortSignal,
+  ): Promise<Buffer>;
 }
 
 interface DockerBrokerTransportOptions {
@@ -47,24 +56,24 @@ function validatePositiveBound(value: number): number {
   return value;
 }
 
-async function getBrokerJson(
+async function getBrokerBody(
   socketPath: string,
   path: string,
   signal: AbortSignal | undefined,
   requestTimeoutMs: number,
   maxResponseBytes: number,
-): Promise<unknown> {
-  return new Promise<unknown>((resolve, reject) => {
+): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
     let settled = false;
     const fail = (error: unknown) => {
       if (settled) return;
       settled = true;
       reject(error instanceof DockerBrokerRequestError ? error : new DockerBrokerRequestError());
     };
-    const succeed = (value: unknown) => {
+    const succeed = (body: Buffer) => {
       if (settled) return;
       settled = true;
-      resolve(value);
+      resolve(body);
     };
 
     const req = request(
@@ -72,7 +81,7 @@ async function getBrokerJson(
         socketPath,
         path,
         method: "GET",
-        headers: { accept: "application/json" },
+        headers: { accept: "application/json, application/octet-stream" },
         ...(signal === undefined ? {} : { signal }),
       },
       (response) => {
@@ -96,13 +105,7 @@ async function getBrokerJson(
           chunks.push(chunk);
         });
         response.once("error", fail);
-        response.once("end", () => {
-          try {
-            succeed(parseJsonBody(Buffer.concat(chunks)));
-          } catch (error: unknown) {
-            fail(error);
-          }
-        });
+        response.once("end", () => succeed(Buffer.concat(chunks)));
       },
     );
 
@@ -113,6 +116,18 @@ async function getBrokerJson(
     req.once("error", fail);
     req.end();
   });
+}
+
+async function getBrokerJson(
+  socketPath: string,
+  path: string,
+  signal: AbortSignal | undefined,
+  requestTimeoutMs: number,
+  maxResponseBytes: number,
+): Promise<unknown> {
+  return parseJsonBody(
+    await getBrokerBody(socketPath, path, signal, requestTimeoutMs, maxResponseBytes),
+  );
 }
 
 export function createDockerBrokerTransport(
@@ -156,6 +171,21 @@ export function createDockerBrokerTransport(
     statsContainer(id: string, signal?: AbortSignal) {
       if (!isDockerContainerId(id)) return Promise.reject(new DockerBrokerRequestError());
       return get(dockerBrokerStatsPath(id), signal);
+    },
+    readLogs(source: DockerBrokerLogSource, range: DockerBrokerLogRange, signal?: AbortSignal) {
+      let path: string;
+      try {
+        path = dockerBrokerLogsPath(source, range);
+      } catch {
+        return Promise.reject(new DockerBrokerRequestError());
+      }
+      return getBrokerBody(
+        socketPath,
+        path,
+        signal,
+        requestTimeoutMs,
+        Math.min(maxResponseBytes, DOCKER_BROKER_LOG_MAX_RESPONSE_BYTES),
+      );
     },
   };
 }
