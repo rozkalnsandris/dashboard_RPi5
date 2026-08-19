@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { URL } from "node:url";
 
 const helperPath = new URL("./operator/issue127-production-candidate-recovery-prep.sh", import.meta.url);
 const source = readFileSync(helperPath, "utf8");
