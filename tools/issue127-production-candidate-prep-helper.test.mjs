@@ -51,6 +51,15 @@ test("#127 candidate prep binds exact merged main and discovers exact push CI", 
   assert.ok(source.includes('select(.head_sha == $sha)'));
   assert.ok(source.includes('select(.event == "push")'));
   assert.ok(source.includes('select(.head_branch == "main")'));
+  assert.ok(
+    source.includes(
+      "] | sort_by(.run_number, (.run_attempt // 1)) | last // empty\n')\" || blocked \"exact-main CI parse failed\"",
+    ),
+  );
+  assert.equal(
+    source.includes("\n+')\" || blocked \"exact-main CI parse failed\""),
+    false,
+  );
   assert.ok(source.includes("ISSUE127_EXACT_MAIN_CI_PASS"));
   for (const job of ["check", "terminal-native (x64)", "terminal-native (arm64)"]) {
     assert.ok(source.includes(job), `missing required CI job: ${job}`);
