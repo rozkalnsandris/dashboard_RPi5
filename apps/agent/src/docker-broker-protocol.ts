@@ -8,6 +8,29 @@ export const DOCKER_BROKER_VERSION_PATH = "/v1/docker/version" as const;
 export const DOCKER_BROKER_CONTAINERS_PATH = "/v1/docker/containers" as const;
 export const DOCKER_BROKER_MAX_REQUEST_URL_BYTES = 256;
 export const DOCKER_BROKER_MAX_CONCURRENT_REQUESTS = 8;
+export const DOCKER_BROKER_LOG_MAX_RESPONSE_BYTES = 512 * 1024;
+export const DOCKER_BROKER_LOG_TAIL = 400;
+
+export const DOCKER_BROKER_LOG_SOURCES = ["homeassistant", "prometheus"] as const;
+export const DOCKER_BROKER_LOG_RANGES = ["15m", "1h", "6h", "24h"] as const;
+
+export type DockerBrokerLogSource = (typeof DOCKER_BROKER_LOG_SOURCES)[number];
+export type DockerBrokerLogRange = (typeof DOCKER_BROKER_LOG_RANGES)[number];
+
+export const DOCKER_BROKER_LOG_LOOKBACK_SECONDS: Readonly<Record<DockerBrokerLogRange, number>> = {
+  "15m": 15 * 60,
+  "1h": 60 * 60,
+  "6h": 6 * 60 * 60,
+  "24h": 24 * 60 * 60,
+};
+
+function isDockerBrokerLogSource(value: string): value is DockerBrokerLogSource {
+  return (DOCKER_BROKER_LOG_SOURCES as readonly string[]).includes(value);
+}
+
+function isDockerBrokerLogRange(value: string): value is DockerBrokerLogRange {
+  return (DOCKER_BROKER_LOG_RANGES as readonly string[]).includes(value);
+}
 
 export type DockerBrokerRoute =
   | { kind: "health" }
@@ -15,7 +38,8 @@ export type DockerBrokerRoute =
   | { kind: "version" }
   | { kind: "containers" }
   | { kind: "inspect"; id: string }
-  | { kind: "stats"; id: string };
+  | { kind: "stats"; id: string }
+  | { kind: "logs"; source: DockerBrokerLogSource; range: DockerBrokerLogRange };
 
 export function dockerBrokerInspectPath(id: string): string {
   if (!isDockerContainerId(id)) throw new Error("invalid Docker container ID");
@@ -25,6 +49,16 @@ export function dockerBrokerInspectPath(id: string): string {
 export function dockerBrokerStatsPath(id: string): string {
   if (!isDockerContainerId(id)) throw new Error("invalid Docker container ID");
   return `/v1/docker/containers/${id}/stats`;
+}
+
+export function dockerBrokerLogsPath(
+  source: DockerBrokerLogSource,
+  range: DockerBrokerLogRange,
+): string {
+  if (!isDockerBrokerLogSource(source) || !isDockerBrokerLogRange(range)) {
+    throw new Error("invalid Docker log capability");
+  }
+  return `/v1/docker/logs/${source}/${range}`;
 }
 
 export function parseDockerBrokerRoute(rawUrl: string): DockerBrokerRoute | null {
@@ -49,6 +83,19 @@ export function parseDockerBrokerRoute(rawUrl: string): DockerBrokerRoute | null
   const stats = /^\/v1\/docker\/containers\/([0-9a-f]{64})\/stats$/.exec(rawUrl);
   if (stats !== null && isDockerContainerId(stats[1] ?? "")) {
     return { kind: "stats", id: stats[1] ?? "" };
+  }
+
+  const logs = /^\/v1\/docker\/logs\/([a-z0-9_-]+)\/(15m|1h|6h|24h)$/.exec(rawUrl);
+  if (
+    logs !== null &&
+    isDockerBrokerLogSource(logs[1] ?? "") &&
+    isDockerBrokerLogRange(logs[2] ?? "")
+  ) {
+    return {
+      kind: "logs",
+      source: logs[1] as DockerBrokerLogSource,
+      range: logs[2] as DockerBrokerLogRange,
+    };
   }
 
   return null;
