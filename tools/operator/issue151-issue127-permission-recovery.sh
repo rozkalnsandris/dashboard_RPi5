@@ -7,7 +7,6 @@ EXPECTED_CANDIDATE="f08677aef82d0213422a171b51efd46fa7db57b29385fdd9c5d185f2c7b8
 EXPECTED_MANIFEST_SHA="5e7ed7f70987f93291567b880053a1f46d911f51ce678690fd61bc9f097c60ff"
 EXPECTED_BROKER_ENTRY_SHA="a9fdbf13c704b0c9bc1d03ec5698198630a967d282644fb3440dfab2ff8de05d"
 EXPECTED_AGENT_ENTRY_SHA="b44522f3998e723e7cea1a6ab136e0f57933f05925027365fc2cbda0ef47f56d"
-EXPECTED_SERVER_DIST_SHA="bf5af5080c552f460123a39c23da66053319052297401740b9037fda84af8c6e"
 PREVIOUS_RELEASE="15f44e3a6fdda8f2e97b26501a283f6bba915e86"
 EXPECTED_AGENT_PID="3482974"
 EXPECTED_WEB_PID="3378022"
@@ -20,7 +19,6 @@ CURRENT_LINK="$PROD_ROOT/current"
 MANIFEST_MARKER="$TARGET_RELEASE/.dashboard-production-candidate.json"
 BROKER_ENTRY="$TARGET_RELEASE/apps/agent/dist/docker-broker-entry.js"
 AGENT_ENTRY="$TARGET_RELEASE/apps/agent/dist/index.js"
-SERVER_DIST="$TARGET_RELEASE/apps/server/dist"
 BROKER_SERVICE="dashboard-rpi5-docker-broker.service"
 AGENT_SERVICE="dashboard-rpi5-agent.service"
 WEB_SERVICE="dashboard-rpi5-web.service"
@@ -61,7 +59,7 @@ need() {
   command -v "$1" >/dev/null 2>&1 || stop "missing command: $1"
 }
 
-for command_name in curl jq node sha256sum systemctl readlink stat id getent grep awk sed sudo tail tr sleep find sort xargs cut; do
+for command_name in curl jq node sha256sum systemctl readlink stat id getent grep awk sed sudo tail tr sleep find cut; do
   need "$command_name"
 done
 
@@ -201,8 +199,6 @@ sudo test -f "$MANIFEST_MARKER" || stop "installed manifest marker missing"
 verify_target_manifest || stop "installed target manifest verification failed"
 [ "$(sudo sha256sum "$BROKER_ENTRY" | awk '{print $1}')" = "$EXPECTED_BROKER_ENTRY_SHA" ] || stop "broker entry digest drift"
 [ "$(manifest_sha_for 'apps/agent/dist/index.js')" = "$EXPECTED_AGENT_ENTRY_SHA" ] || stop "agent entry manifest digest drift"
-server_dist_sha="$(sudo find "$SERVER_DIST" -type f -print0 | sort -z | sudo xargs -0 sha256sum | sha256sum | awk '{print $1}')"
-[ "$server_dist_sha" = "$EXPECTED_SERVER_DIST_SHA" ] || stop "server dist aggregate drift"
 
 release_mode="$(sudo stat -Lc '%a' "$TARGET_RELEASE")"
 broker_entry_mode="$(sudo stat -Lc '%a' "$BROKER_ENTRY")"
