@@ -2,9 +2,11 @@
 
 Modern Raspberry Pi 5 homelab observability and control dashboard for **`https://dash.rozkalns.net`**.
 
-> **Current status:** Phase 4A source implementation — fixture UI, local Unix-socket agent protocol, host read-only health, Docker current-state reads and bounded Docker recent events are merged; the bounded Prometheus history/Grafana-link server contract is being prepared source-only. No production agent activation, Docker socket permission, Prometheus/Grafana production wiring, terminal activation, Cloudflare mutation or DNS change is authorized by this status.
+> **Current production status:** Phase 128 production recovery is complete. Source-fixed release `15f44e3a6fdda8f2e97b26501a283f6bba915e86` is active; host and bounded Docker current-state reads are live through the dedicated Docker broker. Docker recent events remain fail-closed pending #126, Docker-backed registered logs remain fail-closed pending #127, Quick Commands remain disabled, terminal/PTTY remains absent, and Cloudflare Access/Tunnel/DNS are unchanged. The public dashboard remains owner-only behind Cloudflare Access.
 
-> **Canonical contract:** [Issue #1 — MASTER / READ FIRST](https://github.com/rozkalnsandris/dashboard_RPi5/issues/1)
+> **Current-state handoff:** [Issue #137 — Phase 128 production complete](https://github.com/rozkalnsandris/dashboard_RPi5/issues/137)
+>
+> **Canonical product/security contract:** [Issue #1 — MASTER / READ FIRST](https://github.com/rozkalnsandris/dashboard_RPi5/issues/1)
 
 ## Current UI direction
 
@@ -79,13 +81,14 @@ Dashboard web/API on RPi5 loopback
     | Unix socket / narrow local protocol
     v
 RPi5 privileged-read agent
-    |-- Docker Engine Unix socket
+    |-- bounded Docker broker Unix socket
+    |       `-- Docker Engine Unix socket
     |-- systemd / journal
     |-- vcgencmd / sysfs / procfs
     `-- allowlisted backup/deploy evidence
 ```
 
-The **web process does not get arbitrary root access or an unrestricted Docker API proxy**.
+The **web process does not get arbitrary root access or an unrestricted Docker API proxy**. The main agent has no persistent `docker` or `video` group membership; only the dedicated bounded Docker broker reaches the Docker Engine socket.
 
 ## Security baseline
 
@@ -93,11 +96,14 @@ The **web process does not get arbitrary root access or an unrestricted Docker A
 - No new router port-forward.
 - Agent is not Internet-facing.
 - Docker socket is never exposed to browser JavaScript.
+- Docker current-state reads use the dedicated bounded broker; the main agent is not persistently in `docker` or `video`.
+- Docker recent events remain fail-closed pending #126.
+- Docker-backed registered logs remain fail-closed pending #127.
 - Read-only observability first.
 - Browser-supplied log paths/service names/shell strings are rejected.
-- Quick Commands are registered IDs mapped to fixed executables/arguments.
-- Full terminal is owner-only, non-root by default, short-lived and separately gated.
-- Production/host mutation is a separately authorized later capability.
+- Quick Commands remain disabled in production.
+- Terminal/PTTY remains absent/fail-closed in production; any future activation is separately gated.
+- Any future production/host mutation requires separate explicit owner authorization.
 
 ## GitHub workflow
 
@@ -139,4 +145,4 @@ See [`AGENTS.md`](AGENTS.md) and [`CONTRIBUTING.md`](CONTRIBUTING.md).
 observe -> explain -> drill down -> act only through an explicit trusted gate
 ```
 
-**Production deploy: NO** until a later explicit owner-authorized activation/deployment phase.
+**Production deploy:** the source-fixed Phase 128 release `15f44e3a6fdda8f2e97b26501a283f6bba915e86` is active. Any future production deploy or host/trust-boundary mutation requires a new separate explicit owner authorization.
