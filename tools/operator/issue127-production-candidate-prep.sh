@@ -109,7 +109,7 @@ run_json="$(printf '%s' "$runs_json" | jq -ec --arg sha "$TARGET" '
     | select(.head_branch == "main")
     | select(.head_sha == $sha)
   ] | sort_by(.run_number, (.run_attempt // 1)) | last // empty
-+')" || blocked "exact-main CI parse failed"
+')" || blocked "exact-main CI parse failed"
 [ -n "$run_json" ] || blocked "exact push-to-main CI not found"
 
 run_id="$(printf '%s' "$run_json" | jq -er '.id')"
