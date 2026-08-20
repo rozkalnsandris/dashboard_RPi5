@@ -204,11 +204,12 @@ ancestry_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHu
 printf '%s' "$ancestry_json" | jq -e --arg target "$TARGET" --arg current "$current_main" '
   (.base_commit.sha == $target)
   and (.merge_base_commit.sha == $target)
-  and (.head_commit.sha == $current)
+  and ((.commits | length) == 1)
+  and (.commits[0].sha == $current)
   and (.status == "ahead")
-  and (.ahead_by >= 1)
+  and (.ahead_by == 1)
   and (.behind_by == 0)
-' >/dev/null || stop "reviewed main is not a strict descendant of the incident target"
+' >/dev/null || stop "reviewed main is not the exact one-commit descendant of the incident target"
 
 [ "$(readlink "$CURRENT_LINK")" = "releases/$TARGET" ] || stop "current pointer is not exact target"
 [ -d "$TARGET_RELEASE" ] || stop "target release missing"
