@@ -1,0 +1,46 @@
+{
+  "schema": "dashboard-rpi5.broker-readiness.v1",
+  "sourceOnly": true,
+  "service": "dashboard-rpi5-docker-broker.service",
+  "systemdType": "exec",
+  "readinessModel": "application-probed",
+  "systemdActiveIsSufficient": false,
+  "socketActivationSelected": false,
+  "notifySelected": false,
+  "runtime": {
+    "socket": "/run/dashboard-rpi5-docker-broker/broker.sock",
+    "socketOwner": "dashboard-rpi5-docker-broker",
+    "socketGroup": "dashboard-rpi5-docker-client",
+    "socketMode": "0660",
+    "runtimeDirectory": "/run/dashboard-rpi5-docker-broker",
+    "runtimeDirectoryMode": "0750",
+    "stableMainPidRequired": true,
+    "stableNRestartsRequired": true,
+    "exactReleaseCwdRequired": true
+  },
+  "applicationAcceptance": {
+    "healthPath": "/v1/health",
+    "dockerPath": "/v1/docker/containers",
+    "approvedLogPaths": [
+      "/v1/docker/logs/homeassistant/15m",
+      "/v1/docker/logs/prometheus/24h"
+    ],
+    "requiredSuccessStatus": 200,
+    "failClosedPaths": [
+      "/v1/docker/logs/homeassistant/7d",
+      "/v1/docker/events"
+    ],
+    "requiredFailClosedStatus": 404
+  },
+  "startupContract": {
+    "listenEventRequiredBeforeSocketSecurity": true,
+    "listenErrorFailsStartup": true,
+    "boundedExternalReadinessProbeRequired": true
+  },
+  "mutationAllowed": false,
+  "unitMutationAllowed": false,
+  "identityMutationAllowed": false,
+  "dockerAuthorityExpansionAllowed": false,
+  "terminalMutationAllowed": false,
+  "eventsMutationAllowed": false
+}
