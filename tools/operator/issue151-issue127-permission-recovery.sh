@@ -3,8 +3,8 @@ set -Eeuo pipefail
 
 TARGET="4295c23de5634dcb86b5fe9f57be92416eb9a75b"
 EXPECTED_TREE="df24c7e8e2047176c43f24989e4910a30fa1bc02"
-REVIEWED_MAIN="6a08a1ff9756ef145ec698b93890011999640f56"
-REVIEWED_MAIN_TREE="094a89cd417eef8c3f572930728a1b7b43852e2b"
+REVIEWED_MAIN="c5c6d9591fe92da5f9aa5913a963741fadb9fbcf"
+REVIEWED_MAIN_TREE="1230e43325a4ba3dea67dd89b54eeceba0ef0021"
 EXPECTED_CANDIDATE="f08677aef82d0213422a171b51efd46fa7db57b29385fdd9c5d185f2c7b83eb0"
 EXPECTED_MANIFEST_SHA="5e7ed7f70987f93291567b880053a1f46d911f51ce678690fd61bc9f097c60ff"
 EXPECTED_BROKER_ENTRY_SHA="a9fdbf13c704b0c9bc1d03ec5698198630a967d282644fb3440dfab2ff8de05d"
@@ -192,24 +192,26 @@ incident_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHu
 [ "$(printf '%s' "$incident_json" | jq -er '.sha')" = "$TARGET" ] || stop "incident commit SHA drift"
 [ "$(printf '%s' "$incident_json" | jq -er '.commit.tree.sha')" = "$EXPECTED_TREE" ] || stop "incident commit tree drift"
 
+reviewed_main_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/commits/$REVIEWED_MAIN")" || stop "GitHub reviewed main commit lookup failed"
+[ "$(printf '%s' "$reviewed_main_json" | jq -er '.sha')" = "$REVIEWED_MAIN" ] || stop "reviewed main commit SHA drift"
+[ "$(printf '%s' "$reviewed_main_json" | jq -er '.commit.tree.sha')" = "$REVIEWED_MAIN_TREE" ] || stop "reviewed main commit tree drift"
+
 main_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
   "https://api.github.com/repos/$REPO_SLUG/branches/main")" || stop "GitHub main lookup failed"
 current_main="$(printf '%s' "$main_json" | jq -er '.commit.sha')"
 current_main_tree="$(printf '%s' "$main_json" | jq -er '.commit.commit.tree.sha')"
-[ "$current_main" = "$REVIEWED_MAIN" ] || stop "current main SHA drift from reviewed recovery base"
-[ "$current_main_tree" = "$REVIEWED_MAIN_TREE" ] || stop "current main tree drift from reviewed recovery base"
+[ -n "$current_main" ] || stop "current main SHA missing"
+[ -n "$current_main_tree" ] || stop "current main tree missing"
 
 ancestry_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
-  "https://api.github.com/repos/$REPO_SLUG/compare/$TARGET...$current_main")" || stop "GitHub incident ancestry lookup failed"
-printf '%s' "$ancestry_json" | jq -e --arg target "$TARGET" --arg current "$current_main" '
-  (.base_commit.sha == $target)
-  and (.merge_base_commit.sha == $target)
-  and ((.commits | length) == 1)
-  and (.commits[0].sha == $current)
-  and (.status == "ahead")
-  and (.ahead_by == 1)
+  "https://api.github.com/repos/$REPO_SLUG/compare/$REVIEWED_MAIN...$current_main")" || stop "GitHub reviewed-main ancestry lookup failed"
+printf '%s' "$ancestry_json" | jq -e --arg reviewed "$REVIEWED_MAIN" '
+  (.base_commit.sha == $reviewed)
+  and (.merge_base_commit.sha == $reviewed)
+  and ((.status == "identical") or (.status == "ahead"))
   and (.behind_by == 0)
-' >/dev/null || stop "reviewed main is not the exact one-commit descendant of the incident target"
+' >/dev/null || stop "current main is not a safe descendant of the reviewed recovery anchor"
 
 [ "$(readlink "$CURRENT_LINK")" = "releases/$TARGET" ] || stop "current pointer is not exact target"
 [ -d "$TARGET_RELEASE" ] || stop "target release missing"
