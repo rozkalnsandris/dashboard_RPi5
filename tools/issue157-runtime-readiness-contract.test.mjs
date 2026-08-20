@@ -29,8 +29,9 @@ test("broker entry no longer depends on Node 24.2-only import.meta.main", () => 
   assert.doesNotMatch(brokerEntry, /import\.meta\.main/u);
   assert.match(brokerEntry, /fileURLToPath\(import\.meta\.url\)/u);
   assert.match(brokerEntry, /process\.argv\[1\]/u);
-  assert.match(brokerEntry, /resolve\(process\.argv\[1\]\)/u);
-  assert.match(brokerEntry, /invokedPath === fileURLToPath\(import\.meta\.url\)/u);
+  assert.match(brokerEntry, /realpathSync\(invokedPath\)/u);
+  assert.match(brokerEntry, /realpathSync\(fileURLToPath\(moduleUrl\)\)/u);
+  assert.match(brokerEntry, /if \(isDirectCliInvocation\(\)\)/u);
 });
 
 test("broker keeps Type=exec but active state is explicitly not application readiness", () => {
@@ -65,7 +66,7 @@ test("broker startup waits for listening before socket security and preserves au
   const secure = brokerEntry.indexOf("await secureSocketPath(socketPath)");
   assert.ok(onError >= 0 && onListening >= 0 && listen > onListening && secure > listen);
   assert.match(brokerEntry, /const onError = \(error: Error\) => \{[\s\S]*reject\(error\);/u);
-  assert.match(brokerEntry, /const onListening = \(\) => \{[\s\S]*resolveListening\(\);/u);
+  assert.match(brokerEntry, /const onListening = \(\) => \{[\s\S]*resolve\(\);/u);
   assert.equal(brokerContract.startupContract.listenEventRequiredBeforeSocketSecurity, true);
   assert.equal(brokerContract.startupContract.listenErrorFailsStartup, true);
   assert.equal(brokerContract.startupContract.boundedExternalReadinessProbeRequired, true);
