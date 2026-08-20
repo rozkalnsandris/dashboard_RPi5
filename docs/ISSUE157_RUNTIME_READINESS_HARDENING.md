@@ -8,19 +8,22 @@ This work does **not** authorize or perform production, systemd, identity, Docke
 
 ## Node runtime contract
 
-The broker entrypoint uses `import.meta.main`. Node documents that property as available in Node 24 from v24.2.0. The old repository contract (`>=24 <25`) therefore admitted Node 24.0/24.1 even though source relied on a feature that those versions do not provide.
+The historical broker entrypoint used `import.meta.main`. Node documents that property as available on the Node 24 line from v24.2.0, while the repository contract correctly intended to support Node 24 generally (`>=24 <25`).
+
+#157 removes the unnecessary 24.2-only dependency instead of narrowing the whole production engine contract for one CLI-entry guard.
 
 Selected contract:
 
-- package engine: `>=24.2 <25`;
-- reviewed developer/CI runtime: `.node-version`;
-- GitHub Actions reads `.node-version` rather than an independent floating `24` selector;
-- production host-readiness contract declares `nodeMinimum=24.2.0`;
-- `npm run preflight:host` runs a compatibility-safe Node runtime verifier before the existing filesystem/identity/systemd host-readiness verifier.
+- package engine remains `>=24 <25`;
+- `package.json` and root `package-lock.json` engine metadata must remain identical;
+- broker CLI detection uses a compatibility-safe `process.argv[1]` / `fileURLToPath(import.meta.url)` comparison and no longer uses `import.meta.main`;
+- `.node-version` pins the reviewed developer/CI runtime to `24.19.0`;
+- both GitHub Actions jobs read `.node-version` rather than an independent floating `24` selector;
+- the existing production host-readiness contract continues to require Node major 24 and exact `/usr/bin/node`.
 
-The runtime verifier intentionally does **not** use `import.meta.main`; it uses an entrypoint comparison based on `fileURLToPath(import.meta.url)` so Node 24.0/24.1 can execute the verifier and be rejected before any deployment/activation work.
+This closes the source/runtime mismatch without inventing a stricter minimum that the broker no longer requires.
 
-Primary Node documentation:
+Primary Node documentation used to identify the historical gap:
 
 - https://nodejs.org/download/release/latest-v24.x/docs/api/esm.html
 - https://nodejs.org/en/blog/release/v24.2.0
@@ -68,8 +71,10 @@ Systemd socket activation would make systemd own/bind the broker socket and pass
 
 Tests must preserve:
 
-- Node versions below 24.2 fail closed;
-- package engine, `.node-version`, CI and production host readiness stay aligned;
+- `package.json` and root `package-lock.json` Node engine metadata remain aligned;
+- broker CLI entry no longer uses `import.meta.main`;
+- `.node-version` pins the exact reviewed Node 24 runtime and CI consumes that file in both jobs;
+- production host readiness continues to require Node major 24 at `/usr/bin/node`;
 - broker unit remains `Type=exec` until a separately reviewed architecture change;
 - `active` is never treated as sufficient readiness;
 - broker startup listens successfully before socket security is applied and listen errors reject startup;
