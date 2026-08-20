@@ -1,6 +1,3 @@
-import { realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
 import {
   createDockerBrokerServer,
   createDockerEngineReader,
@@ -10,23 +7,12 @@ import {
   DEFAULT_DOCKER_BROKER_SOCKET_PATH,
   DOCKER_BROKER_SOCKET_ENV,
 } from "./docker-broker-protocol.js";
+import { isDirectCliInvocation } from "./cli-entry.js";
 import { prepareSocketPath, secureSocketPath } from "./socket.js";
 
 interface StartDockerBrokerOptions {
   socketPath?: string;
   engineReader?: DockerEngineReader;
-}
-
-export function isDirectCliInvocation(
-  invokedPath: string | undefined = process.argv[1],
-  moduleUrl: string = import.meta.url,
-) {
-  if (invokedPath === undefined) return false;
-  try {
-    return realpathSync(invokedPath) === realpathSync(fileURLToPath(moduleUrl));
-  } catch {
-    return false;
-  }
 }
 
 export async function startDockerBroker(options: StartDockerBrokerOptions = {}) {
