@@ -49,10 +49,13 @@ test("preflight verifies immutable incident commit and exact reviewed-main ances
   assert.ok(source.includes('[ "$current_main_tree" = "$REVIEWED_MAIN_TREE" ] || stop "current main tree drift from reviewed recovery base"'));
   assert.ok(source.includes('(.base_commit.sha == $target)'));
   assert.ok(source.includes('(.merge_base_commit.sha == $target)'));
-  assert.ok(source.includes('(.head_commit.sha == $current)'));
+  assert.ok(source.includes('((.commits | length) == 1)'));
+  assert.ok(source.includes('(.commits[0].sha == $current)'));
   assert.ok(source.includes('(.status == "ahead")'));
+  assert.ok(source.includes('(.ahead_by == 1)'));
   assert.ok(source.includes('(.behind_by == 0)'));
   assert.equal(source.includes('= "$TARGET" ] || stop "main SHA drift"'), false);
+  assert.equal(source.includes('.head_commit.sha'), false);
 });
 
 test("preflight proves the observed CHDIR incident and stops before mutation", async () => {
