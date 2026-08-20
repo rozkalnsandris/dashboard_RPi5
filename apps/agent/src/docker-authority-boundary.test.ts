@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 const dockerReadSource = readFileSync(new URL("./docker-read.ts", import.meta.url), "utf8");
 const dockerEventsSource = readFileSync(new URL("./docker-events.ts", import.meta.url), "utf8");
+const dockerEventsLiveSource = readFileSync(new URL("./docker-events-live.ts", import.meta.url), "utf8");
+const brokerEventsSource = readFileSync(new URL("./docker-broker-events.ts", import.meta.url), "utf8");
 const logsReadSource = readFileSync(new URL("./logs-read.ts", import.meta.url), "utf8");
 const brokerServerSource = readFileSync(new URL("./docker-broker-server.ts", import.meta.url), "utf8");
 
@@ -15,10 +17,14 @@ describe("Docker Engine authority boundary", () => {
     expect(dockerReadSource).toContain("createDockerBrokerTransport");
   });
 
-  it("keeps recent Docker events fail-closed instead of retaining direct socket authority", async () => {
+  it("keeps event normalization fail-closed by default and live events behind the broker", async () => {
     expect(dockerEventsSource).not.toContain("/var/run/docker.sock");
     expect(dockerEventsSource).not.toContain('from "node:http"');
     expect(dockerEventsSource).toContain("createUnavailableDockerEventsTransport");
+    expect(dockerEventsLiveSource).not.toContain("/var/run/docker.sock");
+    expect(dockerEventsLiveSource).not.toContain('from "node:http"');
+    expect(dockerEventsLiveSource).toContain("createDockerBrokerTransport");
+    expect(dockerEventsLiveSource).toContain("readEvents(since, until");
 
     const { DockerSourceUnavailableError } = await import("./docker-read.js");
     const { readRecentDockerEvents } = await import("./docker-events.js");
@@ -36,11 +42,17 @@ describe("Docker Engine authority boundary", () => {
     );
   });
 
-  it("confines Docker Engine socket configuration to the dedicated broker reader", () => {
+  it("confines Docker Engine event HTTP authority to the dedicated broker side", () => {
     expect(brokerServerSource).toContain("DEFAULT_DOCKER_ENGINE_SOCKET_PATH");
     expect(brokerServerSource).toContain('from "node:http"');
-    expect(brokerServerSource).not.toContain("exec(");
-    expect(brokerServerSource).not.toContain("spawn(");
-    expect(brokerServerSource).not.toContain("execFile(");
+    expect(brokerEventsSource).toContain("DEFAULT_DOCKER_ENGINE_SOCKET_PATH");
+    expect(brokerEventsSource).toContain('from "node:http"');
+    expect(brokerEventsSource).toContain('method: "GET"');
+    expect(brokerEventsSource).toContain("buildDockerEventsPath(since, until)");
+    for (const source of [brokerServerSource, brokerEventsSource]) {
+      expect(source).not.toContain("exec(");
+      expect(source).not.toContain("spawn(");
+      expect(source).not.toContain("execFile(");
+    }
   });
 });
