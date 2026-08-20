@@ -78,6 +78,7 @@ export function createDockerEventReader(options: DockerEventReaderOptions = {}):
 
       return new Promise<unknown[]>((resolve, reject) => {
         let settled = false;
+        let completedFrames = 0;
         const decoder = new DockerEventStreamDecoder();
         const fail = () => {
           if (settled) return;
@@ -115,7 +116,10 @@ export function createDockerEventReader(options: DockerEventReaderOptions = {}):
               if (settled) return;
               const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
               totalBytes += buffer.byteLength;
-              if (totalBytes > maxResponseBytes) {
+              for (const byte of buffer) {
+                if (byte === 0x0a) completedFrames += 1;
+              }
+              if (totalBytes > maxResponseBytes || completedFrames > maxItems) {
                 response.destroy();
                 fail();
                 return;
