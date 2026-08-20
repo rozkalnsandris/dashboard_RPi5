@@ -3,6 +3,8 @@ set -Eeuo pipefail
 
 TARGET="4295c23de5634dcb86b5fe9f57be92416eb9a75b"
 EXPECTED_TREE="df24c7e8e2047176c43f24989e4910a30fa1bc02"
+REVIEWED_MAIN="6a08a1ff9756ef145ec698b93890011999640f56"
+REVIEWED_MAIN_TREE="094a89cd417eef8c3f572930728a1b7b43852e2b"
 EXPECTED_CANDIDATE="f08677aef82d0213422a171b51efd46fa7db57b29385fdd9c5d185f2c7b83eb0"
 EXPECTED_MANIFEST_SHA="5e7ed7f70987f93291567b880053a1f46d911f51ce678690fd61bc9f097c60ff"
 EXPECTED_BROKER_ENTRY_SHA="a9fdbf13c704b0c9bc1d03ec5698198630a967d282644fb3440dfab2ff8de05d"
@@ -75,8 +77,8 @@ else
   stop "usage: $0 --preflight-only | --owner-ack <exact-ack>"
 fi
 
-printf 'ISSUE151_RECOVERY_START mode=%s target=%s candidate=%s previous=%s\n' \
-  "$MODE" "$TARGET" "$EXPECTED_CANDIDATE" "$PREVIOUS_RELEASE"
+printf 'ISSUE151_RECOVERY_START mode=%s target=%s candidate=%s previous=%s reviewed_main=%s durable_hardening=PR154_MERGED\n' \
+  "$MODE" "$TARGET" "$EXPECTED_CANDIDATE" "$PREVIOUS_RELEASE" "$REVIEWED_MAIN"
 
 response_status() { printf '%s' "$1" | tail -n 1; }
 response_body() { printf '%s' "$1" | sed '$d'; }
@@ -185,10 +187,28 @@ assert_target_metadata_normalized() {
 ###############################################################################
 
 CURRENT_STAGE="preflight-source-target"
+incident_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/commits/$TARGET")" || stop "GitHub incident commit lookup failed"
+[ "$(printf '%s' "$incident_json" | jq -er '.sha')" = "$TARGET" ] || stop "incident commit SHA drift"
+[ "$(printf '%s' "$incident_json" | jq -er '.commit.tree.sha')" = "$EXPECTED_TREE" ] || stop "incident commit tree drift"
+
 main_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
   "https://api.github.com/repos/$REPO_SLUG/branches/main")" || stop "GitHub main lookup failed"
-[ "$(printf '%s' "$main_json" | jq -er '.commit.sha')" = "$TARGET" ] || stop "main SHA drift"
-[ "$(printf '%s' "$main_json" | jq -er '.commit.commit.tree.sha')" = "$EXPECTED_TREE" ] || stop "main tree drift"
+current_main="$(printf '%s' "$main_json" | jq -er '.commit.sha')"
+current_main_tree="$(printf '%s' "$main_json" | jq -er '.commit.commit.tree.sha')"
+[ "$current_main" = "$REVIEWED_MAIN" ] || stop "current main SHA drift from reviewed recovery base"
+[ "$current_main_tree" = "$REVIEWED_MAIN_TREE" ] || stop "current main tree drift from reviewed recovery base"
+
+ancestry_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/compare/$TARGET...$current_main")" || stop "GitHub incident ancestry lookup failed"
+printf '%s' "$ancestry_json" | jq -e --arg target "$TARGET" --arg current "$current_main" '
+  (.base_commit.sha == $target)
+  and (.merge_base_commit.sha == $target)
+  and (.head_commit.sha == $current)
+  and (.status == "ahead")
+  and (.ahead_by >= 1)
+  and (.behind_by == 0)
+' >/dev/null || stop "reviewed main is not a strict descendant of the incident target"
 
 [ "$(readlink "$CURRENT_LINK")" = "releases/$TARGET" ] || stop "current pointer is not exact target"
 [ -d "$TARGET_RELEASE" ] || stop "target release missing"
@@ -256,8 +276,8 @@ for forbidden_group in docker video "$BROKER_GROUP"; do
   if id -nG "$AGENT_USER" | tr ' ' '\n' | grep -qx "$forbidden_group"; then stop "main agent persistent group boundary violated: $forbidden_group"; fi
 done
 
-printf 'ISSUE151_RECOVERY_PREAUTH_PASS target=%s candidate=%s current=%s release_mode=%s broker_entry_mode=%s broker_result=exit-code broker_exec_status=200 broker_nrestarts=%s agent_pid=%s web_pid=%s host=200 docker=503 logs=503 events=503 quick=200 terminal=absent access=302\n' \
-  "$TARGET" "$EXPECTED_CANDIDATE" "$TARGET" "$release_mode" "$broker_entry_mode" "$broker_nrestarts" "$agent_pid" "$web_pid"
+printf 'ISSUE151_RECOVERY_PREAUTH_PASS target=%s candidate=%s current=%s reviewed_main=%s release_mode=%s broker_entry_mode=%s broker_result=exit-code broker_exec_status=200 broker_nrestarts=%s agent_pid=%s web_pid=%s host=200 docker=503 logs=503 events=503 quick=200 terminal=absent access=302 durable_hardening=PR154_MERGED\n' \
+  "$TARGET" "$EXPECTED_CANDIDATE" "$TARGET" "$REVIEWED_MAIN" "$release_mode" "$broker_entry_mode" "$broker_nrestarts" "$agent_pid" "$web_pid"
 
 if [ "$MODE" = preflight ]; then
   echo "ISSUE151_RECOVERY_PREFLIGHT_ONLY_STOP PRODUCTION_MUTATION=NO AUTHORIZATION_CONSUMED=NO BROKER_STOP=NO OWNERSHIP_MUTATION=NO PERMISSION_MUTATION=NO BROKER_START=NO AGENT_RESTART=NO WEB_RESTART=NO SYSTEMD_UNIT_MUTATION=NO IDENTITY_GROUP_MUTATION=NO CLOUDFLARE_MUTATION=NO TERMINAL_MUTATION=NO EVENTS_MUTATION=NO ACTIONS_MUTATION=NO"
@@ -292,7 +312,7 @@ assert_target_metadata_normalized
 verify_target_manifest || stop "target manifest failed after metadata normalization"
 [ "$(sudo sha256sum "$MANIFEST_MARKER" | awk '{print $1}')" = "$EXPECTED_MANIFEST_SHA" ] || stop "manifest digest changed after metadata normalization"
 [ "$(sudo sha256sum "$BROKER_ENTRY" | awk '{print $1}')" = "$EXPECTED_BROKER_ENTRY_SHA" ] || stop "broker entry digest changed after metadata normalization"
-echo "ISSUE151_RECOVERY_METADATA_PASS owner=root:root directories=0755 files=0644 manifest_marker=0600 candidate=$EXPECTED_CANDIDATE"
+echo "ISSUE151_RECOVERY_METADATA_PASS owner=root:root directories=0755 files=0644 manifest_marker=0600 candidate=$EXPECTED_CANDIDATE canonical_hardening=PR154_MERGED"
 
 ###############################################################################
 # 5. Start broker once after metadata PASS, then bounded broker acceptance.
@@ -420,5 +440,5 @@ access_after="$(access_probe)" || stop "final Cloudflare Access probe failed"
 printf '%s' "$access_after" | grep -q 'ISSUE151_ACCESS_CODE:302' || stop "final Cloudflare Access not 302"
 printf '%s' "$access_after" | grep -qi '^www-authenticate:.*cloudflare-access' || stop "final Cloudflare Access marker missing"
 
-echo "ISSUE151_RECOVERY_PASS target=$TARGET candidate=$EXPECTED_CANDIDATE previous=$PREVIOUS_RELEASE current=$TARGET broker_pid=$new_broker_pid agent_pid=$new_agent_pid web_pid=$new_web_pid host=200 docker=200 homeassistant_logs=200 prometheus_logs=200 events=503 quick=200 terminal=absent access=302"
-echo "ISSUE151_RECOVERY_FINAL permission_recovery=YES release_owner=root:root release_directories=0755 release_files=0644 manifest_marker=0600 broker_loop_quiesced=YES broker_start=ONE agent_restart=ONE web_restart=ONE systemd_unit_mutation=NO identity_group_mutation=NO cloudflare=UNCHANGED terminal=absent events=503 durable_release_controller_fix=PENDING"
+echo "ISSUE151_RECOVERY_PASS target=$TARGET candidate=$EXPECTED_CANDIDATE previous=$PREVIOUS_RELEASE current=$TARGET reviewed_main=$REVIEWED_MAIN broker_pid=$new_broker_pid agent_pid=$new_agent_pid web_pid=$new_web_pid host=200 docker=200 homeassistant_logs=200 prometheus_logs=200 events=503 quick=200 terminal=absent access=302"
+echo "ISSUE151_RECOVERY_FINAL permission_recovery=YES release_owner=root:root release_directories=0755 release_files=0644 manifest_marker=0600 broker_loop_quiesced=YES broker_start=ONE agent_restart=ONE web_restart=ONE systemd_unit_mutation=NO identity_group_mutation=NO cloudflare=UNCHANGED terminal=absent events=503 durable_release_controller_fix=MERGED_PR_154 reviewed_main=$REVIEWED_MAIN"
