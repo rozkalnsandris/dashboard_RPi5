@@ -37,7 +37,7 @@ afterEach(async () => {
 describe("bounded Docker Engine event reader", () => {
   it("uses only the fixed GET events path and parses chunked JSON event frames", async () => {
     const socket = await tempSocket("docker.sock");
-    const requests: Array<{ method?: string; url?: string }> = [];
+    const requests: Array<{ method: string | undefined; url: string | undefined }> = [];
     const fakeDocker = createServer((incoming, response) => {
       requests.push({ method: incoming.method, url: incoming.url });
       const first = JSON.stringify({ Type: "container", Action: "start", n: 1 });
