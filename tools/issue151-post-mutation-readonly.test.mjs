@@ -86,3 +86,12 @@ test("diagnostic records Node import.meta.main compatibility boundary", async ()
   assert.ok(text.includes('[ "$node_major" -eq 24 ] && [ "$node_minor" -ge 2 ]'));
   assert.ok(text.includes("import_meta_main_supported"));
 });
+
+test("diagnostic proves installed units and Cloudflare boundary read-only", async () => {
+  const text = await source();
+  assert.ok(text.includes('BROKER_UNIT_SOURCE="$TARGET_RELEASE/ops/systemd/dashboard-rpi5-docker-broker.service"'));
+  assert.ok(text.includes('installed unit drift'));
+  assert.ok(text.includes('access_probe()'));
+  assert.ok(text.includes('ISSUE151_ACCESS_CODE'));
+  assert.ok(text.includes('cloudflare-access'));
+});
