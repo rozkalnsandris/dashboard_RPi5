@@ -1,4 +1,5 @@
 import { buildAgentApp } from "./app.js";
+import { readLiveRecentDockerEvents } from "./docker-events-live.js";
 import { readLiveLogSnapshot } from "./docker-logs-live.js";
 import {
   QUICK_COMMANDS_ENV,
@@ -27,6 +28,7 @@ export async function startAgent(options: StartAgentOptions = {}) {
   await prepareSocketPath(socketPath);
 
   const { app, operationRegistry } = buildAgentApp({
+    dockerEventsReader: (signal) => readLiveRecentDockerEvents(signal),
     logsReader: (sourceId, range, signal) => readLiveLogSnapshot(sourceId, range, signal),
   });
   if (areQuickCommandsEnabled(quickCommandsSetting)) {
