@@ -85,6 +85,8 @@ test("diagnostic records Node import.meta.main compatibility boundary", async ()
   assert.ok(text.includes("node_import_meta_main"));
   assert.ok(text.includes('[ "$node_major" -eq 24 ] && [ "$node_minor" -ge 2 ]'));
   assert.ok(text.includes("import_meta_main_supported"));
+  assert.ok(text.includes('NODE_BIN="/usr/bin/node"'));
+  assert.ok(text.includes('node_version="$("$NODE_BIN" -p \'process.versions.node\')"'));
 });
 
 test("diagnostic proves installed units and Cloudflare boundary read-only", async () => {
