@@ -55,3 +55,12 @@ The broker source uses `import.meta.main`. Node documents this API as added in N
 ## Production rule after the consumed authorization
 
 The existing #151 owner authorization is consumed. The old helper must not be retried. After the read-only continuation classifies the broker state, any remaining mutation must be encoded in a new immutable helper/source revision and requires a new explicit owner authorization.
+
+## References
+
+Primary documentation used for this continuation design:
+
+- systemd service startup semantics (`Type=exec`, readiness and socket activation): https://man7.org/linux/man-pages/man5/systemd.service.5.html
+- systemd execution environment (`RuntimeDirectory=` / `RuntimeDirectoryMode=`): https://man7.org/linux/man-pages/man5/systemd.exec.5.html
+- Node.js `net.Server.listen()` and the `listening` event: https://nodejs.org/download/release/latest-v24.x/docs/api/net.html
+- Node.js ESM `import.meta.main` version history: https://nodejs.org/download/release/latest-v24.x/docs/api/esm.html
