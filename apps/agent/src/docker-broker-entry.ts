@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -17,6 +17,18 @@ interface StartDockerBrokerOptions {
   engineReader?: DockerEngineReader;
 }
 
+export function isDirectCliInvocation(
+  invokedPath: string | undefined = process.argv[1],
+  moduleUrl: string = import.meta.url,
+) {
+  if (invokedPath === undefined) return false;
+  try {
+    return realpathSync(invokedPath) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
 export async function startDockerBroker(options: StartDockerBrokerOptions = {}) {
   const socketPath =
     options.socketPath ??
@@ -29,14 +41,14 @@ export async function startDockerBroker(options: StartDockerBrokerOptions = {}) 
   });
 
   try {
-    await new Promise<void>((resolveListening, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => {
         server.off("listening", onListening);
         reject(error);
       };
       const onListening = () => {
         server.off("error", onError);
-        resolveListening();
+        resolve();
       };
       server.once("error", onError);
       server.once("listening", onListening);
@@ -49,7 +61,7 @@ export async function startDockerBroker(options: StartDockerBrokerOptions = {}) 
     });
     await secureSocketPath(socketPath);
   } catch (error: unknown) {
-    await new Promise<void>((resolveClose) => server.close(() => resolveClose())).catch(() => undefined);
+    await new Promise<void>((resolve) => server.close(() => resolve())).catch(() => undefined);
     throw error;
   }
 
@@ -70,8 +82,7 @@ async function runFromCli() {
   process.once("SIGINT", close);
 }
 
-const invokedPath = process.argv[1] === undefined ? "" : resolve(process.argv[1]);
-if (invokedPath === fileURLToPath(import.meta.url)) {
+if (isDirectCliInvocation()) {
   void runFromCli().catch(() => {
     console.error("dashboard-rpi5-docker-broker failed to start");
     process.exitCode = 1;
