@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants, createReadStream } from "node:fs";
 import {
+  chmod,
+  chown,
   copyFile,
   lstat,
   mkdir,
@@ -33,6 +35,11 @@ const MANIFEST_MARKER = ".dashboard-production-candidate.json";
 const FULL_SHA = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
+const RELEASE_DIRECTORY_MODE = 0o755;
+const RELEASE_REGULAR_FILE_MODE = 0o644;
+const MANIFEST_MARKER_MODE = 0o600;
+const ROOT_UID = 0;
+const ROOT_GID = 0;
 
 function assertObject(value, label) {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -105,6 +112,17 @@ export function validateReleaseActivationContract(contractValue) {
   }
   if (contract.releaseDirectory !== "exact-source-sha" || contract.currentLinkTargetStyle !== "relative-release-path") {
     throw new Error("release activation path style mismatch");
+  }
+  const releaseMetadata = assertObject(contract.releaseMetadata, "release metadata contract");
+  if (
+    releaseMetadata.owner !== "root" ||
+    releaseMetadata.group !== "root" ||
+    releaseMetadata.directoryMode !== "0755" ||
+    releaseMetadata.regularFileMode !== "0644" ||
+    releaseMetadata.manifestMarkerMode !== "0600" ||
+    releaseMetadata.callerUmaskIndependent !== true
+  ) {
+    throw new Error("release activation metadata invariant mismatch");
   }
   if (
     contract.atomicPointerSwap !== true ||
@@ -287,12 +305,23 @@ export async function planReleaseActivation({ activationRoot, candidateRoot, man
   };
 }
 
-async function ensureReleaseParentDirectories(releaseDir, entryPath) {
+async function normalizeInstalledReleasePath(path, mode, activationRoot) {
+  if (resolve(activationRoot) === PRODUCTION_ROOT) {
+    if (typeof process.geteuid !== "function" || process.geteuid() !== ROOT_UID) {
+      throw new Error("production release metadata normalization requires root");
+    }
+    await chown(path, ROOT_UID, ROOT_GID);
+  }
+  await chmod(path, mode);
+}
+
+async function ensureReleaseParentDirectories(releaseDir, entryPath, activationRoot) {
   const segments = entryPath.split("/").slice(0, -1);
   let current = releaseDir;
   for (const segment of segments) {
     current = resolve(current, segment);
     await ensureRealDirectory(current, `release directory ${segment}`, true);
+    await normalizeInstalledReleasePath(current, RELEASE_DIRECTORY_MODE, activationRoot);
   }
 }
 
@@ -305,12 +334,13 @@ async function copyVerifiedRelease({ activationRoot, candidateRoot, manifest }) 
   if (!isWithin(root, releaseDir)) throw new Error("release destination escaped activation root");
 
   try {
-    await mkdir(releaseDir, { mode: 0o755 });
+    await mkdir(releaseDir, { mode: RELEASE_DIRECTORY_MODE });
   } catch (error) {
     if (error?.code === "EEXIST") throw new Error("target release appeared after reviewed plan", { cause: error });
     throw error;
   }
   await ensureRealDirectory(releaseDir, "target release directory");
+  await normalizeInstalledReleasePath(releaseDir, RELEASE_DIRECTORY_MODE, activationRoot);
 
   for (const rawEntry of manifest.files) {
     const entry = validateManifestEntry(rawEntry);
@@ -320,14 +350,16 @@ async function copyVerifiedRelease({ activationRoot, candidateRoot, manifest }) 
       throw new Error("manifest path escaped reviewed roots");
     }
     await verifyManifestFileAgainstEntry(sourcePath, entry);
-    await ensureReleaseParentDirectories(releaseDir, entry.path);
+    await ensureReleaseParentDirectories(releaseDir, entry.path, activationRoot);
     await copyFile(sourcePath, destinationPath, constants.COPYFILE_EXCL);
+    await normalizeInstalledReleasePath(destinationPath, RELEASE_REGULAR_FILE_MODE, activationRoot);
     await verifyManifestFileAgainstEntry(destinationPath, entry);
   }
 
   await verifyProductionCandidateManifest({ rootDir: releaseDir, sourceSha: manifest.sourceSha, manifest });
   const markerPath = resolve(releaseDir, MANIFEST_MARKER);
-  await writeFile(markerPath, `${JSON.stringify(manifest)}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 });
+  await writeFile(markerPath, `${JSON.stringify(manifest)}\n`, { encoding: "utf8", flag: "wx", mode: MANIFEST_MARKER_MODE });
+  await normalizeInstalledReleasePath(markerPath, MANIFEST_MARKER_MODE, activationRoot);
   await readInstalledManifest(activationRoot, manifest.sourceSha);
 }
 
