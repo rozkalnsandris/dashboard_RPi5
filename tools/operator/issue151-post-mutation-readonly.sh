@@ -29,6 +29,12 @@ BROKER_RUNTIME_DIR="/run/dashboard-rpi5-docker-broker"
 BROKER_SOCKET="$BROKER_RUNTIME_DIR/broker.sock"
 AGENT_SOCKET="/run/dashboard-rpi5/agent.sock"
 TERMINAL_SOCKET="/run/dashboard-rpi5-terminal.sock"
+BROKER_UNIT="/etc/systemd/system/$BROKER_SERVICE"
+AGENT_UNIT="/etc/systemd/system/$AGENT_SERVICE"
+WEB_UNIT="/etc/systemd/system/$WEB_SERVICE"
+BROKER_UNIT_SOURCE="$TARGET_RELEASE/ops/systemd/dashboard-rpi5-docker-broker.service"
+AGENT_UNIT_SOURCE="$TARGET_RELEASE/ops/systemd/dashboard-rpi5-agent.service"
+WEB_UNIT_SOURCE="$TARGET_RELEASE/ops/systemd/dashboard-rpi5-web.service"
 
 CURRENT_STAGE="argument-parse"
 
@@ -59,6 +65,11 @@ unix_status_only() {
 
 privileged_socket_exists() {
   sudo test -S "$1"
+}
+
+access_probe() {
+  curl -sS --max-time 10 -D - -o /dev/null \
+    -w $'\nISSUE151_ACCESS_CODE:%{http_code}\n' https://dash.rozkalns.net/
 }
 
 wait_privileged_socket() {
@@ -129,6 +140,19 @@ sudo test -f "$MANIFEST_MARKER" || stop "manifest marker missing"
 verify_target_manifest || stop "target manifest verification failed"
 [ "$(sudo sha256sum "$BROKER_ENTRY" | awk '{print $1}')" = "$EXPECTED_BROKER_ENTRY_SHA" ] || stop "broker entry digest drift"
 metadata_pass || stop "normalized target metadata drift"
+
+for unit_pair in \
+  "$BROKER_UNIT|$BROKER_UNIT_SOURCE" \
+  "$AGENT_UNIT|$AGENT_UNIT_SOURCE" \
+  "$WEB_UNIT|$WEB_UNIT_SOURCE"; do
+  installed_unit="${unit_pair%%|*}"
+  source_unit="${unit_pair#*|}"
+  sudo test -f "$installed_unit" || stop "installed unit missing: $installed_unit"
+  sudo test -f "$source_unit" || stop "target unit source missing: $source_unit"
+  installed_sha="$(sudo sha256sum "$installed_unit" | awk '{print $1}')"
+  source_sha="$(sudo sha256sum "$source_unit" | awk '{print $1}')"
+  [ "$installed_sha" = "$source_sha" ] || stop "installed unit drift: $installed_unit"
+done
 
 node_version="$(node -p 'process.versions.node')"
 node_major="${node_version%%.*}"
@@ -253,8 +277,13 @@ quick_status="$(unix_status_only "$WEB_USER" "$AGENT_SOCKET" '/v1/quick-commands
 terminal_state="absent"
 privileged_socket_exists "$TERMINAL_SOCKET" && terminal_state="present"
 
-printf 'ISSUE151_POSTMUTATION_AGENT_WEB agent_pid=%s agent_cwd=%s web_pid=%s web_cwd=%s host=%s docker=%s logs=%s events=%s quick=%s terminal=%s\n' \
-  "$agent_pid" "$agent_cwd" "$web_pid" "$web_cwd" "$host_status" "$agent_docker_status" "$agent_logs_status" "$agent_events_status" "$quick_status" "$terminal_state"
+access_evidence="$(access_probe 2>/dev/null || true)"
+access_status="$(printf '%s' "$access_evidence" | sed -n 's/^ISSUE151_ACCESS_CODE://p' | tail -n 1)"
+access_marker="NO"
+printf '%s' "$access_evidence" | grep -qi '^www-authenticate:.*cloudflare-access' && access_marker="YES"
+
+printf 'ISSUE151_POSTMUTATION_AGENT_WEB agent_pid=%s agent_cwd=%s web_pid=%s web_cwd=%s host=%s docker=%s logs=%s events=%s quick=%s terminal=%s access=%s access_marker=%s\n' \
+  "$agent_pid" "$agent_cwd" "$web_pid" "$web_cwd" "$host_status" "$agent_docker_status" "$agent_logs_status" "$agent_events_status" "$quick_status" "$terminal_state" "$access_status" "$access_marker"
 
 ###############################################################################
 # 4. Bounded journal evidence. journalctl is read-only.
