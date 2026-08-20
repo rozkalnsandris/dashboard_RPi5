@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HELPER = resolve(ROOT, "tools/operator/issue151-issue127-permission-recovery.sh");
 const TARGET = "4295c23de5634dcb86b5fe9f57be92416eb9a75b";
+const REVIEWED_MAIN = "6a08a1ff9756ef145ec698b93890011999640f56";
+const REVIEWED_MAIN_TREE = "094a89cd417eef8c3f572930728a1b7b43852e2b";
 const CANDIDATE = "f08677aef82d0213422a171b51efd46fa7db57b29385fdd9c5d185f2c7b83eb0";
 const ACK = "I_AUTHORIZE_ISSUE151_ISSUE127_PERMISSION_RECOVERY_4295C23DE5634DCB86B5FE9F57BE92416EB9A75B";
 
@@ -24,15 +26,33 @@ test("#151 recovery helper is valid Bash", () => {
   assert.equal(result.status, 0, result.stderr);
 });
 
-test("#151 helper binds the exact failed #127 target and owner gate", async () => {
+test("#151 helper binds the exact failed #127 target, reviewed main and owner gate", async () => {
   const source = await helperSource();
   assert.match(source, new RegExp(`TARGET="${TARGET}"`, "u"));
+  assert.match(source, new RegExp(`REVIEWED_MAIN="${REVIEWED_MAIN}"`, "u"));
+  assert.match(source, new RegExp(`REVIEWED_MAIN_TREE="${REVIEWED_MAIN_TREE}"`, "u"));
   assert.match(source, new RegExp(`EXPECTED_CANDIDATE="${CANDIDATE}"`, "u"));
   assert.ok(source.includes(`EXPECTED_OWNER_ACK="${ACK}"`));
   assert.ok(source.includes('PREVIOUS_RELEASE="15f44e3a6fdda8f2e97b26501a283f6bba915e86"'));
   assert.ok(source.includes('EXPECTED_BROKER_ENTRY_SHA="a9fdbf13c704b0c9bc1d03ec5698198630a967d282644fb3440dfab2ff8de05d"'));
   assert.ok(source.includes('EXPECTED_AGENT_PID="3482974"'));
   assert.ok(source.includes('EXPECTED_WEB_PID="3378022"'));
+});
+
+test("preflight verifies immutable incident commit and exact reviewed-main ancestry", async () => {
+  const source = await helperSource();
+  assert.ok(source.includes('/commits/$TARGET'));
+  assert.ok(source.includes('/branches/main'));
+  assert.ok(source.includes('/compare/$TARGET...$current_main'));
+  assert.ok(source.includes('incident commit tree drift'));
+  assert.ok(source.includes('[ "$current_main" = "$REVIEWED_MAIN" ] || stop "current main SHA drift from reviewed recovery base"'));
+  assert.ok(source.includes('[ "$current_main_tree" = "$REVIEWED_MAIN_TREE" ] || stop "current main tree drift from reviewed recovery base"'));
+  assert.ok(source.includes('(.base_commit.sha == $target)'));
+  assert.ok(source.includes('(.merge_base_commit.sha == $target)'));
+  assert.ok(source.includes('(.head_commit.sha == $current)'));
+  assert.ok(source.includes('(.status == "ahead")'));
+  assert.ok(source.includes('(.behind_by == 0)'));
+  assert.equal(source.includes('= "$TARGET" ] || stop "main SHA drift"'), false);
 });
 
 test("preflight proves the observed CHDIR incident and stops before mutation", async () => {
@@ -118,10 +138,12 @@ test("recovery preserves #127 trust boundaries and #126/terminal fail-closed sta
   assert.ok(source.includes('proc_has_gid "$new_agent_pid" "$broker_gid"'));
 });
 
-test("post-mutation failure policy has no automatic repair path", async () => {
+test("post-mutation policy remains fail-closed and #154 hardening is recorded as merged", async () => {
   const source = await helperSource();
   assert.ok(source.includes("AUTO_RETRY=NO AUTO_ROLLBACK=NO AUTO_CLEANUP=NO"));
   assert.ok(source.includes("ALTERNATE_PERMISSION_CHANGE=NO"));
+  assert.ok(source.includes("durable_release_controller_fix=MERGED_PR_154"));
+  assert.equal(source.includes("durable_release_controller_fix=PENDING"), false);
   for (const forbidden of [
     "reset-failed",
     "daemon-reload",
