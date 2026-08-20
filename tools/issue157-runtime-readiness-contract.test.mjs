@@ -27,7 +27,7 @@ test("Node v24 source contract stays lockfile-aligned while CI pins the reviewed
 
 test("broker entry no longer depends on Node 24.2-only import.meta.main", () => {
   assert.doesNotMatch(brokerEntry, /import\.meta\.main/u);
-  assert.match(brokerEntry, /fileURLToPath\(import\.meta\.url\)/u);
+  assert.match(brokerEntry, /moduleUrl: string = import\.meta\.url/u);
   assert.match(brokerEntry, /process\.argv\[1\]/u);
   assert.match(brokerEntry, /realpathSync\(invokedPath\)/u);
   assert.match(brokerEntry, /realpathSync\(fileURLToPath\(moduleUrl\)\)/u);
