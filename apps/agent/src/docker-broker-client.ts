@@ -4,10 +4,12 @@ import { DOCKER_MAX_RESPONSE_BYTES, isDockerContainerId } from "./docker-api.js"
 import {
   DEFAULT_DOCKER_BROKER_SOCKET_PATH,
   DOCKER_BROKER_CONTAINERS_PATH,
+  DOCKER_BROKER_EVENTS_MAX_ITEMS,
   DOCKER_BROKER_LOG_MAX_RESPONSE_BYTES,
   DOCKER_BROKER_PING_PATH,
   DOCKER_BROKER_SOCKET_ENV,
   DOCKER_BROKER_VERSION_PATH,
+  dockerBrokerEventsPath,
   dockerBrokerInspectPath,
   dockerBrokerLogsPath,
   dockerBrokerStatsPath,
@@ -40,7 +42,13 @@ export interface DockerBrokerLogTransport {
   ): Promise<Buffer>;
 }
 
-export type DockerBrokerFullTransport = DockerBrokerTransport & DockerBrokerLogTransport;
+export interface DockerBrokerEventTransport {
+  readEvents(since: number, until: number, signal?: AbortSignal): Promise<unknown[]>;
+}
+
+export type DockerBrokerFullTransport = DockerBrokerTransport &
+  DockerBrokerLogTransport &
+  DockerBrokerEventTransport;
 
 interface DockerBrokerTransportOptions {
   socketPath?: string;
@@ -191,6 +199,19 @@ export function createDockerBrokerTransport(
         requestTimeoutMs,
         Math.min(maxResponseBytes, DOCKER_BROKER_LOG_MAX_RESPONSE_BYTES),
       );
+    },
+    async readEvents(since: number, until: number, signal?: AbortSignal): Promise<unknown[]> {
+      let path: string;
+      try {
+        path = dockerBrokerEventsPath(since, until);
+      } catch {
+        throw new DockerBrokerRequestError();
+      }
+      const value = await get(path, signal);
+      if (!Array.isArray(value) || value.length > DOCKER_BROKER_EVENTS_MAX_ITEMS) {
+        throw new DockerBrokerRequestError();
+      }
+      return value;
     },
   };
 }
