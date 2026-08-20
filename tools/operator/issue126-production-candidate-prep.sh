@@ -8,6 +8,8 @@ SOURCE_PR="160"
 SOURCE_PR_HEAD="a44e95b4b480e29b8d537130903869c00fc3ef0d"
 SOURCE_CI_RUN_ID="32407296336"
 SOURCE_CI_RUN_NUMBER="368"
+FIX_PR="162"
+FIX_BASE="1a0f6f6788fdcf8719c4c4d0b1976eb406f9fe3b"
 EXPECTED_CURRENT="4295c23de5634dcb86b5fe9f57be92416eb9a75b"
 EXPECTED_CURRENT_CANDIDATE="f08677aef82d0213422a171b51efd46fa7db57b29385fdd9c5d185f2c7b83eb0"
 REPO_SLUG="rozkalnsandris/dashboard_RPi5"
@@ -63,11 +65,14 @@ stage="github-source-gate"
 main_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
   "https://api.github.com/repos/$REPO_SLUG/branches/main")" || blocked "GitHub main lookup failed"
 main_sha="$(printf '%s' "$main_json" | jq -er '.commit.sha')"
-main_tree="$(printf '%s' "$main_json" | jq -er '.commit.commit.tree.sha')"
 main_verified="$(printf '%s' "$main_json" | jq -er '.commit.commit.verification.verified')"
-[ "$main_sha" = "$TARGET" ] || blocked "main drift expected=$TARGET actual=$main_sha"
-[ "$main_tree" = "$TARGET_TREE" ] || blocked "main tree drift expected=$TARGET_TREE actual=$main_tree"
 [ "$main_verified" = true ] || blocked "main signature is not verified"
+
+target_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/commits/$TARGET")" || blocked "candidate target commit lookup failed"
+[ "$(printf '%s' "$target_json" | jq -er '.sha')" = "$TARGET" ] || blocked "candidate target SHA drift"
+[ "$(printf '%s' "$target_json" | jq -er '.commit.tree.sha')" = "$TARGET_TREE" ] || blocked "candidate target tree drift"
+[ "$(printf '%s' "$target_json" | jq -er '.commit.verification.verified')" = true ] || blocked "candidate target signature is not verified"
 
 pr_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
   "https://api.github.com/repos/$REPO_SLUG/pulls/$SOURCE_PR")" || blocked "PR160 lookup failed"
@@ -78,7 +83,7 @@ pr_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-
 
 head_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
   "https://api.github.com/repos/$REPO_SLUG/commits/$SOURCE_PR_HEAD")" || blocked "PR160 head commit lookup failed"
-[ "$(printf '%s' "$head_json" | jq -er '.commit.tree.sha')" = "$TARGET_TREE" ] || blocked "PR160 head tree differs from merged main tree"
+[ "$(printf '%s' "$head_json" | jq -er '.commit.tree.sha')" = "$TARGET_TREE" ] || blocked "PR160 head tree differs from candidate target tree"
 
 run_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
   "https://api.github.com/repos/$REPO_SLUG/actions/runs/$SOURCE_CI_RUN_ID")" || blocked "CI368 lookup failed"
@@ -93,7 +98,29 @@ for job_name in "check" "terminal-native (x64)" "terminal-native (arm64)"; do
   count="$(printf '%s' "$jobs_json" | jq -er --arg name "$job_name" '[.jobs[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length')"
   [ "$count" -eq 1 ] || blocked "required CI368 job not success: $job_name count=$count"
 done
-printf 'ISSUE126_SOURCE_GATE_PASS main=%s tree=%s pr160=MERGED ci368=SUCCESS\n' "$TARGET" "$TARGET_TREE"
+
+fix_pr_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/pulls/$FIX_PR")" || blocked "PR162 lookup failed"
+[ "$(printf '%s' "$fix_pr_json" | jq -er '.state')" = closed ] || blocked "PR162 not closed"
+[ "$(printf '%s' "$fix_pr_json" | jq -er '.merged')" = true ] || blocked "PR162 not merged"
+[ "$(printf '%s' "$fix_pr_json" | jq -er '.base.sha')" = "$FIX_BASE" ] || blocked "PR162 base drift"
+[ "$(printf '%s' "$fix_pr_json" | jq -er '.merge_commit_sha')" = "$main_sha" ] || blocked "live main is not PR162 squash merge"
+
+main_commit_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/commits/$main_sha")" || blocked "live main commit lookup failed"
+[ "$(printf '%s' "$main_commit_json" | jq -er '.parents | length')" -eq 1 ] || blocked "live main must have exactly one parent"
+[ "$(printf '%s' "$main_commit_json" | jq -er '.parents[0].sha')" = "$FIX_BASE" ] || blocked "live main parent drift"
+
+compare_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/compare/$FIX_BASE...$main_sha")" || blocked "PR162 compare lookup failed"
+[ "$(printf '%s' "$compare_json" | jq -er '.status')" = ahead ] || blocked "PR162 compare status drift"
+[ "$(printf '%s' "$compare_json" | jq -er '.ahead_by')" -eq 1 ] || blocked "PR162 compare must be exactly one squash commit"
+[ "$(printf '%s' "$compare_json" | jq -er '.behind_by')" -eq 0 ] || blocked "PR162 compare unexpectedly behind"
+expected_fix_files='["docs/ISSUE126_POST_MERGE_CANDIDATE_GATE_FIX.md","docs/ISSUE126_PRODUCTION_CANDIDATE_PREP.md","tools/issue126-production-candidate-prep-helper.test.mjs","tools/operator/issue126-production-candidate-prep.sh"]'
+actual_fix_files="$(printf '%s' "$compare_json" | jq -c '[.files[].filename] | sort')"
+[ "$actual_fix_files" = "$expected_fix_files" ] || blocked "PR162 changed-file boundary drift: $actual_fix_files"
+printf 'ISSUE126_SOURCE_GATE_PASS target=%s tree=%s pr160=MERGED ci368=SUCCESS live_main=%s pr162=MERGED parent=%s\n' \
+  "$TARGET" "$TARGET_TREE" "$main_sha" "$FIX_BASE"
 
 stage="production-readonly-preflight"
 current="$(readlink "$PROD_ROOT/current")" || blocked "current pointer unreadable"

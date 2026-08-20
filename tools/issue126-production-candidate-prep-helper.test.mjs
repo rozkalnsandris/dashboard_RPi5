@@ -14,15 +14,34 @@ test("#126 candidate-prep helper is valid Bash", () => {
   assert.equal(result.status, 0, result.stderr);
 });
 
-test("helper binds exact merged #160 source tree and CI evidence", () => {
+test("helper keeps the immutable #160 candidate target and CI evidence", () => {
   assert.match(helper, /TARGET="a39fc7a9873eedb58cfa49568f9b2e05483cf7c2"/u);
   assert.match(helper, /TARGET_TREE="bd2fa68711b1cf4617088a18c524e3c60d427152"/u);
   assert.match(helper, /SOURCE_PR="160"/u);
   assert.match(helper, /SOURCE_PR_HEAD="a44e95b4b480e29b8d537130903869c00fc3ef0d"/u);
   assert.match(helper, /SOURCE_CI_RUN_ID="32407296336"/u);
   assert.match(helper, /SOURCE_CI_RUN_NUMBER="368"/u);
-  assert.match(helper, /PR160 head tree differs from merged main tree/u);
+  assert.match(helper, /candidate target tree drift/u);
+  assert.match(helper, /candidate target signature is not verified/u);
+  assert.match(helper, /PR160 head tree differs from candidate target tree/u);
   assert.match(helper, /ISSUE126_SOURCE_GATE_PASS/u);
+});
+
+test("post-merge gate accepts only the reviewed #162 squash descendant", () => {
+  assert.match(helper, /FIX_PR="162"/u);
+  assert.match(helper, /FIX_BASE="1a0f6f6788fdcf8719c4c4d0b1976eb406f9fe3b"/u);
+  assert.match(helper, /PR162 not merged/u);
+  assert.match(helper, /PR162 base drift/u);
+  assert.match(helper, /live main is not PR162 squash merge/u);
+  assert.match(helper, /live main must have exactly one parent/u);
+  assert.match(helper, /live main parent drift/u);
+  assert.match(helper, /PR162 compare must be exactly one squash commit/u);
+  assert.match(helper, /PR162 changed-file boundary drift/u);
+  assert.match(helper, /docs\/ISSUE126_POST_MERGE_CANDIDATE_GATE_FIX\.md/u);
+  assert.match(helper, /docs\/ISSUE126_PRODUCTION_CANDIDATE_PREP\.md/u);
+  assert.match(helper, /tools\/issue126-production-candidate-prep-helper\.test\.mjs/u);
+  assert.match(helper, /tools\/operator\/issue126-production-candidate-prep\.sh/u);
+  assert.doesNotMatch(helper, /main drift expected=\$TARGET/u);
 });
 
 test("helper binds the accepted production release without hard-coding mutable PIDs", () => {
