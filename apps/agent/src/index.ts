@@ -1,4 +1,5 @@
 import { buildAgentApp } from "./app.js";
+import { isDirectCliInvocation } from "./cli-entry.js";
 import { readLiveLogSnapshot } from "./docker-logs-live.js";
 import {
   QUICK_COMMANDS_ENV,
@@ -63,7 +64,7 @@ async function runFromCli() {
   process.once("SIGINT", () => void close());
 }
 
-if (import.meta.main) {
+if (isDirectCliInvocation()) {
   void runFromCli().catch(() => {
     console.error("dashboard-rpi5-agent failed to start");
     process.exitCode = 1;
