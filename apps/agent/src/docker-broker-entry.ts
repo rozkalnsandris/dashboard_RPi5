@@ -1,3 +1,6 @@
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
   createDockerBrokerServer,
   createDockerEngineReader,
@@ -26,14 +29,14 @@ export async function startDockerBroker(options: StartDockerBrokerOptions = {}) 
   });
 
   try {
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolveListening, reject) => {
       const onError = (error: Error) => {
         server.off("listening", onListening);
         reject(error);
       };
       const onListening = () => {
         server.off("error", onError);
-        resolve();
+        resolveListening();
       };
       server.once("error", onError);
       server.once("listening", onListening);
@@ -46,7 +49,7 @@ export async function startDockerBroker(options: StartDockerBrokerOptions = {}) 
     });
     await secureSocketPath(socketPath);
   } catch (error: unknown) {
-    await new Promise<void>((resolve) => server.close(() => resolve())).catch(() => undefined);
+    await new Promise<void>((resolveClose) => server.close(() => resolveClose())).catch(() => undefined);
     throw error;
   }
 
@@ -67,7 +70,8 @@ async function runFromCli() {
   process.once("SIGINT", close);
 }
 
-if (import.meta.main) {
+const invokedPath = process.argv[1] === undefined ? "" : resolve(process.argv[1]);
+if (invokedPath === fileURLToPath(import.meta.url)) {
   void runFromCli().catch(() => {
     console.error("dashboard-rpi5-docker-broker failed to start");
     process.exitCode = 1;
