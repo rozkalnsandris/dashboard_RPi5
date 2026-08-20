@@ -6,6 +6,7 @@
     "platform": "linux",
     "arch": "arm64",
     "nodeMajor": 24,
+    "nodeMinimum": "24.2.0",
     "nodeExecPath": "/usr/bin/node",
     "initComm": "systemd"
   },
