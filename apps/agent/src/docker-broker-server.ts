@@ -19,6 +19,7 @@ import {
   type DockerBrokerLogSource,
   type DockerBrokerRoute,
 } from "./docker-broker-protocol.js";
+import { createDockerEventReader, type DockerEventReader } from "./docker-broker-events.js";
 
 export const DOCKER_BROKER_SERVICE_NAME = "dashboard-rpi5-docker-broker" as const;
 
@@ -320,6 +321,7 @@ export function createDockerLogReader(options: DockerLogReaderOptions = {}): Doc
 interface DockerBrokerServerOptions {
   engineReader?: DockerEngineReader;
   logReader?: DockerLogReader;
+  eventReader?: DockerEventReader;
   maxConcurrentRequests?: number;
 }
 
@@ -368,6 +370,7 @@ async function dispatchRoute(
   route: DockerBrokerRoute,
   engineReader: DockerEngineReader,
   logReader: DockerLogReader,
+  eventReader: DockerEventReader,
   signal: AbortSignal,
 ): Promise<unknown | Buffer> {
   switch (route.kind) {
@@ -386,6 +389,8 @@ async function dispatchRoute(
       return engineReader.statsContainer(route.id, signal);
     case "logs":
       return logReader.readLogs(route.source, route.range, signal);
+    case "events":
+      return eventReader.readEvents(route.since, route.until, signal);
   }
 }
 
@@ -394,6 +399,7 @@ export function createDockerBrokerServer(
 ): Server {
   const engineReader = options.engineReader ?? createDockerEngineReader();
   const logReader = options.logReader ?? createDockerLogReader();
+  const eventReader = options.eventReader ?? createDockerEventReader();
   const maxConcurrentRequests = validatePositiveBound(
     options.maxConcurrentRequests ?? DOCKER_BROKER_MAX_CONCURRENT_REQUESTS,
   );
@@ -420,7 +426,7 @@ export function createDockerBrokerServer(
         sendJson(
           response,
           200,
-          await dispatchRoute(route, engineReader, logReader, AbortSignal.timeout(500)),
+          await dispatchRoute(route, engineReader, logReader, eventReader, AbortSignal.timeout(500)),
         );
         return;
       }
@@ -435,7 +441,13 @@ export function createDockerBrokerServer(
       incoming.once("aborted", abort);
 
       try {
-        const value = await dispatchRoute(route, engineReader, logReader, controller.signal);
+        const value = await dispatchRoute(
+          route,
+          engineReader,
+          logReader,
+          eventReader,
+          controller.signal,
+        );
         if (!response.writableEnded) {
           if (Buffer.isBuffer(value)) sendLogBody(response, value);
           else sendJson(response, 200, value);
