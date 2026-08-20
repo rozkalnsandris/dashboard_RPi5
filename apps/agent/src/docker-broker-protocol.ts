@@ -6,6 +6,9 @@ export const DOCKER_BROKER_HEALTH_PATH = "/v1/health" as const;
 export const DOCKER_BROKER_PING_PATH = "/v1/docker/ping" as const;
 export const DOCKER_BROKER_VERSION_PATH = "/v1/docker/version" as const;
 export const DOCKER_BROKER_CONTAINERS_PATH = "/v1/docker/containers" as const;
+export const DOCKER_BROKER_EVENTS_PATH = "/v1/docker/events/recent" as const;
+export const DOCKER_BROKER_EVENTS_MAX_WINDOW_SECONDS = 60 * 60;
+export const DOCKER_BROKER_EVENTS_MAX_ITEMS = 512;
 export const DOCKER_BROKER_MAX_REQUEST_URL_BYTES = 256;
 export const DOCKER_BROKER_MAX_CONCURRENT_REQUESTS = 8;
 export const DOCKER_BROKER_LOG_MAX_RESPONSE_BYTES = 512 * 1024;
@@ -32,6 +35,16 @@ function isDockerBrokerLogRange(value: string): value is DockerBrokerLogRange {
   return (DOCKER_BROKER_LOG_RANGES as readonly string[]).includes(value);
 }
 
+function validEventsWindow(since: number, until: number): boolean {
+  return (
+    Number.isSafeInteger(since) &&
+    Number.isSafeInteger(until) &&
+    since >= 0 &&
+    until >= since &&
+    until - since <= DOCKER_BROKER_EVENTS_MAX_WINDOW_SECONDS
+  );
+}
+
 export type DockerBrokerRoute =
   | { kind: "health" }
   | { kind: "ping" }
@@ -39,7 +52,8 @@ export type DockerBrokerRoute =
   | { kind: "containers" }
   | { kind: "inspect"; id: string }
   | { kind: "stats"; id: string }
-  | { kind: "logs"; source: DockerBrokerLogSource; range: DockerBrokerLogRange };
+  | { kind: "logs"; source: DockerBrokerLogSource; range: DockerBrokerLogRange }
+  | { kind: "events"; since: number; until: number };
 
 export function dockerBrokerInspectPath(id: string): string {
   if (!isDockerContainerId(id)) throw new Error("invalid Docker container ID");
@@ -59,6 +73,11 @@ export function dockerBrokerLogsPath(
     throw new Error("invalid Docker log capability");
   }
   return `/v1/docker/logs/${source}/${range}`;
+}
+
+export function dockerBrokerEventsPath(since: number, until: number): string {
+  if (!validEventsWindow(since, until)) throw new Error("invalid Docker events window");
+  return `${DOCKER_BROKER_EVENTS_PATH}?since=${since}&until=${until}`;
 }
 
 export function parseDockerBrokerRoute(rawUrl: string): DockerBrokerRoute | null {
@@ -96,6 +115,13 @@ export function parseDockerBrokerRoute(rawUrl: string): DockerBrokerRoute | null
       source: logs[1] as DockerBrokerLogSource,
       range: logs[2] as DockerBrokerLogRange,
     };
+  }
+
+  const events = /^\/v1\/docker\/events\/recent\?since=(0|[1-9]\d*)&until=(0|[1-9]\d*)$/.exec(rawUrl);
+  if (events !== null) {
+    const since = Number(events[1]);
+    const until = Number(events[2]);
+    if (validEventsWindow(since, until)) return { kind: "events", since, until };
   }
 
   return null;
