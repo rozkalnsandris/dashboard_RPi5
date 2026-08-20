@@ -8,21 +8,22 @@ This work does **not** authorize or perform production, systemd, identity, Docke
 
 ## Node runtime contract
 
-The historical broker entrypoint used `import.meta.main`. Node documents that property as available on the Node 24 line from v24.2.0, while the repository contract correctly intended to support Node 24 generally (`>=24 <25`).
+The historical broker entrypoint and the main agent entrypoint used `import.meta.main`. Node documents that property as available on the Node 24 line from v24.2.0, while the repository contract intentionally supports Node 24 generally (`>=24 <25`).
 
-#157 removes the unnecessary 24.2-only dependency instead of narrowing the whole production engine contract for one CLI-entry guard.
+#157 removes that unnecessary 24.2-only dependency instead of narrowing the whole production engine contract for CLI-entry guards.
 
 Selected contract:
 
 - package engine remains `>=24 <25`;
 - `package.json` and root `package-lock.json` engine metadata must remain identical;
-- broker CLI detection uses a compatibility-safe realpath comparison of `process.argv[1]` and `fileURLToPath(import.meta.url)` and no longer uses `import.meta.main`;
-- the realpath comparison explicitly preserves direct execution through the production `/opt/dashboard_RPi5/current -> releases/<sha>` symlink;
+- the main agent and Docker broker share one compatibility-safe CLI guard in `apps/agent/src/cli-entry.ts`;
+- the guard compares real paths for `process.argv[1]` and `fileURLToPath(import.meta.url)` and does not use `import.meta.main`;
+- realpath comparison explicitly preserves direct execution through the production `/opt/dashboard_RPi5/current -> releases/<sha>` symlink;
 - `.node-version` pins the reviewed developer/CI runtime to `24.19.0`;
 - both GitHub Actions jobs read `.node-version` rather than an independent floating `24` selector;
 - the existing production host-readiness contract continues to require Node major 24 and exact `/usr/bin/node`.
 
-This closes the source/runtime mismatch without inventing a stricter minimum that the broker no longer requires.
+This closes the known Node-v24 source/runtime mismatch without inventing a stricter minimum that the production entrypoints no longer require.
 
 Primary Node documentation used to identify the historical gap:
 
@@ -73,8 +74,9 @@ Systemd socket activation would make systemd own/bind the broker socket and pass
 Tests must preserve:
 
 - `package.json` and root `package-lock.json` Node engine metadata remain aligned;
-- broker CLI entry no longer uses `import.meta.main`;
-- direct broker execution through the production `current` symlink is recognized while imports/unrelated paths remain non-entrypoints;
+- neither the main agent entrypoint nor the broker entrypoint uses `import.meta.main`;
+- both entrypoints use the shared symlink-safe CLI guard;
+- direct execution through the production `current` symlink is recognized while imports/unrelated paths remain non-entrypoints;
 - `.node-version` pins the exact reviewed Node 24 runtime and CI consumes that file in both jobs;
 - production host readiness continues to require Node major 24 at `/usr/bin/node`;
 - broker unit remains `Type=exec` until a separately reviewed architecture change;
@@ -83,6 +85,10 @@ Tests must preserve:
 - readiness requires stable PID/restart counter + socket metadata + application probes;
 - no Docker authority is added to the main agent;
 - no terminal/events capability is activated.
+
+## Fast-track classification
+
+This is P4-class post-incident hardening under #144. It must not displace the active MVP P3 work in #126 after this PR reaches Ready.
 
 ## Production boundary
 
