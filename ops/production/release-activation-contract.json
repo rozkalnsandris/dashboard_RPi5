@@ -9,6 +9,14 @@
   "candidateManifestSchema": "dashboard-rpi5.production-candidate.v1",
   "releaseDirectory": "exact-source-sha",
   "currentLinkTargetStyle": "relative-release-path",
+  "releaseMetadata": {
+    "owner": "root",
+    "group": "root",
+    "directoryMode": "0755",
+    "regularFileMode": "0644",
+    "manifestMarkerMode": "0600",
+    "callerUmaskIndependent": true
+  },
   "atomicPointerSwap": true,
   "exclusiveApplyLock": true,
   "staleLockAutoCleanup": false,
