@@ -35,6 +35,7 @@ WEB_UNIT="/etc/systemd/system/$WEB_SERVICE"
 BROKER_UNIT_SOURCE="$TARGET_RELEASE/ops/systemd/dashboard-rpi5-docker-broker.service"
 AGENT_UNIT_SOURCE="$TARGET_RELEASE/ops/systemd/dashboard-rpi5-agent.service"
 WEB_UNIT_SOURCE="$TARGET_RELEASE/ops/systemd/dashboard-rpi5-web.service"
+NODE_BIN="/usr/bin/node"
 
 CURRENT_STAGE="argument-parse"
 
@@ -47,11 +48,12 @@ need() {
   command -v "$1" >/dev/null 2>&1 || stop "missing command: $1"
 }
 
-for command_name in curl jq node sha256sum systemctl readlink stat id grep awk sed sudo tail sleep find journalctl; do
+for command_name in curl jq sha256sum systemctl readlink stat id grep awk sed sudo tail sleep find journalctl; do
   need "$command_name"
 done
 
 [ "$(id -u)" -ne 0 ] || stop "run as normal operator, not root"
+[ -x "$NODE_BIN" ] || stop "systemd Node binary missing or non-executable: $NODE_BIN"
 [ "$#" -eq 1 ] && [ "$1" = "--read-only" ] || stop "usage: $0 --read-only"
 
 response_status() { printf '%s' "$1" | tail -n 1; }
@@ -154,7 +156,7 @@ for unit_pair in \
   [ "$installed_sha" = "$source_sha" ] || stop "installed unit drift: $installed_unit"
 done
 
-node_version="$(node -p 'process.versions.node')"
+node_version="$("$NODE_BIN" -p 'process.versions.node')"
 node_major="${node_version%%.*}"
 node_rest="${node_version#*.}"
 node_minor="${node_rest%%.*}"
