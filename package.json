@@ -16,7 +16,7 @@
     "preview:web": "npm run preview --workspace @dashboard-rpi5/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint . --max-warnings=0",
-    "test": "npm run test --workspaces --if-present && node --test tools/production-launch-preflight.test.mjs tools/production-candidate-manifest.test.mjs tools/production-smoke-contract.test.mjs tools/production-cloudflare-preflight.test.mjs tools/production-release-controller.test.mjs tools/production-host-readiness.test.mjs tools/production-runtime-smoke.test.mjs tools/issue151-issue127-permission-recovery-helper.test.mjs tools/issue151-agent-web-cutover.test.mjs",
+    "test": "npm run test --workspaces --if-present && node --test tools/production-launch-preflight.test.mjs tools/production-candidate-manifest.test.mjs tools/production-smoke-contract.test.mjs tools/production-cloudflare-preflight.test.mjs tools/production-release-controller.test.mjs tools/production-host-readiness.test.mjs tools/production-runtime-smoke.test.mjs tools/issue151-issue127-permission-recovery-helper.test.mjs tools/issue151-agent-web-cutover.test.mjs tools/issue126-production-candidate-prep-helper.test.mjs",
     "build": "npm run build --workspace @dashboard-rpi5/contracts && npm run build --workspace @dashboard-rpi5/web && npm run build --workspace @dashboard-rpi5/server && npm run build --workspace @dashboard-rpi5/agent && npm run build --workspace @dashboard-rpi5/terminal-agent",
     "test:e2e": "playwright test",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build",
