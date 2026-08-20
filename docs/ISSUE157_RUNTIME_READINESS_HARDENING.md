@@ -16,7 +16,8 @@ Selected contract:
 
 - package engine remains `>=24 <25`;
 - `package.json` and root `package-lock.json` engine metadata must remain identical;
-- broker CLI detection uses a compatibility-safe `process.argv[1]` / `fileURLToPath(import.meta.url)` comparison and no longer uses `import.meta.main`;
+- broker CLI detection uses a compatibility-safe realpath comparison of `process.argv[1]` and `fileURLToPath(import.meta.url)` and no longer uses `import.meta.main`;
+- the realpath comparison explicitly preserves direct execution through the production `/opt/dashboard_RPi5/current -> releases/<sha>` symlink;
 - `.node-version` pins the reviewed developer/CI runtime to `24.19.0`;
 - both GitHub Actions jobs read `.node-version` rather than an independent floating `24` selector;
 - the existing production host-readiness contract continues to require Node major 24 and exact `/usr/bin/node`.
@@ -73,6 +74,7 @@ Tests must preserve:
 
 - `package.json` and root `package-lock.json` Node engine metadata remain aligned;
 - broker CLI entry no longer uses `import.meta.main`;
+- direct broker execution through the production `current` symlink is recognized while imports/unrelated paths remain non-entrypoints;
 - `.node-version` pins the exact reviewed Node 24 runtime and CI consumes that file in both jobs;
 - production host readiness continues to require Node major 24 at `/usr/bin/node`;
 - broker unit remains `Type=exec` until a separately reviewed architecture change;
