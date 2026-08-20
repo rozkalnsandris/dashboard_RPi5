@@ -15,6 +15,8 @@ const nodeVersion = (await read(".node-version")).trim();
 const workflow = await read(".github/workflows/ci.yml");
 const brokerUnit = await read("ops/systemd/dashboard-rpi5-docker-broker.service");
 const brokerEntry = await read("apps/agent/src/docker-broker-entry.ts");
+const agentEntry = await read("apps/agent/src/index.ts");
+const cliEntry = await read("apps/agent/src/cli-entry.ts");
 
 test("Node v24 source contract stays lockfile-aligned while CI pins the reviewed runtime", () => {
   assert.equal(packageJson.engines.node, ">=24 <25");
@@ -25,13 +27,17 @@ test("Node v24 source contract stays lockfile-aligned while CI pins the reviewed
   assert.doesNotMatch(workflow, /node-version:\s*24(?:\s|$)/u);
 });
 
-test("broker entry no longer depends on Node 24.2-only import.meta.main", () => {
+test("production agent entrypoints no longer depend on Node 24.2-only import.meta.main", () => {
   assert.doesNotMatch(brokerEntry, /import\.meta\.main/u);
-  assert.match(brokerEntry, /moduleUrl: string = import\.meta\.url/u);
-  assert.match(brokerEntry, /process\.argv\[1\]/u);
-  assert.match(brokerEntry, /realpathSync\(invokedPath\)/u);
-  assert.match(brokerEntry, /realpathSync\(fileURLToPath\(moduleUrl\)\)/u);
+  assert.doesNotMatch(agentEntry, /import\.meta\.main/u);
+  assert.match(cliEntry, /moduleUrl: string = import\.meta\.url/u);
+  assert.match(cliEntry, /process\.argv\[1\]/u);
+  assert.match(cliEntry, /realpathSync\(invokedPath\)/u);
+  assert.match(cliEntry, /realpathSync\(fileURLToPath\(moduleUrl\)\)/u);
+  assert.match(brokerEntry, /import \{ isDirectCliInvocation \} from "\.\/cli-entry\.js";/u);
+  assert.match(agentEntry, /import \{ isDirectCliInvocation \} from "\.\/cli-entry\.js";/u);
   assert.match(brokerEntry, /if \(isDirectCliInvocation\(\)\)/u);
+  assert.match(agentEntry, /if \(isDirectCliInvocation\(\)\)/u);
 });
 
 test("broker keeps Type=exec but active state is explicitly not application readiness", () => {
