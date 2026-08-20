@@ -38,7 +38,7 @@ test("preflight preserves the current fast-track production boundary", () => {
   assert.match(helper, /Docker logs not 200/u);
   assert.match(helper, /Docker events must remain 503 before #126 activation/u);
   assert.match(helper, /Quick Commands catalog not 200/u);
-  assert.match(helper, /terminal\/PTY runtime socket unexpectedly exists/u);
+  assert.match(helper, /terminal\/PTTY runtime socket unexpectedly exists/u);
   assert.match(helper, /Access expected 302/u);
   assert.match(helper, /agent runtime Docker group appeared/u);
   assert.match(helper, /agent runtime video group appeared/u);
@@ -73,7 +73,7 @@ test("helper contains no production mutation or automatic recovery primitive", (
   assert.doesNotMatch(helper, /\b(?:useradd|usermod|groupadd|groupmod|chown|chmod)\b/u);
   assert.doesNotMatch(helper, /\brm\s+-rf\b/u);
   assert.doesNotMatch(helper, /\b(?:mv|cp|install)\s+[^\n]*(?:\/opt\/dashboard_RPi5|\/etc\/systemd)/u);
-  assert.doesNotMatch(helper, /cloudflare.*(?:POST|PUT|PATCH|DELETE)/iu);
+  assert.doesNotMatch(helper, /-X\s+(?:POST|PUT|PATCH|DELETE)\b/u);
   assert.doesNotMatch(helper, /actions\/runs\/[^\n]*(?:rerun|cancel)/iu);
   assert.match(helper, /PRODUCTION_MUTATION=NO RELEASE_APPLY=NO SYSTEMD_MUTATION=NO/u);
   assert.match(helper, /AUTO_RETRY=NO AUTO_CLEANUP=NO/u);
