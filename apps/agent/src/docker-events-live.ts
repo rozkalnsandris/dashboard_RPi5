@@ -1,5 +1,6 @@
 import { createDockerBrokerTransport, type DockerBrokerEventTransport } from "./docker-broker-client.js";
 import {
+  DOCKER_EVENTS_LOOKBACK_SECONDS,
   isAllowedDockerEventsPath,
   readRecentDockerEvents,
   type DockerEventsTransport,
@@ -16,6 +17,15 @@ export function createLiveDockerEventsTransport(
         const url = new URL(path, "http://docker.local");
         const since = Number(url.searchParams.get("since"));
         const until = Number(url.searchParams.get("until"));
+        if (
+          !Number.isSafeInteger(since) ||
+          !Number.isSafeInteger(until) ||
+          since < 0 ||
+          until < since ||
+          until - since > DOCKER_EVENTS_LOOKBACK_SECONDS
+        ) {
+          throw new DockerSourceUnavailableError();
+        }
         return await broker.readEvents(since, until, signal);
       } catch {
         throw new DockerSourceUnavailableError();
