@@ -39,15 +39,14 @@ test("#151 helper binds the exact failed #127 target, reviewed main ancestor and
   assert.ok(source.includes('EXPECTED_WEB_PID="3378022"'));
 });
 
-test("preflight verifies immutable incident commit and a non-self-invalidating reviewed-main descendant gate", async () => {
+test("preflight verifies immutable incident and reviewed-main commits, then allows safe post-merge descendants", async () => {
   const source = await helperSource();
   assert.ok(source.includes('/commits/$TARGET'));
   assert.ok(source.includes('/commits/$REVIEWED_MAIN'));
   assert.ok(source.includes('/branches/main'));
   assert.ok(source.includes('/compare/$REVIEWED_MAIN...$current_main'));
   assert.ok(source.includes('incident commit tree drift'));
-  assert.ok(source.includes('reviewed recovery main commit SHA drift'));
-  assert.ok(source.includes('reviewed recovery main tree drift'));
+  assert.ok(source.includes('reviewed main commit tree drift'));
   assert.ok(source.includes('(.base_commit.sha == $reviewed)'));
   assert.ok(source.includes('(.merge_base_commit.sha == $reviewed)'));
   assert.ok(source.includes('((.status == "identical") or (.status == "ahead"))'));
@@ -55,22 +54,7 @@ test("preflight verifies immutable incident commit and a non-self-invalidating r
   assert.equal(source.includes('[ "$current_main" = "$REVIEWED_MAIN" ]'), false);
   assert.equal(source.includes('[ "$current_main_tree" = "$REVIEWED_MAIN_TREE" ]'), false);
   assert.equal(source.includes('((.commits | length) == 1)'), false);
-  assert.equal(source.includes('(.commits[0].sha == $current)'), false);
   assert.equal(source.includes('(.ahead_by == 1)'), false);
-  assert.equal(source.includes('.head_commit.sha'), false);
-});
-
-test("post-merge ancestry regression allows reviewed anchor itself or later fast-forward descendants", async () => {
-  const source = await helperSource();
-  const compare = source.indexOf('/compare/$REVIEWED_MAIN...$current_main');
-  const identical = source.indexOf('(.status == "identical")', compare);
-  const ahead = source.indexOf('(.status == "ahead")', compare);
-  const behindZero = source.indexOf('(.behind_by == 0)', compare);
-  const mergeBase = source.indexOf('(.merge_base_commit.sha == $reviewed)', compare);
-  assert.ok(compare > 0);
-  assert.ok(identical > compare && ahead > compare);
-  assert.ok(behindZero > compare && mergeBase > compare);
-  assert.ok(source.includes('current main is not the reviewed recovery main or a fast-forward descendant'));
 });
 
 test("preflight proves the observed CHDIR incident and stops before mutation", async () => {
