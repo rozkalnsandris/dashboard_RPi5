@@ -22,10 +22,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Setup Node.js 24
+      - name: Setup reviewed Node.js runtime
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: npm
 
       - name: Install locked dependencies
@@ -86,10 +86,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Setup Node.js 24
+      - name: Setup reviewed Node.js runtime
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: npm
 
       - name: Install native build toolchain
