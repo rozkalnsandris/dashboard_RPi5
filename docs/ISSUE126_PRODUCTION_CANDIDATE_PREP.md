@@ -29,36 +29,37 @@ Current accepted production remains the completed #151/#127 release:
 
 It deliberately reuses the existing production candidate / manifest / runtime-smoke / release-controller machinery. It does not introduce another deployment mechanism.
 
-## Why the source gate was corrected after PR #161
+## Why the source gate has post-merge lineage checks
 
-PR #161 originally required live GitHub `main` to equal the immutable P3 candidate target. That was true before the helper itself was merged, but became false immediately after the #161 squash merge. The merged helper therefore would have deterministically blocked before production preflight.
+PR #161 originally required live GitHub `main` to equal the immutable P3 candidate target. That became false immediately after the helper itself was merged. PR #162 corrected the model by separating candidate-source proof from helper-lineage proof.
 
-PR #162 corrects the model by separating two different facts:
+PR #169 later advanced `main` only to align compile-time Node declarations with the existing Node 24 runtime contract. That source-only cleanup does not change the reviewed P3 Docker-events target, so the candidate remains `a39fc7a9...` rather than silently substituting a newer `main`.
 
-1. **candidate source proof** — the release candidate is still built only from immutable target `a39fc7a9...` / tree `bd2fa687...` validated through PR #160 and CI #368;
-2. **helper lineage proof** — live `main` must be exactly the squash merge commit of PR #162, whose sole parent is the pre-fix main `1a0f6f6788fdcf8719c4c4d0b1976eb406f9fe3b` and whose diff is restricted to the four candidate-preparation gate files.
-
-Any later `main` commit fails closed. Current main is never substituted for the P3 candidate source.
+The post-#169 rebind in PR #170 therefore proves the complete reviewed lineage while retaining the original immutable candidate source.
 
 ## Source and evidence gate
 
-Before any candidate work, the corrected helper requires:
+Before any candidate work, the helper requires:
 
 1. live GitHub `main` has a verified signature;
 2. immutable candidate target `a39fc7a9...` exists, has exact tree `bd2fa687...`, and has a verified signature;
 3. PR #160 is merged at that target from the exact reviewed head;
 4. the PR #160 head tree equals the candidate target tree;
 5. CI #368 is completed/success on that exact reviewed head, including `check`, `terminal-native (x64)`, and `terminal-native (arm64)`;
-6. PR #162 is closed/merged and its base is exact pre-fix main `1a0f6f67...`;
-7. PR #162 merge commit is exactly live GitHub `main`;
-8. live main has exactly one parent and that parent is `1a0f6f67...`;
-9. compare from `1a0f6f67...` to live main is exactly one squash commit, not behind, and changes only:
-   - `docs/ISSUE126_POST_MERGE_CANDIDATE_GATE_FIX.md`;
-   - `docs/ISSUE126_PRODUCTION_CANDIDATE_PREP.md`;
-   - `tools/issue126-production-candidate-prep-helper.test.mjs`;
-   - `tools/operator/issue126-production-candidate-prep.sh`.
+6. PR #162 is closed/merged with exact base `1a0f6f6788fdcf8719c4c4d0b1976eb406f9fe3b` and exact merge `ffef15e355b97efc3319fd4cd86584d8761fc961`;
+7. PR #162 merge has a verified signature, exactly one parent (`1a0f6f67...`), and its compare boundary is exactly one squash commit changing only the four reviewed candidate-gate files;
+8. PR #169 is closed/merged with exact base `ffef15e3...`, exact reviewed head `4e5513cced4f39e57f16829403acf2a7219dcbd0`, and exact merge `4fd40cd0cc639bad84463b9680e627f8e02157e2`;
+9. CI #380 / run `32476466086` is completed/success on the exact PR #169 head, including `check`, `terminal-native (x64)`, and `terminal-native (arm64)`;
+10. compare `ffef15e3... -> 4fd40cd0...` is exactly one squash commit and changes only `package.json` plus `package-lock.json`;
+11. PR #170 is closed/merged with exact base `4fd40cd0...`, and its merge commit is exactly live GitHub `main`;
+12. live main has exactly one parent and that parent is `4fd40cd0...`;
+13. compare `4fd40cd0... -> live main` is exactly one squash commit, not behind, and changes only:
+    - `docs/ISSUE126_POST_169_REBIND.md`;
+    - `docs/ISSUE126_PRODUCTION_CANDIDATE_PREP.md`;
+    - `tools/issue126-production-candidate-prep-helper.test.mjs`;
+    - `tools/operator/issue126-production-candidate-prep.sh`.
 
-This allows the reviewed helper gate to exist on top of the immutable candidate source without accidentally changing the candidate being built.
+Any later `main` commit fails closed. Current main is never substituted for the P3 candidate source.
 
 ## Read-only production preflight
 
@@ -146,4 +147,4 @@ MERGE_AUTHORIZATION=NONE
 ACTIONS_RERUN_AUTHORIZATION=NONE
 ```
 
-After this source fix reaches Ready, it still requires an explicit owner merge decision. Only after the fix is merged may the immutable helper be executed once on the RPi5 as the normal operator. A later activation helper and production mutation require their own reviewed source and a new explicit owner authorization.
+After PR #170 reaches Ready it still requires an explicit owner merge decision. Only after that reviewed rebind PR is merged may the immutable helper be executed once on the RPi5 as the normal operator. A later activation helper and production mutation require their own reviewed source and a new explicit owner authorization.

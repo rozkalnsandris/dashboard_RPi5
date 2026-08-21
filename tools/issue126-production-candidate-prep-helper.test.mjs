@@ -27,17 +27,32 @@ test("helper keeps the immutable #160 candidate target and CI evidence", () => {
   assert.match(helper, /ISSUE126_SOURCE_GATE_PASS/u);
 });
 
-test("post-merge gate accepts only the reviewed #162 squash descendant", () => {
+test("post-#169 gate accepts only the reviewed #170 squash descendant", () => {
   assert.match(helper, /FIX_PR="162"/u);
   assert.match(helper, /FIX_BASE="1a0f6f6788fdcf8719c4c4d0b1976eb406f9fe3b"/u);
-  assert.match(helper, /PR162 not merged/u);
-  assert.match(helper, /PR162 base drift/u);
-  assert.match(helper, /live main is not PR162 squash merge/u);
-  assert.match(helper, /live main must have exactly one parent/u);
+  assert.match(helper, /FIX_MERGE="ffef15e355b97efc3319fd4cd86584d8761fc961"/u);
+  assert.match(helper, /ALIGN_PR="169"/u);
+  assert.match(helper, /ALIGN_PR_HEAD="4e5513cced4f39e57f16829403acf2a7219dcbd0"/u);
+  assert.match(helper, /ALIGN_CI_RUN_ID="32476466086"/u);
+  assert.match(helper, /ALIGN_CI_RUN_NUMBER="380"/u);
+  assert.match(helper, /ALIGN_MERGE="4fd40cd0cc639bad84463b9680e627f8e02157e2"/u);
+  assert.match(helper, /REBIND_PR="170"/u);
+  assert.match(helper, /REBIND_BASE="4fd40cd0cc639bad84463b9680e627f8e02157e2"/u);
+  assert.match(helper, /PR162 merge drift/u);
+  assert.match(helper, /PR162 merge signature is not verified/u);
+  assert.match(helper, /PR169 not merged/u);
+  assert.match(helper, /PR169 base drift/u);
+  assert.match(helper, /PR169 head drift/u);
+  assert.match(helper, /PR169 merge drift/u);
+  assert.match(helper, /CI380 not successful/u);
+  assert.match(helper, /PR169 changed-file boundary drift/u);
+  assert.match(helper, /PR170 not merged/u);
+  assert.match(helper, /PR170 base drift/u);
+  assert.match(helper, /live main is not PR170 squash merge/u);
   assert.match(helper, /live main parent drift/u);
-  assert.match(helper, /PR162 compare must be exactly one squash commit/u);
-  assert.match(helper, /PR162 changed-file boundary drift/u);
-  assert.match(helper, /docs\/ISSUE126_POST_MERGE_CANDIDATE_GATE_FIX\.md/u);
+  assert.match(helper, /PR170 compare must be exactly one squash commit/u);
+  assert.match(helper, /PR170 changed-file boundary drift/u);
+  assert.match(helper, /docs\/ISSUE126_POST_169_REBIND\.md/u);
   assert.match(helper, /docs\/ISSUE126_PRODUCTION_CANDIDATE_PREP\.md/u);
   assert.match(helper, /tools\/issue126-production-candidate-prep-helper\.test\.mjs/u);
   assert.match(helper, /tools\/operator\/issue126-production-candidate-prep\.sh/u);
