@@ -1,5 +1,8 @@
 # Phase 3A — Docker current-state read boundary
 
+> **Historical design record — current Docker transport superseded.**  
+> This document preserves the original Phase 3A direct-Engine design and first-live permission rationale. The accepted current architecture is `dashboard-rpi5-agent -> bounded Docker broker -> Docker Engine`; the main agent has no direct Docker socket authority or persistent `docker` membership. See [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`adr/0005-docker-broker-only-engine-authority.md`](adr/0005-docker-broker-only-engine-authority.md). The historical design below is intentionally retained rather than rewritten.
+
 > Tracking issue: #9  
 > Production activation: **not authorized**
 

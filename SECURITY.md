@@ -39,9 +39,37 @@ Phase 9I adds only a protocol-translating local terminal client to this process.
 
 ### Local RPi5 read agent
 
-Narrow trusted helper. It owns the minimum local privileges needed to read host/Docker/systemd evidence. It is reachable only locally, preferably through a Unix socket.
+Narrow trusted helper. It owns the minimum local privileges needed for host/systemd/journal evidence and exposes only purpose-built operations over a local Unix socket.
 
-The privileged-read agent does **not** host the full terminal or load `node-pty`, so future Docker/journal/host-read privileges cannot be inherited by the interactive shell process.
+For Docker evidence, the agent is deliberately **not** the Docker Engine authority. It has no persistent `docker` or `video` membership and communicates only with the dedicated bounded Docker broker over `/run/dashboard-rpi5-docker-broker/broker.sock`.
+
+The privileged-read agent does **not** host the full terminal or load `node-pty`, so host-read privileges cannot be inherited by the interactive shell process.
+
+### Dedicated Docker broker
+
+Separate high-privilege read boundary and the sole dashboard component allowed to reach `/var/run/docker.sock`.
+
+The broker:
+
+- is reachable only through its fixed filesystem Unix socket;
+- exposes typed bounded capabilities rather than a generic Engine proxy;
+- validates container IDs, log source/range combinations and recent-event windows server-side;
+- bounds request URL size, concurrency, log response size and event windows/items;
+- fails closed on unknown routes or unsupported capability parameters;
+- does not grant the main agent Docker socket authority;
+- does not create Docker mutation capability.
+
+Current trust path:
+
+```text
+web/API
+  -> dashboard-rpi5-agent
+  -> typed bounded Docker broker capabilities
+  -> dashboard-rpi5-docker-broker
+  -> /var/run/docker.sock
+```
+
+See [`docs/adr/0005-docker-broker-only-engine-authority.md`](docs/adr/0005-docker-broker-only-engine-authority.md).
 
 ### Local terminal agent
 
@@ -85,7 +113,7 @@ A source merge does not create the required users/groups, grant the web process 
 
 ### Docker Engine
 
-High-privilege boundary. Control of the Docker daemon is effectively host administration. The application must never expose a generic Docker API proxy.
+High-privilege boundary. Control of the Docker daemon is effectively host administration. Only the dedicated bounded Docker broker may reach the Engine Unix socket for dashboard Docker evidence. The application must never expose a generic Docker API proxy, and the main agent must never regain direct Docker socket authority merely to satisfy read operations.
 
 ### Full PTY terminal
 
@@ -101,6 +129,9 @@ Highest-risk feature. Source implementation must remain fail-closed until the ow
 - No tunnel tokens in repository.
 - No Docker API TCP exposure for this product.
 - Local helpers bind to Unix sockets or loopback only.
+- Main `dashboard-rpi5-agent` has no persistent `docker` or `video` membership.
+- Dedicated bounded Docker broker is the sole dashboard Docker Engine authority.
+- No generic Docker Engine proxy.
 - All identifiers from the browser are validated against server-side allowlists.
 - Log content and terminal output are escaped/untrusted.
 - WebSocket terminal handshake revalidates authenticated owner and origin.

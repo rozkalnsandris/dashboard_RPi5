@@ -6,7 +6,7 @@ The human-facing application is **`https://dash.rozkalns.net`**.
 
 ## Chosen topology
 
-For this single-host product, the preferred first architecture is deliberately simpler than a cloud-hosted hub/remote-agent system while keeping the full terminal in a separate local execution boundary:
+For this single-host product, the preferred architecture keeps Internet-facing code unprivileged, places Docker Engine authority in a dedicated bounded local broker, and keeps the full terminal in a separate local execution boundary:
 
 ```mermaid
 flowchart LR
@@ -15,6 +15,7 @@ flowchart LR
     T[Cloudflare Tunnel]
     W[dashboard web + API\nloopback on RPi5]
     X[local privileged-read agent\nUnix socket]
+    K[bounded Docker broker\nUnix socket]
     Y[isolated terminal session\nsystemd socket activation]
     D[Docker Engine\nUnix socket]
     J[systemd + journal]
@@ -25,10 +26,10 @@ flowchart LR
 
     B --> A --> T --> W
     W --> X
-    W -. source-only authenticated terminal bridge .-> Y
-    X --> D
+    X --> K --> D
     X --> J
     X --> R
+    W -. source-only authenticated terminal bridge .-> Y
     Y --> S
     W --> P
     W -. deep link .-> G
@@ -39,11 +40,15 @@ flowchart LR
 - no inbound router port;
 - no second Internet-facing agent hostname;
 - the dashboard frontend/API can remain unprivileged;
-- the privileged-read helper is not network-exposed;
-- the terminal runtime does not inherit Docker/journal/host-read privileges from that helper;
+- the main read agent is not network-exposed and does not own Docker Engine authority;
+- only the dedicated bounded Docker broker reaches `/var/run/docker.sock`;
+- the main agent uses typed purpose-built Docker broker capabilities over a fixed local Unix socket;
+- the terminal runtime does not inherit Docker/journal/host-read privileges from either helper;
 - terminal WebSocket does not require an additional cloud relay;
 - easy to deploy and debug on one Pi;
 - later we can externalize/cache last-known status if Pi-offline visibility becomes a real requirement.
+
+The durable Docker authority decision is recorded in [`adr/0005-docker-broker-only-engine-authority.md`](adr/0005-docker-broker-only-engine-authority.md).
 
 ## Processes
 
@@ -75,7 +80,7 @@ Responsibilities:
 
 - Raspberry Pi temperature/throttle state;
 - safe `/proc`/sysfs reads;
-- Docker current stats/events/logs through the local Engine socket;
+- Docker current state, registered Docker logs and bounded recent Docker events **through typed broker capabilities**;
 - allowlisted systemd state and journal queries;
 - registered backup/deploy evidence;
 - registered Quick Commands when separately authorized.
@@ -88,7 +93,42 @@ Recommended transport:
 
 Permissions should allow only the dashboard web service identity to connect.
 
-The read agent must not load `node-pty` or host the free-form shell. This avoids a terminal process inheriting future Docker/journal/host-read group privileges.
+For Docker evidence the agent connects to the fixed broker socket:
+
+```text
+/run/dashboard-rpi5-docker-broker/broker.sock
+```
+
+The main agent must not receive `/var/run/docker.sock`, persistent `docker` membership or a generic Docker endpoint proxy. It consumes only the broker's bounded capability protocol and normalizes the resulting evidence for its public agent routes.
+
+The read agent must not load `node-pty` or host the free-form shell. This avoids an interactive shell inheriting host-read privileges.
+
+### `dashboard-rpi5-docker-broker`
+
+Dedicated local Docker authority boundary and the **sole dashboard component allowed to reach the Docker Engine Unix socket**.
+
+Current broker transport:
+
+```text
+/run/dashboard-rpi5-docker-broker/broker.sock
+```
+
+The broker exposes a fixed, fail-closed capability protocol. Current capability shapes include:
+
+```text
+GET /v1/health
+GET /v1/docker/ping
+GET /v1/docker/version
+GET /v1/docker/containers
+GET /v1/docker/containers/<64-hex-id>/inspect
+GET /v1/docker/containers/<64-hex-id>/stats
+GET /v1/docker/logs/<registered-source>/<allowlisted-range>
+GET /v1/docker/events/recent?since=<integer>&until=<integer>
+```
+
+The registered Docker log sources and ranges are server-side allowlists. Event windows are internally generated/bounded and cannot exceed one hour. Unknown routes, malformed IDs and unsupported capabilities fail closed. This is not a generic Docker API proxy and does not create Docker mutation capability.
+
+The main agent has no persistent `docker` or `video` membership. Docker Engine ownership remains with the broker even when a higher-level agent route exposes normalized Docker evidence.
 
 ### `dashboard-rpi5-terminal-agent`
 
@@ -169,18 +209,24 @@ Terminal output remains ephemeral in the page's xterm buffer. The dashboard does
 
 Purpose-built operations only; no arbitrary method/proxy endpoint.
 
+Current source routes:
+
 ```text
 GET  /v1/health
-GET  /v1/summary
-GET  /v1/docker
-GET  /v1/docker/:id
+GET  /v1/host/summary
+GET  /v1/docker/containers
+GET  /v1/docker/events/recent
 GET  /v1/services
-GET  /v1/activity
-GET  /v1/backups
-GET  /v1/logs
-GET  /v1/logs/stream
-POST /v1/quick-command                  # registered IDs only
+GET  /v1/backups/recent
+GET  /v1/maintenance/events/recent
+GET  /v1/deploy/events/recent
+GET  /v1/endpoints/events/recent
+GET  /v1/logs/sources
+GET  /v1/logs?sourceId=...&range=...
+POST /v1/quick-command                  # only when the fixed Quick Command gate is enabled
 ```
+
+Docker routes on the main agent return normalized contracts backed by typed calls to the dedicated broker. There is intentionally no arbitrary Docker route, Docker host selector, socket selector or Engine passthrough endpoint on the agent.
 
 There is intentionally no free-form terminal endpoint on the privileged-read agent.
 
@@ -204,7 +250,7 @@ The bridge uses Node Unix-domain IPC only at the fixed path `/run/dashboard-rpi5
 
 - Prometheus owns time-series history.
 - Grafana owns deep visual analysis.
-- Docker Engine owns container runtime state/events/logs.
+- Docker Engine owns container runtime state/events/logs; the dedicated bounded broker is the sole dashboard transport with Engine socket authority.
 - systemd journal owns host service logs.
 - dashboard owns presentation, alert projection and minimal local UI state only.
 

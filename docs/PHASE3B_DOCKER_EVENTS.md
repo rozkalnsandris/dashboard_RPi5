@@ -1,5 +1,8 @@
 # Phase 3B — Docker recent-events boundary
 
+> **Historical design record — current Docker transport superseded.**  
+> This document preserves the original Phase 3B direct-Engine design. The accepted current path keeps the public agent route bounded while the agent obtains Docker event evidence through the dedicated broker: `dashboard-rpi5-agent -> bounded Docker broker -> Docker Engine`. The main agent has no direct Docker socket authority or persistent `docker` membership. See [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`adr/0005-docker-broker-only-engine-authority.md`](adr/0005-docker-broker-only-engine-authority.md). The historical design below is intentionally retained rather than rewritten.
+
 Status: source-only implementation for issue #11.
 
 ## Purpose
