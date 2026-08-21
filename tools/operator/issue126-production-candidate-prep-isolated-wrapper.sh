@@ -2,20 +2,15 @@
 set -Eeuo pipefail
 umask 077
 
-MAIN="db6c4383b33dd9902094c54afd60e51a161f8f4c"
-MAIN_TREE="1a457416331357c54e9dae278769a4ef3690bd7c"
-MAIN_PARENT="4fd40cd0cc639bad84463b9680e627f8e02157e2"
-PR170="170"
-PR170_HEAD="514a6405d2bbd66938e4a85eec722d172e2efd93"
+BASE_MAIN="db6c4383b33dd9902094c54afd60e51a161f8f4c"
+BASE_TREE="1a457416331357c54e9dae278769a4ef3690bd7c"
+WRAPPER_PR="172"
+HELPER_SOURCE="$BASE_MAIN"
 HELPER_PATH="tools/operator/issue126-production-candidate-prep.sh"
 HELPER_BLOB="3541750f511289056c4a4b8d684db139b9c903eb"
 TARGET="a39fc7a9873eedb58cfa49568f9b2e05483cf7c2"
 REPO_SLUG="rozkalnsandris/dashboard_RPi5"
 ORIGINAL_HOME="$HOME"
-RUN_ROOT="$ORIGINAL_HOME/.cache/dashboard-rpi5-operator/issue126-${MAIN}-r3"
-ISOLATED_HOME="$RUN_ROOT/home"
-HELPER="$RUN_ROOT/issue126-production-candidate-prep.sh"
-HELPER_LOG="$RUN_ROOT/helper-output.log"
 OLD_GLOBAL_WORKSPACE="$ORIGINAL_HOME/.cache/dashboard-rpi5-candidate-prep/${TARGET}-issue126"
 
 blocked() {
@@ -23,6 +18,7 @@ blocked() {
   exit 1
 }
 
+RUN_ROOT="uninitialized"
 trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "ISSUE126_R3_WRAPPER_EXIT=$rc RUN_ROOT=$RUN_ROOT AUTO_RETRY=NO AUTO_CLEANUP=NO PRODUCTION_MUTATION_AUTHORIZATION=NONE" >&2; fi' EXIT
 
 need() { command -v "$1" >/dev/null 2>&1 || blocked "missing command: $1"; }
@@ -38,43 +34,78 @@ case "$MODEL" in
   *) blocked "not Raspberry Pi 5 Model B: ${MODEL:-unknown}" ;;
 esac
 
+printf '%s\n' '=== POST-MERGE IMMUTABLE GITHUB GATE ==='
+base_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/commits/$BASE_MAIN")" || blocked "base main lookup failed"
+[ "$(printf '%s' "$base_json" | jq -er '.sha')" = "$BASE_MAIN" ] || blocked "base main SHA drift"
+[ "$(printf '%s' "$base_json" | jq -er '.commit.tree.sha')" = "$BASE_TREE" ] || blocked "base main tree drift"
+[ "$(printf '%s' "$base_json" | jq -er '.commit.verification.verified')" = true ] || blocked "base main signature is not verified"
+
+main_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/branches/main")" || blocked "GitHub main lookup failed"
+main_sha="$(printf '%s' "$main_json" | jq -er '.commit.sha')"
+[ "$(printf '%s' "$main_json" | jq -er '.commit.commit.verification.verified')" = true ] || blocked "live main signature is not verified"
+
+pr_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/pulls/$WRAPPER_PR")" || blocked "PR172 lookup failed"
+[ "$(printf '%s' "$pr_json" | jq -er '.state')" = closed ] || blocked "PR172 not closed"
+[ "$(printf '%s' "$pr_json" | jq -er '.merged')" = true ] || blocked "PR172 not merged"
+[ "$(printf '%s' "$pr_json" | jq -er '.base.sha')" = "$BASE_MAIN" ] || blocked "PR172 base drift"
+[ "$(printf '%s' "$pr_json" | jq -er '.merge_commit_sha')" = "$main_sha" ] || blocked "live main is not PR172 squash merge"
+wrapper_head="$(printf '%s' "$pr_json" | jq -er '.head.sha')"
+
+main_commit_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/commits/$main_sha")" || blocked "live main commit lookup failed"
+[ "$(printf '%s' "$main_commit_json" | jq -er '.commit.verification.verified')" = true ] || blocked "live main commit signature is not verified"
+[ "$(printf '%s' "$main_commit_json" | jq -er '.parents | length')" -eq 1 ] || blocked "PR172 merge must have exactly one parent"
+[ "$(printf '%s' "$main_commit_json" | jq -er '.parents[0].sha')" = "$BASE_MAIN" ] || blocked "PR172 merge parent drift"
+
+compare_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/compare/$BASE_MAIN...$main_sha")" || blocked "PR172 compare lookup failed"
+[ "$(printf '%s' "$compare_json" | jq -er '.status')" = ahead ] || blocked "PR172 compare status drift"
+[ "$(printf '%s' "$compare_json" | jq -er '.ahead_by')" -eq 1 ] || blocked "PR172 compare must be exactly one squash commit"
+[ "$(printf '%s' "$compare_json" | jq -er '.behind_by')" -eq 0 ] || blocked "PR172 compare unexpectedly behind"
+expected_files='["docs/ISSUE126_ISOLATED_CANDIDATE_PREP_R3.md","package.json","tools/issue126-production-candidate-prep-isolated-wrapper.test.mjs","tools/operator/issue126-production-candidate-prep-isolated-wrapper.sh"]'
+actual_files="$(printf '%s' "$compare_json" | jq -c '[.files[].filename] | sort')"
+[ "$actual_files" = "$expected_files" ] || blocked "PR172 changed-file boundary drift: $actual_files"
+
+runs_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/actions/runs?head_sha=$wrapper_head&event=pull_request&per_page=100")" || blocked "PR172 CI lookup failed"
+run_id="$(printf '%s' "$runs_json" | jq -er --arg head "$wrapper_head" '[.workflow_runs[] | select(.name == "CI" and .head_sha == $head and .status == "completed" and .conclusion == "success")] | sort_by(.run_number) | last | .id')" || blocked "PR172 exact-head CI not successful"
+jobs_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/actions/runs/$run_id/jobs?per_page=100")" || blocked "PR172 CI jobs lookup failed"
+for job_name in "check" "terminal-native (x64)" "terminal-native (arm64)"; do
+  count="$(printf '%s' "$jobs_json" | jq -er --arg name "$job_name" '[.jobs[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length')"
+  [ "$count" -eq 1 ] || blocked "required PR172 CI job not success: $job_name count=$count"
+done
+
+helper_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "https://api.github.com/repos/$REPO_SLUG/contents/$HELPER_PATH?ref=$HELPER_SOURCE")" || blocked "merged helper lookup failed"
+[ "$(printf '%s' "$helper_json" | jq -er '.sha')" = "$HELPER_BLOB" ] || blocked "merged helper blob drift"
+
+RUN_ROOT="$ORIGINAL_HOME/.cache/dashboard-rpi5-operator/issue126-${main_sha}-r3"
+ISOLATED_HOME="$RUN_ROOT/home"
+HELPER="$RUN_ROOT/issue126-production-candidate-prep.sh"
+HELPER_LOG="$RUN_ROOT/helper-output.log"
+
 mkdir -p "$ORIGINAL_HOME/.cache/dashboard-rpi5-operator"
 [ ! -e "$RUN_ROOT" ] || blocked "one-shot run directory already exists: $RUN_ROOT"
 mkdir "$RUN_ROOT"
 mkdir "$ISOLATED_HOME"
 
-printf 'ISSUE126_R3_WRAPPER_START model=%s main=%s run_root=%s isolated_home=%s\n' \
-  "$MODEL" "$MAIN" "$RUN_ROOT" "$ISOLATED_HOME"
+printf 'ISSUE126_R3_WRAPPER_START model=%s base=%s live_main=%s pr172_head=%s ci=%s run_root=%s isolated_home=%s\n' \
+  "$MODEL" "$BASE_MAIN" "$main_sha" "$wrapper_head" "$run_id" "$RUN_ROOT" "$ISOLATED_HOME"
 if [ -e "$OLD_GLOBAL_WORKSPACE" ]; then
   printf 'OLD_GLOBAL_WORKSPACE_PRESERVED=%s\n' "$OLD_GLOBAL_WORKSPACE"
 else
   printf 'OLD_GLOBAL_WORKSPACE_PRESERVED=%s status=absent\n' "$OLD_GLOBAL_WORKSPACE"
 fi
 
-printf '%s\n' '=== IMMUTABLE GITHUB GATE ==='
-main_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
-  "https://api.github.com/repos/$REPO_SLUG/branches/main")" || blocked "GitHub main lookup failed"
-[ "$(printf '%s' "$main_json" | jq -er '.commit.sha')" = "$MAIN" ] || blocked "main moved"
-[ "$(printf '%s' "$main_json" | jq -er '.commit.commit.tree.sha')" = "$MAIN_TREE" ] || blocked "main tree drift"
-[ "$(printf '%s' "$main_json" | jq -er '.commit.commit.verification.verified')" = true ] || blocked "main signature is not verified"
-[ "$(printf '%s' "$main_json" | jq -er '.commit.parents | length')" -eq 1 ] || blocked "main parent count drift"
-[ "$(printf '%s' "$main_json" | jq -er '.commit.parents[0].sha')" = "$MAIN_PARENT" ] || blocked "main parent drift"
-
-pr_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
-  "https://api.github.com/repos/$REPO_SLUG/pulls/$PR170")" || blocked "PR170 lookup failed"
-[ "$(printf '%s' "$pr_json" | jq -er '.merged')" = true ] || blocked "PR170 not merged"
-[ "$(printf '%s' "$pr_json" | jq -er '.head.sha')" = "$PR170_HEAD" ] || blocked "PR170 head drift"
-[ "$(printf '%s' "$pr_json" | jq -er '.merge_commit_sha')" = "$MAIN" ] || blocked "PR170 merge drift"
-
-printf '%s\n' '=== FETCH IMMUTABLE MERGED HELPER ==='
-helper_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
-  "https://api.github.com/repos/$REPO_SLUG/contents/$HELPER_PATH?ref=$MAIN")" || blocked "helper lookup failed"
-[ "$(printf '%s' "$helper_json" | jq -er '.sha')" = "$HELPER_BLOB" ] || blocked "helper blob drift"
+printf '%s\n' '=== FETCH IMMUTABLE PR170-MERGED HELPER ==='
 printf '%s' "$helper_json" | jq -er '.content' | tr -d '\n' | base64 -d > "$HELPER" || blocked "helper decode failed"
 chmod 700 "$HELPER"
-
-printf 'ISSUE126_R3_WRAPPER_GATE_PASS main=%s tree=%s parent=%s pr170_head=%s helper_blob=%s\n' \
-  "$MAIN" "$MAIN_TREE" "$MAIN_PARENT" "$PR170_HEAD" "$HELPER_BLOB"
+printf 'ISSUE126_R3_WRAPPER_GATE_PASS base=%s live_main=%s pr172_head=%s ci=%s helper_source=%s helper_blob=%s\n' \
+  "$BASE_MAIN" "$main_sha" "$wrapper_head" "$run_id" "$HELPER_SOURCE" "$HELPER_BLOB"
 printf 'ISOLATED_CANDIDATE_WORKSPACE=%s/.cache/dashboard-rpi5-candidate-prep/%s-issue126\n' "$ISOLATED_HOME" "$TARGET"
 printf '%s\n' '=== RUN PREPARATION-ONLY HELPER ONCE IN ISOLATED HOME ==='
 
