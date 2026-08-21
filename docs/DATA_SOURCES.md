@@ -22,6 +22,25 @@ Use the authoritative source that already owns the data. Avoid duplicate collect
 | Backups | controlled job evidence + optional node_exporter textfile metrics | freshness/history |
 | Deep metrics | Grafana | external deep link |
 
+## Docker data ownership versus transport
+
+Docker Engine remains the authoritative owner of container runtime state, lifecycle events and Docker logs. That does **not** mean the main agent owns Docker daemon authority.
+
+The accepted transport/security boundary is:
+
+```text
+web/API
+  -> dashboard-rpi5-agent
+  -> typed bounded broker capabilities
+  -> /run/dashboard-rpi5-docker-broker/broker.sock
+  -> dashboard-rpi5-docker-broker
+  -> /var/run/docker.sock
+```
+
+Only the dedicated broker may reach the Docker Engine Unix socket. The main `dashboard-rpi5-agent` has no persistent `docker` or `video` membership and must not regain direct Docker socket access merely to satisfy a read capability. The broker is not a generic Engine proxy: current-state, registered logs and recent events are explicit bounded capabilities, and unknown paths or unsupported capability parameters fail closed.
+
+See [`docs/adr/0005-docker-broker-only-engine-authority.md`](adr/0005-docker-broker-only-engine-authority.md).
+
 ## Raspberry Pi-specific health
 
 Decode `get_throttled` rather than showing only hex when firmware evidence is available.
@@ -53,7 +72,7 @@ Expose normalized values for:
 
 The API and CLI differ in how Linux memory cache is reported; normalization must be documented and tested so the dashboard does not compare unlike values.
 
-Docker daemon access is a separate high-privilege boundary. The main read agent must not be placed in the `docker` group merely to satisfy current-state reads; any Docker access design must preserve the no-generic-proxy contract and be separately reviewed.
+Docker daemon access is a separate high-privilege boundary. Read-only intent at the Docker HTTP method level does not make direct daemon access low privilege. The main agent consumes only the typed broker protocol; the dedicated broker remains the sole Docker Engine authority and must never become a generic passthrough API.
 
 ## Refresh cadence starting point
 
