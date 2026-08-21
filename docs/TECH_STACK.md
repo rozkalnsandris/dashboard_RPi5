@@ -1,10 +1,11 @@
 # dashboard_RPi5 — Implementation Stack
 
-> **Status:** accepted implementation baseline for Phase 1  
-> **Decision date:** 2026-08-15  
+> **Status:** current implementation and trust-boundary reference  
+> **Original stack decision:** 2026-08-15  
 > **Master contract:** GitHub issue #1  
-> **Implementation issue:** #3  
 > **Target hostname:** `dash.rozkalns.net`
+
+The original Phase 1 technology choices remain the implementation baseline, but this document now reflects the current repository layout and the trust boundaries added as the project progressed into live operation.
 
 ## Chosen stack
 
@@ -25,38 +26,38 @@ Node.js 24 LTS
     │   └── Fastify 5
     │
     ├── apps/agent
-    │   └── Fastify 5 / Unix socket
+    │   └── Fastify 5 / Unix socket / privileged-read evidence
+    │
+    ├── apps/terminal-agent
+    │   └── contained normal-user native PTY boundary
     │
     └── packages/contracts
         └── TypeBox schemas + Fastify type provider
 ```
 
-## Repository layout
+## Current repository layout
 
 ```text
 dashboard_RPi5/
 ├── apps/
 │   ├── web/
-│   │   ├── routes/
-│   │   ├── components/
-│   │   │   ├── ui/
-│   │   │   ├── dashboard/
-│   │   │   └── docker/
-│   │   ├── queries/
-│   │   ├── styles/
-│   │   └── fixtures/
+│   │   ├── src/components/
+│   │   ├── src/pages/
+│   │   └── public/
 │   ├── server/
-│   │   ├── routes/
-│   │   ├── services/
-│   │   └── plugins/
-│   └── agent/
-│       ├── system/
-│       ├── docker/
-│       ├── journal/
-│       └── commands/
+│   │   └── src/
+│   ├── agent/
+│   │   └── src/
+│   └── terminal-agent/
+│       └── src/
 ├── packages/
 │   └── contracts/
+├── ops/
+│   ├── production/
+│   └── systemd/
 ├── tests/
+│   └── e2e/
+├── tools/
 └── docs/
 ```
 
@@ -64,16 +65,16 @@ Do not create additional shared packages until a concrete duplication/problem ju
 
 ## Why Node.js 24 LTS
 
-Production runtime uses the current LTS line rather than Node Current.
+Production runtime uses the Node 24 LTS line rather than Node Current.
 
 Benefits:
 
-- one runtime across web tooling, API and local agent;
+- one runtime across web tooling, API, main agent and terminal-agent source;
 - one TypeScript toolchain;
 - deterministic CI/runtime contract;
 - no second language/runtime without a measured need.
 
-A future Go/Rust agent is not ruled out, but it requires evidence that the TypeScript agent is inadequate.
+A future Go/Rust component is not ruled out, but it requires evidence that the current TypeScript implementation is inadequate.
 
 ## Why React + Vite instead of Next.js
 
@@ -96,14 +97,12 @@ It provides:
 
 without coupling the project to a server-rendering framework.
 
-Planned routes:
+Current/planned top-level routes remain centered on:
 
 ```text
 /
 /docker
-/docker/:containerId
 /services
-/services/:serviceId
 /logs
 /terminal
 /activity
@@ -125,63 +124,23 @@ Use TanStack Query for:
 - request cancellation;
 - query invalidation.
 
-Defaults must be reviewed rather than accepted blindly. In particular, health/agent failures should become visible promptly instead of being hidden behind excessive retries.
+Defaults must be reviewed rather than accepted blindly. Health/agent failures must become visible promptly instead of being hidden behind excessive retries.
 
-Initial cadence targets remain domain-specific, for example:
-
-```text
-host summary     10s visible / slow or paused hidden
-Docker stats     10s visible / slow or paused hidden
-endpoint health  30s
-backup state     60s+
-history charts   30–60s while visible
-logs             explicit live stream only
-```
+Polling cadence remains domain-specific; the dashboard must not become a meaningful source of RPi load.
 
 ## Why shadcn/ui + React Aria
 
-shadcn/ui is the component source baseline, **not the product visual design**.
+shadcn/ui is a component-source baseline, not the product visual design.
 
-The audited `dashboard_RPi5` desktop and Samsung A55 mockups remain visual source-of-truth.
+The audited `dashboard_RPi5` desktop and Samsung A55 contracts remain the visual source of truth.
 
-Benefits:
-
-- components are copied into this repository and can be fully modified;
-- current dashboard/sidebar/table primitives are close to our information architecture;
-- React Aria base provides strong keyboard, touch, focus and screen-reader behavior;
-- especially useful for Samsung Galaxy A55 as the first-class physical mobile target.
-
-The project must not ship a generic stock shadcn appearance.
+React Aria-style accessible behavior is useful for keyboard, touch, focus and screen-reader interactions. The project must not ship a generic stock component-library appearance.
 
 ## Why Tailwind CSS 4
 
 Tailwind is used as a layout/utility layer, while CSS custom properties remain the canonical design-token layer.
 
-Use Tailwind for:
-
-- responsive composition;
-- grid/flex utilities;
-- state utilities;
-- container-query utilities;
-- spacing/layout consistency.
-
-Use CSS variables for product identity:
-
-```css
---bg-canvas
---surface-1
---surface-2
---border-subtle
---text-primary
---text-secondary
---accent
---health-ok
---health-warning
---health-critical
---health-info
-```
-
-Do not scatter raw one-off colors throughout component markup.
+Use utility classes where they improve composition and consistency; keep product identity in reviewed tokens rather than scattering raw one-off colors through markup.
 
 ## Why Fastify 5
 
@@ -193,104 +152,107 @@ Reasons:
 - bounded serialization contracts;
 - response schemas reduce accidental field leakage;
 - official type-provider support;
-- good fit for a narrow local operational API.
+- good fit for narrow local operational APIs.
 
-The dashboard server binds loopback in production behind Cloudflare Tunnel.
+The dashboard server binds loopback in production behind Cloudflare Tunnel/Access.
 
 ## Why TypeBox shared contracts
 
-Use shared runtime schemas from `packages/contracts`.
+Use shared runtime schemas from `packages/contracts` so server, agent, frontend adapters and tests do not maintain unrelated runtime validators that can drift.
 
-Examples:
+## Current trust boundaries
+
+### Browser / web API
+
+The browser is untrusted for host authority. The web/API process:
+
+- is Internet-reachable only through the authenticated Cloudflare path;
+- binds locally on the RPi5 origin;
+- does not own Docker Engine socket access;
+- does not expose a generic Docker proxy;
+- does not expose arbitrary shell/root capability.
+
+### Main agent
+
+The main `dashboard-rpi5-agent` is the narrow privileged-read evidence bridge over its Unix socket. It owns purpose-built host/systemd/journal/vcgencmd/procfs/sysfs reads and registered diagnostic operations.
+
+It does **not** own Docker Engine socket authority. It has no persistent `docker` or `video` group membership.
+
+Current Docker trust path is:
 
 ```text
-RpiSummarySchema
-DockerContainerSchema
-ActivityEventSchema
-BackupStatusSchema
-ApiErrorSchema
+web/API
+  -> main agent
+  -> typed bounded Docker broker capability
+  -> Docker Engine Unix socket
 ```
 
-These contracts are consumed by server, agent, frontend adapters and tests.
+The dedicated Docker broker is the sole Docker Engine authority. It exposes only reviewed current-state/events/log capabilities and never a generic caller-selected Engine endpoint.
 
-Goal: avoid maintaining separate TypeScript interfaces and unrelated runtime validators that can drift.
+### Quick Commands
 
-## Local agent boundary
-
-The local agent remains a separate trust boundary.
-
-Preferred transport:
+The accepted production Quick Command catalog is exactly:
 
 ```text
-/run/dashboard-rpi5/agent.sock
+host.disk-root
+host.failed-units
+host.kernel
+host.uptime
 ```
 
-Only the agent may later access:
+Each ID maps to a fixed executable and fixed argument array with bounded timeout/output. Quick Commands provide neither Docker authority nor free-form terminal authority.
 
-- Docker Engine Unix socket;
-- systemd/journal;
-- `vcgencmd`;
-- `/proc`/`sysfs` operational evidence;
-- registered Quick Commands;
-- later bounded PTY creation.
+### Terminal agent
 
-The Internet-facing web/API process must not become a generic root/Docker proxy.
+Full PTY source is isolated into `apps/terminal-agent` and the corresponding contained systemd socket/service boundary.
+
+Conceptually:
+
+```text
+browser
+  -> owner-authenticated terminal session/WS gate
+  -> local terminal Unix transport
+  -> dashboard-rpi5-terminal-agent
+  -> contained normal-user PTY
+```
+
+The terminal agent must not inherit main-agent privileges, Docker broker authority, root, or automatic sudo. Production terminal/PTTY remains absent/fail-closed until a separate owner-authorized activation.
 
 ## Data ownership
 
 ```text
-Prometheus  = time-series/history
-Grafana     = deep visualization
-Docker      = container runtime state/events/logs
-systemd     = host service state/logs
-RPi agent   = narrow local evidence bridge
-dashboard   = normalized presentation + attention projection
+Prometheus      = time-series/history
+Grafana         = deep visualization
+Docker Engine   = authoritative container runtime state/events/logs
+Docker broker   = sole bounded transport authority to the Engine socket
+systemd/journal = host service state/logs
+main agent      = narrow normalized host/local evidence bridge
+dashboard       = normalized presentation + attention projection
+terminal agent  = separately gated contained PTY boundary
 ```
 
 Do not create a duplicate metrics database only to redraw existing Prometheus history.
 
-## Deliberately rejected initial alternatives
+## Deliberately rejected alternatives / regressions
 
 | Alternative | Reason not selected |
 |---|---|
 | Next.js | SSR/RSC/SEO complexity without sufficient value for this private SPA |
 | React Router Framework Mode | unnecessary full-stack framework coupling beside Fastify |
 | Express | weaker fit than Fastify's schema/serialization/type-provider model |
-| Material UI | too opinionated visually for the audited custom design |
-| Ant Design | strong enterprise library, but heavier visual override burden |
-| Bootstrap | too generic for the target operations UI |
-| only custom CSS/components | too much reinvention of accessible dialogs/menus/selects/navigation |
+| Material UI / Ant Design / Bootstrap | visual override burden or generic appearance |
 | Grafana as frontend | cannot provide the required logs/terminal/activity/control UX cleanly |
 | Python backend | unnecessary second runtime/toolchain |
 | Go agent immediately | no measured performance/footprint requirement yet |
+| main agent -> Docker Engine socket | violates the accepted broker-only Docker authority invariant |
+| generic Docker proxy | grants host-level authority beyond the reviewed capability set |
+| PTY inside privileged-read main agent | would let free-form shell inherit an unrelated privileged evidence boundary |
 
-## Phase 1 scope boundary
+## Current operational status
 
-Phase 1 implements fixture-only application foundation.
+The project is no longer a Phase 1 fixture-only implementation. P0–P3 MVP Operator Usable capabilities are accepted in production, including bounded host/Docker current state, registered Docker logs, four fixed read-only Quick Commands and bounded recent Docker events.
 
-Allowed:
-
-- workspace/toolchain;
-- web shell;
-- Fastify health endpoint;
-- shared contracts;
-- fixture pages;
-- desktop sidebar;
-- Samsung A55 bottom navigation;
-- accessibility/responsive states;
-- CI/tests/build.
-
-Not allowed in Phase 1:
-
-- live RPi data;
-- Prometheus production reads;
-- Docker socket access;
-- systemd/journal access;
-- Quick Command execution;
-- PTY terminal;
-- Cloudflare/DNS/Access mutation;
-- production deployment;
-- host/root/container mutation.
+The accepted production release can intentionally lag GitHub `main`; a source merge is never production evidence by itself. Terminal/PTTY remains absent/fail-closed.
 
 ## Governance
 
@@ -303,4 +265,4 @@ issue -> fresh main -> fresh branch -> focused change -> Draft PR
 -> classify Production deploy: YES / NO
 ```
 
-**Merge authorization is not deployment authorization.**
+**Merge authorization is not deployment authorization.** Runtime, host, Docker-authority, terminal, systemd, Cloudflare and other production/trust-boundary mutations require their own explicit owner authorization.
