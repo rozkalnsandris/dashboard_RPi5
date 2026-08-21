@@ -15,7 +15,7 @@ This is the implementation companion for [`MOBILE_SAMSUNG_A55.md`](MOBILE_SAMSUN
     />
     <meta name="theme-color" content="#070b11" />
     <meta name="color-scheme" content="dark light" />
-    <link rel="manifest" href="/app.webmanifest" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>dashboard_RPi5</title>
   </head>
   <body>
@@ -38,7 +38,7 @@ Do not disable zoom.
       <strong>dashboard_RPi5</strong>
       <span>dash.rozkalns.net</span>
     </div>
-    <span class="health-pill">Healthy</span>
+    <span class="health-pill" data-state="unknown">Status unavailable</span>
   </header>
 
   <aside class="desktop-sidebar">
@@ -54,6 +54,8 @@ Do not disable zoom.
   </nav>
 </div>
 ```
+
+The status example is deliberately neutral. Real status text/state must come from normalized operational evidence; never hard-code `Healthy` when current evidence is missing, stale, unavailable, or unknown.
 
 ## 3. Mobile-first tokens
 
@@ -405,7 +407,13 @@ Never animate live telemetry merely because the display can refresh at 120 Hz.
 }
 ```
 
+The CSS describes the separately gated terminal UI. It does not imply that production PTY is active; production terminal remains absent/fail-closed until separately owner-authorized.
+
 ## 12. PWA manifest
+
+The shipped manifest is `apps/web/public/manifest.webmanifest`, exposed as `/manifest.webmanifest`.
+
+Representative structure:
 
 ```json
 {
@@ -436,14 +444,14 @@ Do not force portrait orientation.
 
 ## 13. Service-worker cache boundary
 
-Recommended cache allowlist:
+Recommended static-shell cache allowlist:
 
 ```text
 /
 /index.html
 /assets/<content-hashed-static-files>
 /icons/*
-/app.webmanifest
+/manifest.webmanifest
 ```
 
 Network-only / never persistent cache:
@@ -456,4 +464,4 @@ WebSocket terminal traffic
 auth/session responses
 ```
 
-If the shell loads while offline, clearly mark all operational data as unavailable/stale.
+Operational API evidence is network-authoritative. If the shell loads while offline, clearly mark operational data as unavailable/stale; never synthesize a healthy state from cached shell content.
