@@ -1,0 +1,172 @@
+name: Issue126 rebind edit
+
+on:
+  push:
+    branches:
+      - fix/issue126-post169-rebind
+
+permissions:
+  contents: write
+
+jobs:
+  patch-helper:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Patch only the reviewed #126 source gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('tools/operator/issue126-production-candidate-prep.sh')
+          text = path.read_text()
+
+          old_constants = '''FIX_PR="162"
+          FIX_BASE="1a0f6f6788fdcf8719c4c4d0b1976eb406f9fe3b"
+          EXPECTED_CURRENT="4295c23de5634dcb86b5fe9f57be92416eb9a75b"'''
+          new_constants = '''FIX_PR="162"
+          FIX_BASE="1a0f6f6788fdcf8719c4c4d0b1976eb406f9fe3b"
+          FIX_MERGE="ffef15e355b97efc3319fd4cd86584d8761fc961"
+          ALIGN_PR="169"
+          ALIGN_PR_HEAD="4e5513cced4f39e57f16829403acf2a7219dcbd0"
+          ALIGN_CI_RUN_ID="32476466086"
+          ALIGN_CI_RUN_NUMBER="380"
+          ALIGN_MERGE="4fd40cd0cc639bad84463b9680e627f8e02157e2"
+          REBIND_PR="170"
+          REBIND_BASE="4fd40cd0cc639bad84463b9680e627f8e02157e2"
+          EXPECTED_CURRENT="4295c23de5634dcb86b5fe9f57be92416eb9a75b"'''
+          if text.count(old_constants) != 1:
+              raise SystemExit('BLOCKED: constants anchor drift')
+          text = text.replace(old_constants, new_constants, 1)
+
+          start_marker = 'fix_pr_json='
+          end_marker = 'stage="production-readonly-preflight"'
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit('BLOCKED: source-gate anchors drift')
+          start = text.index(start_marker)
+          end = text.index(end_marker)
+
+          gate = r'''fix_pr_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$REPO_SLUG/pulls/$FIX_PR")" || blocked "PR162 lookup failed"
+          [ "$(printf '%s' "$fix_pr_json" | jq -er '.state')" = closed ] || blocked "PR162 not closed"
+          [ "$(printf '%s' "$fix_pr_json" | jq -er '.merged')" = true ] || blocked "PR162 not merged"
+          [ "$(printf '%s' "$fix_pr_json" | jq -er '.base.sha')" = "$FIX_BASE" ] || blocked "PR162 base drift"
+          [ "$(printf '%s' "$fix_pr_json" | jq -er '.merge_commit_sha')" = "$FIX_MERGE" ] || blocked "PR162 merge drift"
+
+          fix_merge_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$REPO_SLUG/commits/$FIX_MERGE")" || blocked "PR162 merge commit lookup failed"
+          [ "$(printf '%s' "$fix_merge_json" | jq -er '.commit.verification.verified')" = true ] || blocked "PR162 merge signature is not verified"
+          [ "$(printf '%s' "$fix_merge_json" | jq -er '.parents | length')" -eq 1 ] || blocked "PR162 merge must have exactly one parent"
+          [ "$(printf '%s' "$fix_merge_json" | jq -er '.parents[0].sha')" = "$FIX_BASE" ] || blocked "PR162 merge parent drift"
+
+          fix_compare_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$REPO_SLUG/compare/$FIX_BASE...$FIX_MERGE")" || blocked "PR162 compare lookup failed"
+          [ "$(printf '%s' "$fix_compare_json" | jq -er '.status')" = ahead ] || blocked "PR162 compare status drift"
+          [ "$(printf '%s' "$fix_compare_json" | jq -er '.ahead_by')" -eq 1 ] || blocked "PR162 compare must be exactly one squash commit"
+          [ "$(printf '%s' "$fix_compare_json" | jq -er '.behind_by')" -eq 0 ] || blocked "PR162 compare unexpectedly behind"
+          expected_fix_files='["docs/ISSUE126_POST_MERGE_CANDIDATE_GATE_FIX.md","docs/ISSUE126_PRODUCTION_CANDIDATE_PREP.md","tools/issue126-production-candidate-prep-helper.test.mjs","tools/operator/issue126-production-candidate-prep.sh"]'
+          actual_fix_files="$(printf '%s' "$fix_compare_json" | jq -c '[.files[].filename] | sort')"
+          [ "$actual_fix_files" = "$expected_fix_files" ] || blocked "PR162 changed-file boundary drift: $actual_fix_files"
+
+          align_pr_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$REPO_SLUG/pulls/$ALIGN_PR")" || blocked "PR169 lookup failed"
+          [ "$(printf '%s' "$align_pr_json" | jq -er '.state')" = closed ] || blocked "PR169 not closed"
+          [ "$(printf '%s' "$align_pr_json" | jq -er '.merged')" = true ] || blocked "PR169 not merged"
+          [ "$(printf '%s' "$align_pr_json" | jq -er '.base.sha')" = "$FIX_MERGE" ] || blocked "PR169 base drift"
+          [ "$(printf '%s' "$align_pr_json" | jq -er '.head.sha')" = "$ALIGN_PR_HEAD" ] || blocked "PR169 head drift"
+          [ "$(printf '%s' "$align_pr_json" | jq -er '.merge_commit_sha')" = "$ALIGN_MERGE" ] || blocked "PR169 merge drift"
+
+          align_run_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$REPO_SLUG/actions/runs/$ALIGN_CI_RUN_ID")" || blocked "CI380 lookup failed"
+          [ "$(printf '%s' "$align_run_json" | jq -er '.name')" = CI ] || blocked "CI380 workflow name drift"
+          [ "$(printf '%s' "$align_run_json" | jq -er '.run_number')" = "$ALIGN_CI_RUN_NUMBER" ] || blocked "CI380 run number drift"
+          [ "$(printf '%s' "$align_run_json" | jq -er '.head_sha')" = "$ALIGN_PR_HEAD" ] || blocked "CI380 head drift"
+          [ "$(printf '%s' "$align_run_json" | jq -er '.status')" = completed ] || blocked "CI380 not completed"
+          [ "$(printf '%s' "$align_run_json" | jq -er '.conclusion')" = success ] || blocked "CI380 not successful"
+          align_jobs_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$REPO_SLUG/actions/runs/$ALIGN_CI_RUN_ID/jobs?per_page=100")" || blocked "CI380 jobs lookup failed"
+          for job_name in "check" "terminal-native (x64)" "terminal-native (arm64)"; do
+            count="$(printf '%s' "$align_jobs_json" | jq -er --arg name "$job_name" '[.jobs[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length')"
+            [ "$count" -eq 1 ] || blocked "required CI380 job not success: $job_name count=$count"
+          done
+
+          align_merge_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$REPO_SLUG/commits/$ALIGN_MERGE")" || blocked "PR169 merge commit lookup failed"
+          [ "$(printf '%s' "$align_merge_json" | jq -er '.commit.verification.verified')" = true ] || blocked "PR169 merge signature is not verified"
+          [ "$(printf '%s' "$align_merge_json" | jq -er '.parents | length')" -eq 1 ] || blocked "PR169 merge must have exactly one parent"
+          [ "$(printf '%s' "$align_merge_json" | jq -er '.parents[0].sha')" = "$FIX_MERGE" ] || blocked "PR169 merge parent drift"
+
+          align_compare_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$REPO_SLUG/compare/$FIX_MERGE...$ALIGN_MERGE")" || blocked "PR169 compare lookup failed"
+          [ "$(printf '%s' "$align_compare_json" | jq -er '.status')" = ahead ] || blocked "PR169 compare status drift"
+          [ "$(printf '%s' "$align_compare_json" | jq -er '.ahead_by')" -eq 1 ] || blocked "PR169 compare must be exactly one squash commit"
+          [ "$(printf '%s' "$align_compare_json" | jq -er '.behind_by')" -eq 0 ] || blocked "PR169 compare unexpectedly behind"
+          expected_align_files='["package-lock.json","package.json"]'
+          actual_align_files="$(printf '%s' "$align_compare_json" | jq -c '[.files[].filename] | sort')"
+          [ "$actual_align_files" = "$expected_align_files" ] || blocked "PR169 changed-file boundary drift: $actual_align_files"
+
+          rebind_pr_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$REPO_SLUG/pulls/$REBIND_PR")" || blocked "PR170 lookup failed"
+          [ "$(printf '%s' "$rebind_pr_json" | jq -er '.state')" = closed ] || blocked "PR170 not closed"
+          [ "$(printf '%s' "$rebind_pr_json" | jq -er '.merged')" = true ] || blocked "PR170 not merged"
+          [ "$(printf '%s' "$rebind_pr_json" | jq -er '.base.sha')" = "$REBIND_BASE" ] || blocked "PR170 base drift"
+          [ "$(printf '%s' "$rebind_pr_json" | jq -er '.merge_commit_sha')" = "$main_sha" ] || blocked "live main is not PR170 squash merge"
+          rebind_head="$(printf '%s' "$rebind_pr_json" | jq -er '.head.sha')"
+
+          rebind_runs_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$REPO_SLUG/actions/runs?head_sha=$rebind_head&event=pull_request&per_page=100")" || blocked "PR170 CI lookup failed"
+          rebind_run_id="$(printf '%s' "$rebind_runs_json" | jq -er --arg head "$rebind_head" '[.workflow_runs[] | select(.name == "CI" and .head_sha == $head and .status == "completed" and .conclusion == "success")] | sort_by(.run_number) | last | .id')" || blocked "PR170 exact-head CI not successful"
+          rebind_jobs_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$REPO_SLUG/actions/runs/$rebind_run_id/jobs?per_page=100")" || blocked "PR170 CI jobs lookup failed"
+          for job_name in "check" "terminal-native (x64)" "terminal-native (arm64)"; do
+            count="$(printf '%s' "$rebind_jobs_json" | jq -er --arg name "$job_name" '[.jobs[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length')"
+            [ "$count" -eq 1 ] || blocked "required PR170 CI job not success: $job_name count=$count"
+          done
+
+          main_commit_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$REPO_SLUG/commits/$main_sha")" || blocked "live main commit lookup failed"
+          [ "$(printf '%s' "$main_commit_json" | jq -er '.parents | length')" -eq 1 ] || blocked "live main must have exactly one parent"
+          [ "$(printf '%s' "$main_commit_json" | jq -er '.parents[0].sha')" = "$REBIND_BASE" ] || blocked "live main parent drift"
+
+          rebind_compare_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$REPO_SLUG/compare/$REBIND_BASE...$main_sha")" || blocked "PR170 compare lookup failed"
+          [ "$(printf '%s' "$rebind_compare_json" | jq -er '.status')" = ahead ] || blocked "PR170 compare status drift"
+          [ "$(printf '%s' "$rebind_compare_json" | jq -er '.ahead_by')" -eq 1 ] || blocked "PR170 compare must be exactly one squash commit"
+          [ "$(printf '%s' "$rebind_compare_json" | jq -er '.behind_by')" -eq 0 ] || blocked "PR170 compare unexpectedly behind"
+          expected_rebind_files='["docs/ISSUE126_POST_169_REBIND.md","docs/ISSUE126_PRODUCTION_CANDIDATE_PREP.md","tools/issue126-production-candidate-prep-helper.test.mjs","tools/operator/issue126-production-candidate-prep.sh"]'
+          actual_rebind_files="$(printf '%s' "$rebind_compare_json" | jq -c '[.files[].filename] | sort')"
+          [ "$actual_rebind_files" = "$expected_rebind_files" ] || blocked "PR170 changed-file boundary drift: $actual_rebind_files"
+          printf 'ISSUE126_SOURCE_GATE_PASS target=%s tree=%s pr160=MERGED ci368=SUCCESS pr162=MERGED pr169=MERGED ci380=SUCCESS pr170=MERGED pr170_ci=%s live_main=%s parent=%s\n' \
+            "$TARGET" "$TARGET_TREE" "$rebind_run_id" "$main_sha" "$REBIND_BASE"
+
+          '''
+
+          text = text[:start] + gate + text[end:]
+          path.write_text(text)
+          PY
+
+          bash -n tools/operator/issue126-production-candidate-prep.sh
+          node --test tools/issue126-production-candidate-prep-helper.test.mjs
+          git diff --check
+
+      - name: Commit only the helper patch and retire this temporary workflow
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm .github/workflows/issue126-rebind-edit.yml
+          changed="$(git status --short)"
+          printf '%s\n' "$changed"
+          printf '%s\n' "$changed" | grep -q 'tools/operator/issue126-production-candidate-prep.sh'
+          printf '%s\n' "$changed" | grep -q '.github/workflows/issue126-rebind-edit.yml'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- tools/operator/issue126-production-candidate-prep.sh .github/workflows/issue126-rebind-edit.yml
+          git diff --cached --check
+          git commit -m 'fix: rebind #126 candidate prep after #169'
+          git push origin HEAD:fix/issue126-post169-rebind
