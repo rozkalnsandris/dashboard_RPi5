@@ -6,19 +6,19 @@ Preserve the historical incomplete candidate-preparation workspace as evidence a
 
 This is source-only preparation. It does not authorize production activation, release apply, service restart, systemd/identity/permission changes, Docker authority changes, Cloudflare changes, terminal activation, or GitHub Actions reruns.
 
-## Reviewed lineage
+## Immutable base and helper source
 
-The wrapper is pinned to the post-PR170 state:
+PR #170 was squash-merged as the immutable base for this recovery step:
 
 ```text
-main=db6c4383b33dd9902094c54afd60e51a161f8f4c
-main_tree=1a457416331357c54e9dae278769a4ef3690bd7c
-main_parent=4fd40cd0cc639bad84463b9680e627f8e02157e2
-pr170_head=514a6405d2bbd66938e4a85eec722d172e2efd93
+base_main=db6c4383b33dd9902094c54afd60e51a161f8f4c
+base_tree=1a457416331357c54e9dae278769a4ef3690bd7c
 merged_helper_blob=3541750f511289056c4a4b8d684db139b9c903eb
 immutable_candidate_target=a39fc7a9873eedb58cfa49568f9b2e05483cf7c2
 immutable_candidate_tree=bd2fa68711b1cf4617088a18c524e3c60d427152
 ```
+
+The R3 wrapper itself is carried by PR #172. After merge it must not require live `main` to remain equal to `db6c4383...`; instead it must prove that live `main` is exactly the PR #172 squash descendant of that immutable base.
 
 ## R2 stop receipt
 
@@ -46,19 +46,35 @@ The timestamps show checkout/dependency/build activity, including application bu
 
 No cleanup or reuse is required for R3.
 
+## R3 post-merge lineage gate
+
+`tools/operator/issue126-production-candidate-prep-isolated-wrapper.sh` requires, after PR #172 is merged:
+
+1. immutable base `db6c4383...` still exists with tree `1a457416...` and verified signature;
+2. PR #172 is closed/merged with exact base `db6c4383...`;
+3. PR #172 merge commit is exactly live GitHub `main`;
+4. that live main has a verified signature, exactly one parent, and parent `db6c4383...`;
+5. compare `db6c4383... -> live main` is exactly one squash commit, not behind, and changes only:
+   - `docs/ISSUE126_ISOLATED_CANDIDATE_PREP_R3.md`;
+   - `package.json`;
+   - `tools/issue126-production-candidate-prep-isolated-wrapper.test.mjs`;
+   - `tools/operator/issue126-production-candidate-prep-isolated-wrapper.sh`;
+6. natural exact-head PR #172 CI is completed/success and includes `check`, `terminal-native (x64)`, and `terminal-native (arm64)`;
+7. the preparation helper is fetched only from immutable base `db6c4383...` and must retain blob `3541750f...`.
+
+Any later `main` commit fails closed.
+
 ## R3 isolation model
 
-`tools/operator/issue126-production-candidate-prep-isolated-wrapper.sh`:
+After the post-merge lineage gate passes, the wrapper:
 
 1. requires normal operator `andris` on Raspberry Pi 5 Model B;
-2. is one-shot and keyed to the exact PR170 squash-merged main;
-3. re-proves main SHA/tree/parent/signature and PR170 head/merge lineage;
-4. fetches the merged helper only from exact `db6c4383...` and requires blob `3541750f...`;
-5. preserves the historical global candidate workspace unchanged;
-6. creates a fresh isolated HOME under its one-shot run root;
-7. runs the unchanged merged preparation-only helper with that isolated HOME, causing the helper to create a fresh candidate workspace under the isolated run root rather than colliding with the historical global workspace;
-8. captures helper output into the one-shot run root;
-9. on any BLOCKED/failure, preserves all evidence and stops with no cleanup, retry, rollback, or production authorization.
+2. creates a one-shot run root keyed to the actual PR #172 squash merge SHA;
+3. preserves the historical global candidate workspace unchanged;
+4. creates a fresh isolated HOME below the one-shot run root;
+5. runs the unchanged PR170-merged preparation-only helper with that isolated HOME, causing the helper to create a fresh candidate workspace under the isolated run root rather than colliding with the historical global workspace;
+6. captures helper output into the one-shot run root;
+7. on any BLOCKED/failure, preserves all evidence and stops with no cleanup, retry, rollback, or production authorization.
 
 The wrapper itself contains no `rm`, `mv`, release `--apply`, or service start/stop/restart/enable/disable operation.
 
@@ -72,10 +88,10 @@ This warning is source debt, not evidence of a production mutation and not a rea
 
 ```text
 PR170_MERGE_AUTHORIZATION=CONSUMED
+PR172_MERGE_AUTHORIZATION=NONE
 PRODUCTION_MUTATION_AUTHORIZATION=NONE
 ACTIONS_RERUN_AUTHORIZATION=NONE
-R3_MERGE_AUTHORIZATION=NONE
 OLD_WORKSPACE_CLEANUP_AUTHORIZATION=NONE
 ```
 
-After R3 reaches Ready, stop for an explicit owner merge decision. Only after merge may the owner run the new wrapper once on the RPi5. Any BLOCKED/failure/ambiguity must preserve evidence and stop; production activation remains a later separately reviewed and explicitly authorized operation.
+After PR #172 reaches Ready, stop for an explicit owner merge decision. Only after merge may the owner run the new wrapper once on the RPi5. Any BLOCKED/failure/ambiguity must preserve evidence and stop; production activation remains a later separately reviewed and explicitly authorized operation.
