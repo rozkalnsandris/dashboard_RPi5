@@ -1,10 +1,12 @@
 # Terminal and Logs Security Contract
 
+This document describes the current trust boundaries. Historical phase documents remain evidence of how the design evolved; they do not override the current broker/terminal-agent boundaries.
+
 ## Logs
 
 ### Browser contract
 
-The browser supplies a stable `sourceId`, never a raw filesystem path or shell expression.
+The browser supplies a stable `sourceId`, never a raw filesystem path, Docker Engine path, container socket target, or shell expression.
 
 Examples:
 
@@ -16,17 +18,31 @@ systemd:dashboard-rpi5-agent
 file:rpi5-backup
 ```
 
-The server maps these IDs to registered sources.
+The server maps these IDs to registered/allowlisted sources.
 
-### Implementation
+### Current Docker log trust path
 
-- Docker logs through the supported Engine logs endpoint.
-- Journal logs through fixed `journalctl`/journal queries.
-- Prefer structured journal output over parsing ANSI terminal output.
-- Apply maximum line count / bytes / duration.
-- Escape all output.
-- No `innerHTML`.
-- Redact known secret patterns where practical, but never rely on redaction as the only control.
+```text
+registered sourceId
+  -> web/API
+  -> main agent
+  -> typed bounded Docker broker log capability
+  -> fixed Docker Engine logs GET
+```
+
+Only the dedicated Docker broker owns Docker Engine socket authority. The main agent has no persistent `docker` or `video` group membership, does not accept caller-supplied Engine paths/filters/socket targets, and does not expose a generic Docker proxy.
+
+Journal and registered file logs remain purpose-built reads through the main-agent boundary where applicable.
+
+### Implementation rules
+
+- broker-only Docker Engine authority;
+- fixed registered source IDs;
+- bounded line count / bytes / duration;
+- prefer structured journal output over parsing ANSI terminal output;
+- escape output and never render log content through `innerHTML`;
+- redaction may be defense-in-depth but is not the primary secret boundary;
+- unknown or unregistered sources fail closed.
 
 ### UI
 
@@ -42,62 +58,73 @@ The server maps these IDs to registered sources.
 
 ## Quick Commands
 
-Quick Commands are the first terminal-like feature because they are useful on mobile and much safer than free-form shell.
+Quick Commands are the production-active terminal-like diagnostic surface. They are deliberately narrower than Docker CLI or free-form shell.
 
-Browser sends:
-
-```json
-{ "commandId": "docker-stats-once" }
-```
-
-Server mapping concept:
+The accepted production catalog is exactly:
 
 ```text
-commandId: docker-stats-once
-executable: /usr/bin/docker
-args: ["stats", "--no-stream", "--format", "..."]
-timeout: 5s
-maxOutput: bounded
+host.disk-root
+host.failed-units
+host.kernel
+host.uptime
 ```
+
+Browser example:
+
+```json
+{ "commandId": "host.uptime" }
+```
+
+The server/agent maps each ID to a fixed executable and fixed argument array with bounded timeout/output. Browser input never supplies an executable, shell string, Docker target, socket path, or arbitrary argv.
 
 Rules:
 
+- fixed registered IDs;
 - `execFile`/`spawn` style argument arrays;
 - no string concatenation;
 - no normal `sh -c` path;
-- fixed registered IDs;
-- strict typed optional arguments if any are added later;
-- owner-only;
+- no Docker CLI or Docker socket authority;
+- no terminal/PTTY authority;
+- bounded timeout/output;
+- owner-only execution gate;
 - audit command ID, time, result and duration.
 
 ## Full terminal
 
-Later phase only.
+Full PTY source is intentionally isolated from the privileged-read main agent.
 
-Frontend:
+Current conceptual path:
 
-- xterm.js;
-- local bundled assets;
-- fit/search addons as needed;
-- no third-party runtime scripts on the terminal page;
-- clear connection state.
+```text
+browser
+  -> authenticated same-origin web/API terminal gate
+  -> bounded WebSocket/session protocol
+  -> local terminal Unix transport
+  -> dashboard-rpi5-terminal-agent
+  -> contained normal-user PTY
+```
 
-Backend:
+The separate terminal agent is the PTY boundary. It must not inherit Docker broker authority, main-agent privileged-read authority, root, or automatic sudo.
 
-- PTY owned by the local agent;
-- normal owner user by default;
-- no root default;
+Required controls remain:
+
+- owner revalidation before terminal admission/upgrade;
+- strict Origin/subprotocol/session claim checks;
+- normal non-root terminal identity;
+- no supplementary privileged groups;
 - no automatic sudo;
-- `wss` externally through Cloudflare;
-- authenticated owner revalidation before upgrade;
-- origin validation;
-- idle timeout;
-- short max lifetime;
-- low concurrency limit;
-- kill PTY on disconnect/expiry.
+- fixed shell/environment;
+- idle timeout and maximum lifetime;
+- low concurrency;
+- kill PTY on disconnect/expiry;
+- bounded protocol frames/output;
+- no third-party runtime scripts on the terminal page;
+- session-metadata audit rather than default keystroke/output persistence.
 
-Audit full-terminal sessions by session metadata by default. Do not persist every keystroke/output by default because terminal content can contain passwords/tokens/secrets.
+## Production state
+
+Terminal source exists for separately gated future activation, but production terminal/PTTY remains absent/fail-closed. Source presence is not activation evidence. Any terminal activation, host permission change, systemd activation, or other trust-boundary mutation requires a separate explicit owner authorization.
 
 ## Why the terminal is isolated
 
-Browser terminals raise the security requirements of the entire page because any JavaScript in the scripting context can potentially interact with terminal input/output. Keep the terminal route deliberately small and hardened.
+Browser terminals raise the security requirements of the whole scripting context. Keeping PTY execution in a separate contained normal-user terminal agent prevents free-form shell capability from inheriting Docker Engine authority or the main agent's host/journal evidence privileges.
