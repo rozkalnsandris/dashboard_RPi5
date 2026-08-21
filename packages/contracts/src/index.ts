@@ -13,7 +13,7 @@ export const ApiHealthSchema = Type.Object(
   {
     status: Type.Literal("ok"),
     service: Type.Literal("dashboard-rpi5-server"),
-    mode: Type.Literal("fixture"),
+    mode: Type.Literal("live-read-only"),
     observedAt: Type.String({ format: "date-time" }),
   },
   { additionalProperties: false },

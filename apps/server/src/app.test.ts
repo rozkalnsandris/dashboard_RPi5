@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
 
 describe("dashboard server", () => {
-  it("returns the bounded fixture-mode health contract", async () => {
+  it("returns the bounded live-read-only health contract", async () => {
     const app = buildApp();
     const response = await app.inject({ method: "GET", url: "/api/health" });
 
@@ -15,7 +15,7 @@ describe("dashboard server", () => {
     expect(response.json()).toMatchObject({
       status: "ok",
       service: "dashboard-rpi5-server",
-      mode: "fixture",
+      mode: "live-read-only",
     });
 
     await app.close();
