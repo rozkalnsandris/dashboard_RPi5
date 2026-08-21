@@ -7,6 +7,7 @@ import {
   DEFAULT_DOCKER_BROKER_SOCKET_PATH,
   DOCKER_BROKER_SOCKET_ENV,
 } from "./docker-broker-protocol.js";
+import { isDirectCliInvocation } from "./cli-entry.js";
 import { prepareSocketPath, secureSocketPath } from "./socket.js";
 
 interface StartDockerBrokerOptions {
@@ -67,7 +68,7 @@ async function runFromCli() {
   process.once("SIGINT", close);
 }
 
-if (import.meta.main) {
+if (isDirectCliInvocation()) {
   void runFromCli().catch(() => {
     console.error("dashboard-rpi5-docker-broker failed to start");
     process.exitCode = 1;
