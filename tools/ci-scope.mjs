@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { argv, stdout } from "node:process";
 import { fileURLToPath } from "node:url";
 
 const DOC_FILES = new Set([
@@ -111,10 +112,10 @@ function printGithubOutputs(scope) {
     ["browser", scope.browser],
     ["terminal", scope.terminal],
   ];
-  for (const [key, value] of entries) console.log(`${key}=${value}`);
+  for (const [key, value] of entries) stdout.write(`${key}=${value}\n`);
 }
 
-const invokedPath = process.argv[1] ? resolve(process.argv[1]) : "";
+const invokedPath = argv[1] ? resolve(argv[1]) : "";
 if (invokedPath === fileURLToPath(import.meta.url)) {
-  printGithubOutputs(classifyPaths(process.argv.slice(2)));
+  printGithubOutputs(classifyPaths(argv.slice(2)));
 }
