@@ -51,6 +51,33 @@ issue
 
 `turpini` / “continue” authorizes source-only work up to Ready when the task is otherwise clear. It does not authorize merge or production mutation.
 
+### FAST and STRICT work lanes
+
+The lane changes batching and validation cost only. It never changes the owner merge gate, production gate, fail-closed mutation rules, or security invariants.
+
+Use **FAST** for coherent low-risk work that does not add or expand host/runtime authority, for example documentation/status corrections, non-privileged UI copy/presentation cleanup, tests-only maintenance, and bounded source cleanup. Related low-risk issues may share one focused branch/PR when they produce one coherent outcome. Do not split one bounded documentation/cleanup result into multiple PRs merely to preserve one-issue-per-PR ceremony.
+
+Use **STRICT** for first-time or expanded trust boundaries and production-sensitive control paths. Keep these isolated, including Docker Engine authority, systemd/host privilege, terminal/PTTY capability, Cloudflare Access/Tunnel/DNS, secrets/permissions, controlled write actions, and production deployment/activation controllers.
+
+For a clear source-only task, `START` / `turpini` may execute the full safe pre-Ready batch without conversational STOP points after intermediate source steps:
+
+```text
+fresh main
+  -> one focused branch
+  -> coherent source changes
+  -> focused validation
+  -> one push
+  -> one PR
+  -> exact-head CI
+  -> one exact-diff/review pass
+  -> Ready
+  -> STOP for explicit owner merge
+```
+
+Stop earlier only for a real blocker, changed intent, or authorization boundary.
+
+CI may select validation lanes from the exact changed-file set. Classification must fail open: ambiguous, workflow/toolchain, host-boundary, or otherwise unknown changes receive the full validation surface. Intentional skipped jobs must remain explicit successful/skipped outcomes rather than suppressing the whole required workflow.
+
 ## 4. Merge gate
 
 Never merge without an explicit owner instruction such as:
@@ -73,6 +100,8 @@ Immediately before merge, freshly verify:
 - whether `main` moved due to parallel work.
 
 If the PR head/base/current main changed, re-evaluate instead of using old evidence.
+
+For a non-STRICT source-only squash merge, exact-main verification may use immutable commit/tree evidence when all of the following are proven: the merged PR used the exact reviewed head, its base was the freshly verified pre-merge `main`, the new `main` has that base as its sole parent, and the new `main` tree is identical to the exact-head CI-tested PR tree. If any element is ambiguous, if `main` drifted, or if the change is STRICT/production-sensitive, do not substitute tree equivalence for the stronger required verification.
 
 ## 5. Deploy classification and gate
 
@@ -188,6 +217,10 @@ When a phase gate changes, update:
 - `docs/ROADMAP.md`;
 - relevant ADR/spec;
 - README when current status changes.
+
+Ready evidence should be consolidated once per PR after final exact-head CI/review. Do not repeatedly rewrite the same evidence after every source-only micro-step. Immediately before merge, refresh only mutable merge-gate evidence required by section 4.
+
+Continuity should stay compact: issue #1 is the durable product/security/governance contract, while PRs/issues/CI carry exact execution evidence. Create or refresh a CURRENT handoff only for meaningful phase/gate transitions; historical handoffs never override fresh GitHub state.
 
 ## 11. Stop conditions
 
