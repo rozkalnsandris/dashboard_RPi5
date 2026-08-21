@@ -2,9 +2,9 @@
 
 Modern Raspberry Pi 5 homelab observability and control dashboard for **`https://dash.rozkalns.net`**.
 
-> **Current production status:** Phase 128 production recovery is complete. Source-fixed release `15f44e3a6fdda8f2e97b26501a283f6bba915e86` is active; host and bounded Docker current-state reads are live through the dedicated Docker broker. Docker recent events remain fail-closed pending #126, Docker-backed registered logs remain fail-closed pending #127, Quick Commands remain disabled, terminal/PTTY remains absent, and Cloudflare Access/Tunnel/DNS are unchanged. The public dashboard remains owner-only behind Cloudflare Access.
+> **Current production status:** MVP Operator Usable P0–P3 is accepted in production. Release `a39fc7a9873eedb58cfa49568f9b2e05483cf7c2` is active; host and bounded Docker current-state reads, registered Docker logs, four fixed read-only Quick Commands, and bounded recent Docker events are live through the dedicated broker/agent boundaries. The dedicated Docker broker remains the sole Docker Engine authority, terminal/PTTY remains absent/fail-closed, and Cloudflare Access/Tunnel/DNS are unchanged. The public dashboard remains owner-only behind Cloudflare Access. GitHub `main` may be newer than this production SHA; a merged source change is not production evidence until it is separately deployed and accepted.
 
-> **Current-state handoff:** [Issue #137 — Phase 128 production complete](https://github.com/rozkalnsandris/dashboard_RPi5/issues/137)
+> **Current-state handoff:** [Issue #171 — canonical continuity / handoff](https://github.com/rozkalnsandris/dashboard_RPi5/issues/171)
 >
 > **Canonical product/security contract:** [Issue #1 — MASTER / READ FIRST](https://github.com/rozkalnsandris/dashboard_RPi5/issues/1)
 
@@ -97,11 +97,11 @@ The **web process does not get arbitrary root access or an unrestricted Docker A
 - Agent is not Internet-facing.
 - Docker socket is never exposed to browser JavaScript.
 - Docker current-state reads use the dedicated bounded broker; the main agent is not persistently in `docker` or `video`.
-- Docker recent events remain fail-closed pending #126.
-- Docker-backed registered logs remain fail-closed pending #127.
+- Bounded recent Docker events are production-active through the dedicated broker capability; there is no generic Docker Engine proxy.
+- Registered Docker logs are production-active through the dedicated broker path and remain allowlisted/bounded.
 - Read-only observability first.
 - Browser-supplied log paths/service names/shell strings are rejected.
-- Quick Commands remain disabled in production.
+- Quick Commands are production-active only through the fixed four-command read-only allowlist. Conservative base/bootstrap contracts intentionally remain fail-closed and disabled-by-default; the accepted production capability state is an explicit activation overlay, not a reason to weaken those defaults.
 - Terminal/PTTY remains absent/fail-closed in production; any future activation is separately gated.
 - Any future production/host mutation requires separate explicit owner authorization.
 
@@ -145,4 +145,4 @@ See [`AGENTS.md`](AGENTS.md) and [`CONTRIBUTING.md`](CONTRIBUTING.md).
 observe -> explain -> drill down -> act only through an explicit trusted gate
 ```
 
-**Production deploy:** the source-fixed Phase 128 release `15f44e3a6fdda8f2e97b26501a283f6bba915e86` is active. Any future production deploy or host/trust-boundary mutation requires a new separate explicit owner authorization.
+**Production deploy:** the accepted active production release is `a39fc7a9873eedb58cfa49568f9b2e05483cf7c2`. GitHub `main` can be ahead of production after later source-only merges; any future production deploy or host/trust-boundary mutation requires a new separate explicit owner authorization.
