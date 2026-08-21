@@ -197,7 +197,7 @@ export function buildApp(options: BuildAppOptions = {}) {
     async (): Promise<ApiHealth> => ({
       status: "ok",
       service: "dashboard-rpi5-server",
-      mode: "fixture",
+      mode: "live-read-only",
       observedAt: new Date().toISOString(),
     }),
   );
