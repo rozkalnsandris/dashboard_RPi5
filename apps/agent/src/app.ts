@@ -48,10 +48,11 @@ import Fastify from "fastify";
 import { readBackupEvidence } from "./backup-evidence.js";
 import { readRecentDeployEvents } from "./deploy-events.js";
 import { readRecentDockerEvents } from "./docker-events.js";
+import { readLiveLogSnapshot } from "./docker-logs-live.js";
 import { readDockerContainers } from "./docker-read.js";
 import { readEndpointEvidence } from "./endpoint-evidence.js";
 import { readHostSummary } from "./host-read.js";
-import { listRegisteredLogSources, readLogSnapshot } from "./logs-read.js";
+import { listRegisteredLogSources } from "./logs-read.js";
 import { readRecentMaintenanceEvents } from "./maintenance-events.js";
 import {
   normalizeAgentError,
@@ -113,7 +114,7 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
   const logsReader =
     options.logsReader ??
     ((sourceId: LogSourceId, range: LogRange, signal: AbortSignal) =>
-      readLogSnapshot(sourceId, range, undefined, signal));
+      readLiveLogSnapshot(sourceId, range, signal));
 
   operationRegistry.register("host.summary", hostSummaryReader);
   operationRegistry.register("docker.containers", dockerContainersReader);

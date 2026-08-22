@@ -11,7 +11,6 @@ import { DeploymentsPage } from "./pages/DeploymentsPage";
 import { LiveDockerPage } from "./pages/LiveDockerPage";
 import { LogsPage } from "./pages/LogsPage";
 import { OverviewHistoryPage } from "./pages/OverviewHistoryPage";
-import { ReliabilityStatesPage } from "./pages/ReliabilityStatesPage";
 import { ServicesPage } from "./pages/ServicesPage";
 import { TerminalPage } from "./pages/TerminalPage";
 import { OfflineBanner } from "./pwa";
@@ -24,7 +23,6 @@ import "./backup-page.css";
 import "./backup-overview.css";
 import "./endpoint-overview.css";
 import "./deployments-page.css";
-import "./reliability-states.css";
 import "./history-panel.css";
 import "./services-page.css";
 import "./quick-commands.css";
@@ -57,7 +55,6 @@ const router = createBrowserRouter([
       { path: "activity", element: <ActivityPage /> },
       { path: "backups", element: <BackupsPage /> },
       { path: "deployments", element: <DeploymentsPage /> },
-      { path: "settings", element: <ReliabilityStatesPage /> },
     ],
   },
 ]);
