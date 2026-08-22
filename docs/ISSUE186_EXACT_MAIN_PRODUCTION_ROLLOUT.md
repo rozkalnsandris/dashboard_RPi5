@@ -6,6 +6,7 @@ Target production source:
 TARGET_SHA=46c47fbd53e6933e2d8db86abdab30edea2badd0
 TARGET_TREE=4244c8b5105cad996c87c743b3ba90519a4d092a
 EXPECTED_CURRENT_PRODUCTION=a39fc7a9873eedb58cfa49568f9b2e05483cf7c2
+GATE_BASE_SHA=5bb54d108bcacf5c0c35f9d34a349929d1ca8029
 ```
 
 This document and `tools/operator/issue186-exact-main-production-rollout.sh` are source-only. Their merge does not authorize production mutation.
@@ -22,15 +23,39 @@ The current systemd unit blueprints are not in the accepted-production-to-target
 
 The rollout instead performs a live read-only baseline check against the accepted active release and the current broker/agent/web service state.
 
+## 2026-08-22 preflight correction
+
+The first owner-run `--preflight-only` attempt stopped during `LIVE_PRODUCTION_READ_ONLY_BASELINE` before candidate creation or any production mutation. Follow-up read-only evidence showed:
+
+```text
+CURRENT=/opt/dashboard_RPi5/releases/a39fc7a9873eedb58cfa49568f9b2e05483cf7c2
+broker=active, /proc/<MainPID>/cwd read RC=1 as normal operator
+agent=active, /proc/<MainPID>/cwd read RC=1 as normal operator
+web=active, /proc/<MainPID>/cwd read RC=1 as normal operator
+PRODUCTION_MUTATION=NO
+```
+
+The three services intentionally run as separate service identities, so the normal operator cannot read their `/proc/<MainPID>/cwd` links. Exact process-CWD evidence remains required, but the helper now performs only that read through the fixed command `sudo /usr/bin/readlink -f /proc/<MainPID>/cwd`. Failure is converted into an explicit `BLOCKED:` result. This grants no new service, Docker, systemd, terminal, Cloudflare or filesystem write authority.
+
+The correction also tightens post-merge lineage. `5bb54d10...` is pinned as the reviewed #186 gate base and must remain a direct child of target `46c47fbd...` with the original four-file gate boundary. Live GitHub `main` may then be either that exact gate base or exactly one direct corrective child whose diff contains only:
+
+1. `docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md`;
+2. `tools/issue186-exact-main-production-rollout.test.mjs`;
+3. `tools/operator/issue186-exact-main-production-rollout.sh`.
+
+Any later or broader GitHub movement fails closed.
+
 ## Phase A — owner-run preflight only
 
-After this gate source is merged and exact-main post-merge verification is complete, run as the normal RPi5 operator:
+After the corrective gate source is merged and exact-main post-merge verification is complete, run as the normal RPi5 operator in an interactive TTY:
 
 ```bash
 bash tools/operator/issue186-exact-main-production-rollout.sh --preflight-only
 ```
 
-The helper fails if its immutable run directory already exists. Do not delete/reuse that directory after a BLOCKED run without a new owner decision.
+The helper may request the operator's existing sudo authentication solely for read-only service-CWD evidence. Preflight does not use sudo for a production write.
+
+The helper fails if its immutable run directory already exists. The failed 2026-08-22 baseline attempt stopped before candidate creation, so no candidate run directory was created by that attempt. Any future BLOCKED run after the run directory is created remains a STOP; do not delete/reuse that directory without a new owner decision.
 
 Preflight may write only below:
 
@@ -41,9 +66,9 @@ $HOME/.cache/dashboard-rpi5-operator/issue186-46c47fbd53e6933e2d8db86abdab30edea
 It performs:
 
 1. fresh GitHub `main` resolution;
-2. fail-closed lineage proof: GitHub main must be either target `46c47fbd...` or exactly one direct child whose diff is only this #186 gate source;
+2. fail-closed lineage proof for the pinned gate base and at most one exact corrective child;
 3. read-only live production proof that `/opt/dashboard_RPi5/current` is still `a39fc7a9...`;
-4. broker, agent and web service Active/MainPID/exact-CWD/stable-NRestarts evidence;
+4. broker, agent and web service Active/MainPID/exact-CWD/stable-NRestarts evidence, with only exact CWD read elevated through `sudo /usr/bin/readlink`;
 5. broker/agent Unix-socket health, Docker current-state and web API health/current-Docker checks;
 6. main-agent no-`docker`/no-`video` invariant;
 7. terminal socket/unit absent/fail-closed invariant;
@@ -145,4 +170,4 @@ CLOUDFLARE_MUTATION_AUTHORIZATION=NONE
 ACTIONS_RERUN_CANCEL_AUTHORIZATION=NONE
 ```
 
-The immediate workflow for this source slice is normal FAST/source governance: exact-head CI -> manual diff/review -> Ready -> STOP before merge.
+The immediate workflow for this corrective source slice is normal FAST/source governance: exact-head CI -> manual diff/review -> Ready -> STOP before merge.
