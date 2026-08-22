@@ -24,6 +24,8 @@ test("issue186 helper is pinned to the reviewed target, production baseline, and
   assert.match(helper, /TRUST_CHAIN_FIX_TREE="61a7baab82b38bcb287460bb7d7110f8876139db"/u);
   assert.match(helper, /NATIVE_BUILD_FIX_SHA="5a8bc0372ce0c20e310f75a41564553dcbf62bef"/u);
   assert.match(helper, /NATIVE_BUILD_FIX_TREE="e2ae2f8b0f0b181236e1159f447452e4fbe38c6b"/u);
+  assert.match(helper, /CONTROLLER_CWD_FIX_SHA="4a6931a523672e6607ebf88b58b6ba66cccc1bd3"/u);
+  assert.match(helper, /CONTROLLER_CWD_FIX_TREE="b8c3cfbf82a0fbb8de464ac5985734d02c822b43"/u);
   assert.match(helper, /MODE="preflight"/u);
   assert.match(helper, /AUTHORIZE_ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT/u);
   assert.match(helper, /I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ACTIVATION/u);
@@ -34,7 +36,6 @@ test("preflight dispatcher cannot reach production mutation commands", () => {
   const end = helper.indexOf('[[ "$OWNER_ACK" ==', start);
   assert.ok(start >= 0 && end > start);
   const preflight = helper.slice(start, end);
-  assert.doesNotMatch(preflight, /sudo\s/u);
   assert.doesNotMatch(preflight, /systemctl restart/u);
   assert.doesNotMatch(preflight, /--apply/u);
   assert.match(preflight, /write_preflight_receipt/u);
@@ -47,7 +48,7 @@ test("preflight dispatcher cannot reach production mutation commands", () => {
   assert.match(receiptWriter, /PRODUCTION_MUTATION=NO/u);
 });
 
-test("live service CWD evidence uses only read-only sudo and fails closed on proc denial", () => {
+test("live service CWD evidence uses only fixed read-only sudo readlink and fails closed on proc denial", () => {
   const start = helper.indexOf("verify_service_release() {");
   const end = helper.indexOf("verify_security_invariants() {", start);
   assert.ok(start >= 0 && end > start);
@@ -91,7 +92,7 @@ test("candidate native build is npm 11 compatible, narrowly enables node-pty scr
   assert.match(build, /npm --prefix "\$CANDIDATE_ROOT" audit --audit-level=high/u);
 });
 
-test("release controller plan, prewrite plan, and apply all execute from immutable candidate cwd", () => {
+test("release-controller PLAN gets only fixed read privilege while apply remains separately gated", () => {
   const planStart = helper.indexOf("run_release_controller_plan() {");
   const applyStart = helper.indexOf("run_release_controller_apply() {", planStart);
   const buildStart = helper.indexOf("build_candidate_once() {", applyStart);
@@ -100,9 +101,21 @@ test("release controller plan, prewrite plan, and apply all execute from immutab
   const planHelper = helper.slice(planStart, applyStart);
   const applyHelper = helper.slice(applyStart, buildStart);
   assert.match(planHelper, /cd "\$CANDIDATE_ROOT"/u);
-  assert.match(planHelper, /node \.\/tools\/production-release-controller\.mjs/u);
+  assert.match(planHelper, /sudo \/usr\/bin\/node \.\/tools\/production-release-controller\.mjs/u);
+  assert.match(planHelper, /--candidate-root "\$CANDIDATE_ROOT"/u);
+  assert.match(planHelper, /--manifest "\$MANIFEST"/u);
+  assert.match(planHelper, /--sha "\$TARGET_SHA"/u);
+  assert.match(planHelper, /"status":"PLAN"/u);
+  assert.doesNotMatch(planHelper, /--apply/u);
+  assert.doesNotMatch(planHelper, /--ack/u);
+  assert.doesNotMatch(planHelper, /--expected-current/u);
+  assert.doesNotMatch(planHelper, /systemctl/u);
+
   assert.match(applyHelper, /cd "\$CANDIDATE_ROOT"/u);
   assert.match(applyHelper, /sudo \/usr\/bin\/node \.\/tools\/production-release-controller\.mjs/u);
+  assert.match(applyHelper, /--expected-current "\$EXPECTED_CURRENT_SHA"/u);
+  assert.match(applyHelper, /--apply/u);
+  assert.match(applyHelper, /--ack "\$CONTROLLER_ACK"/u);
 
   assert.match(helper, /run_release_controller_plan "\$PLAN"/u);
   assert.match(helper, /run_release_controller_plan "\$\{RUN_ROOT\}\/release-plan-prewrite\.json"/u);
@@ -151,7 +164,7 @@ test("apply is fail closed and revalidates through web after broker then agent t
   assert.doesNotMatch(helper, /cloudflared/u);
 });
 
-test("GitHub lineage permits only the reviewed chain or one exact controller-cwd corrective child", () => {
+test("GitHub lineage permits only the reviewed chain or one exact read-only PLAN privilege corrective child", () => {
   for (const path of [
     "docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md",
     "package.json",
@@ -168,9 +181,11 @@ test("GitHub lineage permits only the reviewed chain or one exact controller-cwd
   assert.match(helper, /reviewed trust-chain fix contains unexpected files/u);
   assert.match(helper, /reviewed native-build fix is not a direct child of trust-chain fix/u);
   assert.match(helper, /reviewed native-build fix contains unexpected files/u);
-  assert.match(helper, /GitHub main is not reviewed native-build fix or one direct controller-cwd corrective child/u);
-  assert.match(helper, /post-native-build GitHub main contains changes outside reviewed issue186 controller-cwd corrective source/u);
-  assert.match(helper, /fetch --quiet --depth=6 origin "\$GITHUB_MAIN_SHA"/u);
+  assert.match(helper, /reviewed controller-cwd fix is not a direct child of native-build fix/u);
+  assert.match(helper, /reviewed controller-cwd fix contains unexpected files/u);
+  assert.match(helper, /GitHub main is not reviewed controller-cwd fix or one direct read-only PLAN privilege corrective child/u);
+  assert.match(helper, /post-controller-cwd GitHub main contains changes outside reviewed issue186 read-only PLAN privilege corrective source/u);
+  assert.match(helper, /fetch --quiet --depth=7 origin "\$GITHUB_MAIN_SHA"/u);
 });
 
 test("target acceptance preserves trust boundaries and proves issue167 headers", () => {
