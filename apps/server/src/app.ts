@@ -63,6 +63,7 @@ import {
 } from "./deployment-status.js";
 import { createGithubRpi5MainReader } from "./github-rpi5-main-client.js";
 import { createHostHistoryReader, type HostHistoryReader } from "./host-history.js";
+import { applyHttpResponsePolicy } from "./http-response-policy.js";
 import { createPublicEndpointsReader, type PublicEndpointsReader } from "./public-endpoints.js";
 import {
   type TerminalSessionAdmission,
@@ -164,6 +165,9 @@ export function buildApp(options: BuildAppOptions = {}) {
       },
     },
   }).withTypeProvider<TypeBoxTypeProvider>();
+  app.addHook("onRequest", async (request, reply) => {
+    applyHttpResponsePolicy(request.url, reply);
+  });
   registerTerminalWebSocketPlugin(app);
 
   const historyReader = options.historyReader ?? buildDefaultHistoryReader();
