@@ -5,6 +5,8 @@ REPO_URL="https://github.com/rozkalnsandris/dashboard_RPi5.git"
 TARGET_SHA="46c47fbd53e6933e2d8db86abdab30edea2badd0"
 TARGET_TREE="4244c8b5105cad996c87c743b3ba90519a4d092a"
 EXPECTED_CURRENT_SHA="a39fc7a9873eedb58cfa49568f9b2e05483cf7c2"
+GATE_BASE_SHA="5bb54d108bcacf5c0c35f9d34a349929d1ca8029"
+GATE_BASE_TREE="ceef7bcc20ace3333d84c9c3d8c5bb8f00b5f925"
 PRODUCTION_ROOT="/opt/dashboard_RPi5"
 CURRENT_LINK="${PRODUCTION_ROOT}/current"
 BROKER_SERVICE="dashboard-rpi5-docker-broker.service"
@@ -94,7 +96,9 @@ verify_service_release() {
   systemctl is-active --quiet "$service" || fail "service not active: ${service}"
   pid="$(systemctl show "$service" --property=MainPID --value)"
   [[ "$pid" =~ ^[1-9][0-9]*$ ]] || fail "invalid MainPID for ${service}: ${pid}"
-  cwd="$(readlink -f "/proc/${pid}/cwd")"
+  if ! cwd="$(sudo /usr/bin/readlink -f "/proc/${pid}/cwd" 2>&1)"; then
+    fail "unable to read ${service} cwd via read-only sudo: ${cwd:-no output}"
+  fi
   [[ "$cwd" == "${PRODUCTION_ROOT}/releases/${sha}" ]] || fail "${service} cwd mismatch: ${cwd}"
   restarts_a="$(systemctl show "$service" --property=NRestarts --value)"
   sleep 1
@@ -152,19 +156,29 @@ refresh_github_main() {
 }
 
 verify_gate_lineage_in_clone() {
-  local parent actual expected
+  local gate_parent main_parent gate_actual gate_expected corrective_actual corrective_expected
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$TARGET_SHA^{tree}")" == "$TARGET_TREE" ]] || fail "target tree mismatch"
-  [[ "$GITHUB_MAIN_SHA" == "$TARGET_SHA" ]] && return 0
+  [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$GATE_BASE_SHA^{tree}")" == "$GATE_BASE_TREE" ]] || fail "gate base tree mismatch"
 
-  parent="$(git -C "$CANDIDATE_ROOT" rev-parse "${GITHUB_MAIN_SHA}^")"
-  [[ "$parent" == "$TARGET_SHA" ]] || fail "GitHub main is not target or one direct gate-only child"
-  actual="$(git -C "$CANDIDATE_ROOT" diff --name-only "$TARGET_SHA" "$GITHUB_MAIN_SHA" | sort)"
-  expected="$(printf '%s\n' \
+  gate_parent="$(git -C "$CANDIDATE_ROOT" rev-parse "${GATE_BASE_SHA}^")"
+  [[ "$gate_parent" == "$TARGET_SHA" ]] || fail "reviewed issue186 gate base is not a direct child of target"
+  gate_actual="$(git -C "$CANDIDATE_ROOT" diff --name-only "$TARGET_SHA" "$GATE_BASE_SHA" | sort)"
+  gate_expected="$(printf '%s\n' \
     'docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md' \
     'package.json' \
     'tools/issue186-exact-main-production-rollout.test.mjs' \
     'tools/operator/issue186-exact-main-production-rollout.sh' | sort)"
-  [[ "$actual" == "$expected" ]] || fail "post-target GitHub main contains changes outside issue186 gate source"
+  [[ "$gate_actual" == "$gate_expected" ]] || fail "reviewed issue186 gate base contains unexpected files"
+  [[ "$GITHUB_MAIN_SHA" == "$GATE_BASE_SHA" ]] && return 0
+
+  main_parent="$(git -C "$CANDIDATE_ROOT" rev-parse "${GITHUB_MAIN_SHA}^")"
+  [[ "$main_parent" == "$GATE_BASE_SHA" ]] || fail "GitHub main is not reviewed gate base or one direct issue186 corrective child"
+  corrective_actual="$(git -C "$CANDIDATE_ROOT" diff --name-only "$GATE_BASE_SHA" "$GITHUB_MAIN_SHA" | sort)"
+  corrective_expected="$(printf '%s\n' \
+    'docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md' \
+    'tools/issue186-exact-main-production-rollout.test.mjs' \
+    'tools/operator/issue186-exact-main-production-rollout.sh' | sort)"
+  [[ "$corrective_actual" == "$corrective_expected" ]] || fail "post-gate GitHub main contains changes outside reviewed issue186 corrective source"
 }
 
 build_candidate_once() {
@@ -172,7 +186,7 @@ build_candidate_once() {
   mkdir -p -m 0700 "$CANDIDATE_ROOT"
   git -C "$CANDIDATE_ROOT" init --quiet
   git -C "$CANDIDATE_ROOT" remote add origin "$REPO_URL"
-  git -C "$CANDIDATE_ROOT" fetch --quiet --depth=2 origin "$GITHUB_MAIN_SHA"
+  git -C "$CANDIDATE_ROOT" fetch --quiet --depth=3 origin "$GITHUB_MAIN_SHA"
   git -C "$CANDIDATE_ROOT" fetch --quiet --depth=1 origin "$TARGET_SHA"
   verify_gate_lineage_in_clone
   git -c advice.detachedHead=false -C "$CANDIDATE_ROOT" checkout --quiet --detach "$TARGET_SHA"
