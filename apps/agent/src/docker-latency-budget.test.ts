@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import type { DockerBrokerTransport } from "./docker-broker-client.js";
-import { DOCKER_CONTAINER_CONCURRENCY, readDockerContainers } from "./docker-read.js";
+import {
+  DOCKER_BROKER_REQUEST_TIMEOUT_MS,
+  type DockerBrokerTransport,
+} from "./docker-broker-client.js";
+import {
+  DOCKER_CONTAINER_CONCURRENCY,
+  DOCKER_REQUEST_TIMEOUT_MS,
+  readDockerContainers,
+} from "./docker-read.js";
 import { runWithTimeout } from "./operation-registry.js";
 import { DOCKER_CONTAINERS_OPERATION_TIMEOUT_MS } from "./protocol.js";
 
 const CONTAINER_COUNT = 16;
 const SYNTHETIC_IO_DELAY_MS = 25;
+const ISSUE196_DIRECT_STATS_DURATION_MS = 1_527;
 
 function containerId(index: number): string {
   return index.toString(16).padStart(64, "0");
@@ -104,5 +112,13 @@ describe("Docker snapshot latency budget", () => {
     expect(snapshot.containers).toHaveLength(CONTAINER_COUNT);
     expect(transport.maxContainerRequests).toBe(DOCKER_CONTAINER_CONCURRENCY);
     expect(transport.maxContainerRequests).toBeLessThanOrEqual(8);
+  });
+
+  it("keeps the nested Docker request budgets above the #196 observed direct stats latency", () => {
+    expect(DOCKER_REQUEST_TIMEOUT_MS).toBeGreaterThan(ISSUE196_DIRECT_STATS_DURATION_MS);
+    expect(DOCKER_BROKER_REQUEST_TIMEOUT_MS).toBeGreaterThan(DOCKER_REQUEST_TIMEOUT_MS);
+    expect(DOCKER_CONTAINERS_OPERATION_TIMEOUT_MS).toBeGreaterThan(
+      DOCKER_BROKER_REQUEST_TIMEOUT_MS * 2,
+    );
   });
 });
