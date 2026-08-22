@@ -8,6 +8,7 @@ TARGET_TREE=4244c8b5105cad996c87c743b3ba90519a4d092a
 EXPECTED_CURRENT_PRODUCTION=a39fc7a9873eedb58cfa49568f9b2e05483cf7c2
 GATE_BASE_SHA=5bb54d108bcacf5c0c35f9d34a349929d1ca8029
 PROCESS_EVIDENCE_FIX_SHA=d65da90a567f3eed6a0d515493dadbe3ef056eb8
+TRUST_CHAIN_FIX_SHA=0bd658524df93f28a2302c1a12327b47b3f31f21
 ```
 
 This document and `tools/operator/issue186-exact-main-production-rollout.sh` are source-only. Their merge does not authorize production mutation.
@@ -69,9 +70,49 @@ operator
   -> Docker Engine
 ```
 
-`/api/current/host=200` separately proves the web-to-agent current-state path. `/api/current/docker=200` proves the full web-to-agent-to-broker-to-Docker path. The helper now uses those loopback web endpoints for both preflight and post-restart acceptance and contains no direct operator `curl --unix-socket` probe.
+`/api/current/host=200` separately proves the web-to-agent current-state path. `/api/current/docker=200` proves the full web-to-agent-to-broker-to-Docker path. The helper uses those loopback web endpoints for both preflight and post-restart acceptance and contains no direct operator `curl --unix-socket` probe.
 
-Both BLOCKED runs stopped before `build_candidate_once`, so neither run created the target-keyed candidate run directory. Their external helper/download evidence remains preserved; no cleanup or reuse is implied.
+The first two BLOCKED runs stopped before `build_candidate_once`, so neither created the original target-keyed candidate run directory. Their external helper/download evidence remains preserved; no cleanup or reuse is implied.
+
+That trust-chain correction was squash-merged as `0bd658524df93f28a2302c1a12327b47b3f31f21`.
+
+## 2026-08-22 correction 3 — npm 11 native source rebuild and immutable rerun namespace
+
+The next owner-run preflight used the immutable helper from `0bd6585...` on the RPi5. The live production baseline passed and the helper entered candidate validation. `npm ci --ignore-scripts` completed, then npm 11 rejected the helper's `npm rebuild node-pty --build-from-source` invocation before the native rebuild could run:
+
+```text
+STAGE=EXACT_GITHUB_TARGET
+GITHUB_MAIN_SHA=0bd658524df93f28a2302c1a12327b47b3f31f21
+STAGE=LIVE_PRODUCTION_READ_ONLY_BASELINE
+STAGE=EXACT_CANDIDATE_BUILD_AND_VALIDATION
+npm error code EUNKNOWNCONFIG
+npm error Unknown cli flag:
+npm error   - --build-from-source
+```
+
+No production apply/restart path was entered. The failure happened in the operator-owned candidate build workspace and production mutation remained absent.
+
+`node-pty@1.1.0` itself supports a source-build request through `npm_config_build_from_source=true`: its install path checks that environment variable, discards the packaged prebuild for the current install, and falls through to `node-gyp rebuild`. The helper therefore keeps the native-source-build requirement but expresses it in the npm 11-compatible form:
+
+```bash
+npm_config_build_from_source=true npm --prefix "$CANDIDATE_ROOT" rebuild node-pty
+```
+
+The failed RPi5 attempt had already created the original immutable run directory:
+
+```text
+$HOME/.cache/dashboard-rpi5-operator/issue186-46c47fbd53e6933e2d8db86abdab30edea2badd0
+```
+
+That evidence must not be deleted, cleaned or reused. A future separately authorized preflight after this corrective source is merged uses a new sibling namespace bound to the freshly resolved gate main:
+
+```text
+$HOME/.cache/dashboard-rpi5-operator/issue186-46c47fbd53e6933e2d8db86abdab30edea2badd0-gate-<GATE_MAIN_SHA>
+```
+
+The helper still fails closed if that exact new run directory already exists. It contains no automatic cleanup path.
+
+The `1 low severity vulnerability` reported by `npm ci` was not the observed blocker. The rollout retains the existing explicit `npm audit --audit-level=high` gate after the native rebuild.
 
 ## Corrective lineage contract
 
@@ -83,7 +124,8 @@ The rollout gate is pinned as a short reviewed chain:
    - `docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md`;
    - `tools/issue186-exact-main-production-rollout.test.mjs`;
    - `tools/operator/issue186-exact-main-production-rollout.sh`;
-4. live GitHub `main` may then be either exact `d65da90a...` or exactly one direct trust-chain corrective child with that same three-file boundary.
+4. trust-chain correction `0bd6585...`, exactly one direct child of `d65da90a...` with the same three-file boundary;
+5. live GitHub `main` may then be either exact `0bd6585...` or exactly one direct native-build/evidence-namespace corrective child with that same three-file boundary.
 
 Any later or broader GitHub movement fails closed. This does not make arbitrary future `main` a valid production target: runtime target remains immutable `46c47fbd...`.
 
@@ -97,18 +139,20 @@ bash tools/operator/issue186-exact-main-production-rollout.sh --preflight-only
 
 The helper may request the operator's existing sudo authentication solely for read-only service-CWD evidence. Preflight does not use sudo for a production write and does not require direct broker/agent socket authority.
 
-The helper fails if its immutable run directory already exists. Any future BLOCKED run after that run directory is created remains a STOP; do not delete/reuse it without a new owner decision.
+The helper resolves fresh GitHub `main` first, then selects an immutable gate-main-keyed run directory. It fails if that exact run directory already exists. Any future BLOCKED run after that run directory is created remains a STOP; do not delete/reuse it without a new owner decision.
 
-Preflight may write only below:
+Preflight may write only below the newly selected operator-cache sibling:
 
 ```text
-$HOME/.cache/dashboard-rpi5-operator/issue186-46c47fbd53e6933e2d8db86abdab30edea2badd0
+$HOME/.cache/dashboard-rpi5-operator/issue186-46c47fbd53e6933e2d8db86abdab30edea2badd0-gate-<GATE_MAIN_SHA>
 ```
 
-It performs:
+The earlier failed target-only run directory is preserved untouched.
+
+Preflight performs:
 
 1. fresh GitHub `main` resolution;
-2. fail-closed proof of target -> gate base -> process-evidence fix -> at most one exact trust-chain corrective child;
+2. fail-closed proof of target -> gate base -> process-evidence fix -> trust-chain fix -> at most one exact native-build corrective child;
 3. read-only proof that `/opt/dashboard_RPi5/current` is still `a39fc7a9...`;
 4. broker, agent and web service Active/MainPID/exact-CWD/stable-NRestarts evidence, with only exact CWD reads elevated through `sudo /usr/bin/readlink`;
 5. loopback `/api/health=200`;
@@ -117,8 +161,8 @@ It performs:
 8. main-agent no-`docker`/no-`video` invariant;
 9. terminal socket/unit absent/fail-closed invariant;
 10. unauthenticated public Access still challenge/deny (`302` or `403`) without changing Cloudflare;
-11. fresh immutable candidate checkout of exact target SHA/tree into operator cache;
-12. `npm ci --ignore-scripts`, reviewed `node-pty` rebuild, high-severity dependency audit and full `npm run check`;
+11. fresh immutable candidate checkout of exact target SHA/tree into the new operator-cache run directory;
+12. `npm ci --ignore-scripts`, forced source rebuild of `node-pty` through `npm_config_build_from_source=true`, high-severity dependency audit and full `npm run check`;
 13. deterministic production candidate manifest generation + exact verification;
 14. isolated manifest-only runtime smoke;
 15. `production-release-controller.mjs` PLAN only;
@@ -134,7 +178,7 @@ PRODUCTION_MUTATION=NO
 NEXT_GATE=EXPLICIT_OWNER_PRODUCTION_ROLLOUT_AUTHORIZATION_BOUND_TO_RECEIPT
 ```
 
-Any BLOCKED/failure/ambiguity is a STOP. Do not rerun or clean the evidence directory by implication.
+Any BLOCKED/failure/ambiguity is a STOP. Do not rerun or clean any evidence directory by implication.
 
 ## Phase B — separately authorized production rollout
 
