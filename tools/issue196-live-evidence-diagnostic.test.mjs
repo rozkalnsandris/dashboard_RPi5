@@ -26,6 +26,12 @@ test("issue196 helper is fixed to loopback and reviewed evidence paths", () => {
   assert.doesNotMatch(helper, /DASHBOARD_ISSUE196_.*BASE/u);
 });
 
+test("issue196 helper reports device metadata without treating vcio as a regular file", () => {
+  assert.match(helper, /print_path_metadata VCIO_DEVICE '\/dev\/vcio'/u);
+  assert.doesNotMatch(helper, /print_file_state VCIO_DEVICE/u);
+  assert.match(helper, /stat -Lc '%F:%u:%g:%a'/u);
+});
+
 test("issue196 helper checks every confirmed live read-only failure cluster", () => {
   for (const token of [
     "HOST_HTTP",
@@ -42,6 +48,7 @@ test("issue196 helper checks every confirmed live read-only failure cluster", ()
     "PROMETHEUS_NODE_LOAD_SERIES",
     "SERVICES_OBSERVED_AGE_SECONDS",
     "DOCKER_RUNNING_STATS_UNAVAILABLE",
+    "VCIO_DEVICE",
     "AGENT_VIDEO_GROUP",
     "AGENT_JOURNAL_READ_GROUP",
   ]) {

@@ -33,13 +33,42 @@ The current source already proves several important distinctions:
 
 The output is diagnostic evidence only. A PASS-like HTTP result is not authorization to mutate production.
 
-## Repair strategy after the diagnostic
+## 2026-08-22 read-only live diagnosis
 
-Use one #196 PR and keep repairs clustered by the actual root cause:
+The operator ran the exact-head diagnostic against accepted production release `46c47fbd53e6933e2d8db86abdab30edea2badd0`. The run explicitly reported `PRODUCTION_MUTATION=NO` and no systemd, identity/permission, Docker-authority, Cloudflare or terminal mutation.
 
-- source wiring/parser defects are corrected in source;
-- missing producers are implemented at their authoritative source rather than by fabricating dashboard data;
-- any required production config, service or permission reconciliation is prepared as a later exact-main Composite Live envelope;
-- broad privilege expansion is rejected when a narrower typed/read-only path can satisfy the evidence contract.
+The evidence narrows #196 as follows:
+
+- **Services is live and fresh:** `/api/services` returned HTTP 200 and the observed age was `0` seconds. No Services source change is justified.
+- **Docker Prometheus logs are already live:** the registered Docker Prometheus log route returned HTTP 200. #199 only fixes the production default wiring so Docker sources consistently use the reviewed broker-backed adapter.
+- **Prometheus history is a topology/configuration gap:** dashboard history returned HTTP 503 while loopback Prometheus readiness and query probes both returned `000`. The server already defaults to `http://127.0.0.1:9090`; source does not justify fabricating history or blindly changing that client contract.
+- **Journal-backed evidence is unavailable at the current identity boundary:** maintenance logs and deployments returned HTTP 503, and `dashboard-rpi5-agent` has neither `systemd-journal` nor `adm`. `PHASE5B_UNIFIED_LOGS.md` explicitly forbids automatically adding broad journal membership just to make a source readable.
+- **Backup evidence producer is absent:** `/api/backups` returned HTTP 503 and `/var/lib/dashboard-rpi5/evidence/backups.json` is absent. The existing root-owned `/var/log/rpi5-backup.log` is present but mode `0600`; the authoritative backup runner remains owned by `rozkalnsandris/RPi5_main`.
+- **Endpoint evidence producer is absent:** `/api/endpoints` returned HTTP 503 and `/var/lib/dashboard-rpi5/evidence/endpoints.json` is absent. Read-only source inspection confirms `RPi5_main` already owns the authoritative `rpi5-monitor` public probes, so a producer must be integrated at that authority boundary rather than duplicated by the dashboard browser.
+- **Docker detailed stats are partially unavailable:** 20 containers were running and 12 reported unavailable stats. The source has bounded per-container broker reads and intentional partial-failure semantics; this evidence does not prove that the 1500 ms broker/Engine timeout is the cause, so #199 must not raise timeouts blindly.
+- **Throttle remains an explicit supported-unavailable path:** `vcgencmd` exists, while the agent intentionally lacks `video`. The first diagnostic classified `/dev/vcio` as `NOT_REGULAR` because it reused a regular-file check; that does not prove absence of the character device. The helper is corrected to report device type/ownership/mode metadata without reading the device.
+
+## #199 source slice boundary
+
+PR #199 is intentionally a first restoration slice under #196, not issue closure. It:
+
+- wires Docker log sources through the existing bounded Docker broker adapter;
+- removes the Phase 1 Settings fixture from production navigation/routing;
+- adds and hardens one reusable read-only host diagnostic;
+- records the exact remaining authority/topology gaps without weakening fail-closed behavior.
+
+PR #199 does **not** claim to make Prometheus history, backup evidence, endpoint evidence, journal-backed logs/deployments, partial Docker stats or throttle live in production. Issue #196 stays open until those paths have their own reviewed source/live integration and acceptance evidence.
+
+## Remaining integration boundaries
+
+The next #196 source/live work must preserve these rules:
+
+- do not grant the main agent `docker` or `video` membership;
+- do not automatically grant broad `systemd-journal`/`adm` membership; choose the narrowest reviewed evidence path first;
+- do not change `RPi5_main` backup/monitor source from this Dashboard task: that repository permits only narrowly scoped read-only inspection unless the owner explicitly opens a source task there;
+- do not fabricate backup/endpoint JSON or treat missing evidence as healthy;
+- do not change Prometheus URL/topology without exact host evidence identifying the reachable reviewed target;
+- do not raise Docker timeouts/concurrency merely because some stats are unavailable;
+- any later permission, systemd, Docker topology, production config, restart or deploy remains a separately authorized Composite Live boundary.
 
 Terminal activation remains outside #196 and stays blocked until the read-only dashboard and logs are stable.

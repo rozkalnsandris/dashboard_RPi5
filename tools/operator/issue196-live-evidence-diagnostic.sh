@@ -50,6 +50,23 @@ print_file_state() {
   printf '%s=PRESENT:%s\n' "$key" "$metadata"
 }
 
+print_path_metadata() {
+  local key="$1"
+  local path="$2"
+  local metadata
+
+  if [[ ! -e "$path" ]]; then
+    printf '%s=ABSENT\n' "$key"
+    return
+  fi
+  metadata="$(stat -Lc '%F:%u:%g:%a' "$path" 2>/dev/null || true)"
+  if [[ -z "$metadata" ]]; then
+    printf '%s=PRESENT_METADATA_UNAVAILABLE\n' "$key"
+    return
+  fi
+  printf '%s=PRESENT:%s\n' "$key" "$metadata"
+}
+
 print_group_capability() {
   local key="$1"
   local pattern="$2"
@@ -179,7 +196,7 @@ print_file_state BACKUP_EVIDENCE_FILE "$BACKUP_EVIDENCE"
 print_file_state ENDPOINT_EVIDENCE_FILE "$ENDPOINT_EVIDENCE"
 print_file_state BACKUP_LOG_FILE "$BACKUP_LOG"
 print_file_state WEB_ENV_FILE "$WEB_ENV"
-print_file_state VCIO_DEVICE '/dev/vcio'
+print_path_metadata VCIO_DEVICE '/dev/vcio'
 
 if [[ -x /usr/bin/vcgencmd ]]; then
   printf 'VCGENCMD_BINARY=EXECUTABLE\n'
