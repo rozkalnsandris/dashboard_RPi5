@@ -198,16 +198,19 @@ Do not disguise a production mutation as “verification”.
 If a live command changes host/container/service/Cloudflare state, it is a mutation and requires authorization.
 
 <!-- BEGIN FAST-LANE-V2.1-MANAGED -->
-## 12. FAST-LANE v2.1 Hybrid
+## 12. FAST-LANE v2.2 Composite
 
-This repository adopts the cross-project FAST/STRICT delivery model documented in `docs/FAST_LANE_V2_1.md`.
+This repository adopts the cross-project FAST/STRICT delivery model documented through the compatibility path `docs/FAST_LANE_V2_1.md`.
 
-- **FAST** covers source-only work with no new trust boundary or live mutation. A clear FAST task may proceed in one execution batch from fresh `main` through Ready.
-- FAST may batch **2-5 closely related same-risk work items** when they form one coherent acceptance story.
-- After initial publication, at most **two scope-preserving corrective commits** may address CI/review findings without a new owner authorization. A third correction or any scope/risk expansion requires STOP.
-- Use selective CI by changed-file classification and one stable `FAST-LANE Merge Gate`; required workflows must not rely on a top-level path skip that can leave checks pending.
-- Produce one complete Ready receipt. At merge time refresh only mutable evidence: current main/base, exact head, mergeability, CI/checks, reviews/threads and policy state.
-- **STRICT** includes first-time or live privilege/runtime authority: PTY, Quick Commands, Docker authority, systemd, host/root, Cloudflare, secrets, production deploy, writes and equivalent trust-boundary changes.
+- **Core rule:** the human approves the risk/decision; automation executes the technical steps. STRICT is a risk class, not a reason to create approval checkpoints for read-only work.
+- **FAST:** a clear source-only task may proceed in one batch from fresh `main` through Ready, may batch **2-5 closely related same-risk work items**, and may use at most **two scope-preserving corrective commits** after CI/review findings.
+- **Human gate budget:** normal delivery has at most two owner decision gates — explicit **MERGE**, then one bounded **COMPOSITE LIVE** only when live mutation is required. Read-only/preflight/evidence/reconciliation work is not an owner gate.
+- **Composite Live:** bind the exact repository/SHA, target, allowed mutation categories, practical limits, explicit exclusions, and expected baseline; revalidate immediately before the first live write and fail closed on drift.
+- **One-shot execution:** after Composite Live authorization, execute the tightly coupled approved technical sequence through reconciliation/final receipt without returning for intermediate approvals.
+- **Failure contract:** once the first authorized mutation starts, any error/ambiguity/scope drift requires evidence preservation and STOP. No automatic retry, rollback, cleanup, reset, rebase, alternate mutation path, or extra restart unless the exact envelope pre-authorized it.
+- **CI:** keep risk-scoped fail-open classification and the stable `FAST-LANE Merge Gate`.
+- **Evidence:** produce one complete Ready receipt and, when live mutation occurs, one final live receipt. Put any remaining owner decision at the end under `ACTION REQUIRED`.
+- **STRICT dashboard boundaries:** production deploy, PTY/Quick Commands, Docker authority, systemd/service/container mutation, host/root, Cloudflare, secrets/credentials, permissions/identity, and writes remain explicitly owner-authorized categories.
 - Explicit owner merge authorization remains mandatory. Merge never authorizes deploy or another live mutation.
 
 All earlier repository-specific security boundaries remain in force and override FAST when stricter.
