@@ -107,6 +107,8 @@ Production activation requires separate owner authorization.
 
 xterm.js + PTY over secure WebSocket after a dedicated security review. Owner-only, non-root default, no auto-sudo, origin validation, idle/max lifetime, low concurrency and mobile accessory keys.
 
+Source readiness also requires an explicit screen-reader mode, keyboard/touch-reachable input focus, 48px controls, A55 keyboard-open acceptance and non-persistence of session material. See `docs/TERMINAL_ACCESSIBILITY_READINESS.md`.
+
 Production activation requires separate owner authorization.
 
 ### Phase 10 — Controlled write actions
