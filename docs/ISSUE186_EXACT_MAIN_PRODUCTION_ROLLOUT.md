@@ -7,6 +7,7 @@ TARGET_SHA=46c47fbd53e6933e2d8db86abdab30edea2badd0
 TARGET_TREE=4244c8b5105cad996c87c743b3ba90519a4d092a
 EXPECTED_CURRENT_PRODUCTION=a39fc7a9873eedb58cfa49568f9b2e05483cf7c2
 GATE_BASE_SHA=5bb54d108bcacf5c0c35f9d34a349929d1ca8029
+PROCESS_EVIDENCE_FIX_SHA=d65da90a567f3eed6a0d515493dadbe3ef056eb8
 ```
 
 This document and `tools/operator/issue186-exact-main-production-rollout.sh` are source-only. Their merge does not authorize production mutation.
@@ -23,7 +24,7 @@ The current systemd unit blueprints are not in the accepted-production-to-target
 
 The rollout instead performs a live read-only baseline check against the accepted active release and the current broker/agent/web service state.
 
-## 2026-08-22 preflight correction
+## 2026-08-22 correction 1 — service process CWD evidence
 
 The first owner-run `--preflight-only` attempt stopped during `LIVE_PRODUCTION_READ_ONLY_BASELINE` before candidate creation or any production mutation. Follow-up read-only evidence showed:
 
@@ -35,27 +36,68 @@ web=active, /proc/<MainPID>/cwd read RC=1 as normal operator
 PRODUCTION_MUTATION=NO
 ```
 
-The three services intentionally run as separate service identities, so the normal operator cannot read their `/proc/<MainPID>/cwd` links. Exact process-CWD evidence remains required, but the helper now performs only that read through the fixed command `sudo /usr/bin/readlink -f /proc/<MainPID>/cwd`. Failure is converted into an explicit `BLOCKED:` result. This grants no new service, Docker, systemd, terminal, Cloudflare or filesystem write authority.
+The three services intentionally run as separate service identities, so the normal operator cannot read their `/proc/<MainPID>/cwd` links. Exact process-CWD evidence remains required, but the helper performs only that read through the fixed command `sudo /usr/bin/readlink -f /proc/<MainPID>/cwd`. Failure is converted into an explicit `BLOCKED:` result. This grants no new service, Docker, systemd, terminal, Cloudflare or filesystem write authority.
 
-The correction also tightens post-merge lineage. `5bb54d10...` is pinned as the reviewed #186 gate base and must remain a direct child of target `46c47fbd...` with the original four-file gate boundary. Live GitHub `main` may then be either that exact gate base or exactly one direct corrective child whose diff contains only:
+That correction was squash-merged as `d65da90a567f3eed6a0d515493dadbe3ef056eb8`.
 
-1. `docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md`;
-2. `tools/issue186-exact-main-production-rollout.test.mjs`;
-3. `tools/operator/issue186-exact-main-production-rollout.sh`.
+## 2026-08-22 correction 2 — operator must not become a broker/agent socket client
 
-Any later or broader GitHub movement fails closed.
+The second separately authorized `--preflight-only` run used the immutable helper from `d65da90a...` and again stopped during the live baseline:
+
+```text
+HELPER_BLOB=86b8e3a4c9cb743bff36716d83e38cf21d40e2a1
+GITHUB_MAIN_SHA=d65da90a567f3eed6a0d515493dadbe3ef056eb8
+STAGE=LIVE_PRODUCTION_READ_ONLY_BASELINE
+BLOCKED: broker socket missing
+PREFLIGHT_EXIT_CODE=1
+PRODUCTION_MUTATION=NO
+```
+
+This was not evidence that the active broker service was unhealthy. The canonical unit intentionally creates `/run/dashboard-rpi5-docker-broker` as a `0750` runtime directory for the broker/client trust boundary. Only `dashboard-rpi5-agent` receives the dedicated broker-client group. The normal operator is intentionally not a broker client. The same principle applies to the agent Unix socket: the web service is the intended client, not the human operator.
+
+Therefore the preflight must not probe either runtime socket directly, and it must not repair the situation by granting the operator `dashboard-rpi5-docker-client`, agent-client or `docker` membership or by widening runtime-directory/socket permissions.
+
+The existing product path already supplies a stronger end-to-end proof without authority expansion:
+
+```text
+operator
+  -> loopback web /api/current/docker
+  -> server agent-current-state client
+  -> agent /v1/docker/containers
+  -> createDockerBrokerTransport()
+  -> bounded Docker broker
+  -> Docker Engine
+```
+
+`/api/current/host=200` separately proves the web-to-agent current-state path. `/api/current/docker=200` proves the full web-to-agent-to-broker-to-Docker path. The helper now uses those loopback web endpoints for both preflight and post-restart acceptance and contains no direct operator `curl --unix-socket` probe.
+
+Both BLOCKED runs stopped before `build_candidate_once`, so neither run created the target-keyed candidate run directory. Their external helper/download evidence remains preserved; no cleanup or reuse is implied.
+
+## Corrective lineage contract
+
+The rollout gate is pinned as a short reviewed chain:
+
+1. target `46c47fbd...`;
+2. gate base `5bb54d10...`, exactly one direct child with the original four-file #186 gate boundary;
+3. process-evidence correction `d65da90a...`, exactly one direct child with only:
+   - `docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md`;
+   - `tools/issue186-exact-main-production-rollout.test.mjs`;
+   - `tools/operator/issue186-exact-main-production-rollout.sh`;
+4. live GitHub `main` may then be either exact `d65da90a...` or exactly one direct trust-chain corrective child with that same three-file boundary.
+
+Any later or broader GitHub movement fails closed. This does not make arbitrary future `main` a valid production target: runtime target remains immutable `46c47fbd...`.
 
 ## Phase A — owner-run preflight only
 
-After the corrective gate source is merged and exact-main post-merge verification is complete, run as the normal RPi5 operator in an interactive TTY:
+After the current corrective gate source is merged and exact-main post-merge verification is complete, run as the normal RPi5 operator in an interactive TTY:
 
 ```bash
 bash tools/operator/issue186-exact-main-production-rollout.sh --preflight-only
 ```
 
-The helper may request the operator's existing sudo authentication solely for read-only service-CWD evidence. Preflight does not use sudo for a production write.
+The helper may request the operator's existing sudo authentication solely for read-only service-CWD evidence. Preflight does not use sudo for a production write and does not require direct broker/agent socket authority.
 
-The helper fails if its immutable run directory already exists. The failed 2026-08-22 baseline attempt stopped before candidate creation, so no candidate run directory was created by that attempt. Any future BLOCKED run after the run directory is created remains a STOP; do not delete/reuse that directory without a new owner decision.
+The helper fails if its immutable run directory already exists. Any future BLOCKED run after that run directory is created remains a STOP; do not delete/reuse it without a new owner decision.
 
 Preflight may write only below:
 
@@ -66,20 +108,22 @@ $HOME/.cache/dashboard-rpi5-operator/issue186-46c47fbd53e6933e2d8db86abdab30edea
 It performs:
 
 1. fresh GitHub `main` resolution;
-2. fail-closed lineage proof for the pinned gate base and at most one exact corrective child;
-3. read-only live production proof that `/opt/dashboard_RPi5/current` is still `a39fc7a9...`;
-4. broker, agent and web service Active/MainPID/exact-CWD/stable-NRestarts evidence, with only exact CWD read elevated through `sudo /usr/bin/readlink`;
-5. broker/agent Unix-socket health, Docker current-state and web API health/current-Docker checks;
-6. main-agent no-`docker`/no-`video` invariant;
-7. terminal socket/unit absent/fail-closed invariant;
-8. unauthenticated public Access still challenge/deny (`302` or `403`) without changing Cloudflare;
-9. fresh immutable candidate checkout of exact target SHA/tree into operator cache;
-10. `npm ci --ignore-scripts`, reviewed `node-pty` rebuild, high-severity dependency audit and full `npm run check`;
-11. deterministic production candidate manifest generation + exact verification;
-12. isolated manifest-only runtime smoke;
-13. `production-release-controller.mjs` PLAN only;
-14. unchanged live production reproof;
-15. immutable `PREFLIGHT_PASS.txt` receipt + SHA-256 and STOP.
+2. fail-closed proof of target -> gate base -> process-evidence fix -> at most one exact trust-chain corrective child;
+3. read-only proof that `/opt/dashboard_RPi5/current` is still `a39fc7a9...`;
+4. broker, agent and web service Active/MainPID/exact-CWD/stable-NRestarts evidence, with only exact CWD reads elevated through `sudo /usr/bin/readlink`;
+5. loopback `/api/health=200`;
+6. loopback `/api/current/host=200` as web-to-agent evidence;
+7. loopback `/api/current/docker=200` as end-to-end web-to-agent-to-broker-to-Docker evidence;
+8. main-agent no-`docker`/no-`video` invariant;
+9. terminal socket/unit absent/fail-closed invariant;
+10. unauthenticated public Access still challenge/deny (`302` or `403`) without changing Cloudflare;
+11. fresh immutable candidate checkout of exact target SHA/tree into operator cache;
+12. `npm ci --ignore-scripts`, reviewed `node-pty` rebuild, high-severity dependency audit and full `npm run check`;
+13. deterministic production candidate manifest generation + exact verification;
+14. isolated manifest-only runtime smoke;
+15. `production-release-controller.mjs` PLAN only;
+16. unchanged live production reproof through the same least-privilege chain;
+17. immutable `PREFLIGHT_PASS.txt` receipt + SHA-256 and STOP.
 
 Successful output ends with:
 
@@ -121,7 +165,7 @@ Immediately before the first mutation the helper re-proves:
 - candidate SHA/tree/manifest still match;
 - isolated runtime smoke still passes;
 - release-controller PLAN still passes;
-- current production remains exactly `a39fc7a9...` and healthy;
+- current production remains exactly `a39fc7a9...` and healthy through the loopback web trust chain;
 - trust-boundary invariants still hold.
 
 Any drift before mutation => STOP with no production write.
@@ -133,15 +177,17 @@ The first production mutation is the existing reviewed release controller in app
 Then, and only then:
 
 1. restart `dashboard-rpi5-docker-broker.service`;
-2. require broker `/v1/health=200`, Docker containers `=200`, exact target process CWD and stable restart counter;
+2. require broker exact target process CWD and stable restart counter, then require loopback `/api/current/docker=200` through the still-running web/agent chain to prove the restarted broker and Docker Engine are reachable;
 3. restart `dashboard-rpi5-agent.service`;
-4. require agent `/v1/health=200`, exact target CWD and stable restart counter;
+4. require agent exact target CWD and stable restart counter, then require `/api/current/host=200` and `/api/current/docker=200` through the still-running web service;
 5. restart `dashboard-rpi5-web.service`;
-6. require loopback `/api/health=200`, `/api/current/docker=200`, exact target CWD and stable restart counter;
-7. final trust-boundary acceptance;
+6. require exact target web CWD/stable restart counter plus loopback `/api/health=200`, `/api/current/host=200` and `/api/current/docker=200`;
+7. final trust-boundary acceptance through the same loopback chain;
 8. #167-specific acceptance: CSP present, `X-Content-Type-Options: nosniff`, `/api/health` `Cache-Control: no-store`;
 9. public unauthenticated Access remains challenge/deny;
 10. terminal remains absent and main agent remains outside `docker`/`video` groups.
+
+The operator never gains direct broker or agent socket authority as part of this rollout.
 
 ## Failure rule after mutation begins
 
@@ -165,6 +211,7 @@ A rollback, if ever needed, requires a new explicit owner authorization and fres
 
 ```text
 MERGE_AUTHORIZATION=NONE
+PREFLIGHT_RERUN_AUTHORIZATION=NONE
 PRODUCTION_MUTATION_AUTHORIZATION=NONE
 CLOUDFLARE_MUTATION_AUTHORIZATION=NONE
 ACTIONS_RERUN_CANCEL_AUTHORIZATION=NONE
