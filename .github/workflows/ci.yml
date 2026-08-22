@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   push:
     branches: [main]
 
@@ -13,7 +14,67 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  classify:
+    name: FAST-LANE classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.scope.outputs.mode }}
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+      core: ${{ steps.scope.outputs.core }}
+      runtime: ${{ steps.scope.outputs.runtime }}
+      browser: ${{ steps.scope.outputs.browser }}
+      terminal: ${{ steps.scope.outputs.terminal }}
+    steps:
+      - name: Checkout exact source SHA with comparison history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Validate CI scope classifier
+        run: node --test tools/ci-scope.test.mjs
+
+      - name: Classify changed paths
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed_file_list="$(mktemp)"
+          trap 'rm -f "$changed_file_list"' EXIT
+
+          if [[ -z "${BASE_SHA:-}" || -z "${HEAD_SHA:-}" || "$BASE_SHA" =~ ^0+$ ]]; then
+            node tools/ci-scope.mjs >> "$GITHUB_OUTPUT"
+          elif ! git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" > "$changed_file_list"; then
+            node tools/ci-scope.mjs >> "$GITHUB_OUTPUT"
+          else
+            mapfile -t changed_paths < "$changed_file_list"
+            node tools/ci-scope.mjs "${changed_paths[@]}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record selected CI scope
+        env:
+          MODE: ${{ steps.scope.outputs.mode }}
+          CORE: ${{ steps.scope.outputs.core }}
+          RUNTIME: ${{ steps.scope.outputs.runtime }}
+          BROWSER: ${{ steps.scope.outputs.browser }}
+          TERMINAL: ${{ steps.scope.outputs.terminal }}
+        run: |
+          {
+            echo "### FAST-LANE CI scope"
+            echo "- mode: $MODE"
+            echo "- core: $CORE"
+            echo "- runtime: $RUNTIME"
+            echo "- browser: $BROWSER"
+            echo "- terminal-native: $TERMINAL"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   check:
+    needs: classify
+    if: needs.classify.outputs.core == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -47,6 +108,7 @@ jobs:
         run: npm run build
 
       - name: Validate production candidate manifest
+        if: needs.classify.outputs.runtime == 'true'
         env:
           DASHBOARD_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
@@ -54,6 +116,7 @@ jobs:
           node tools/production-candidate-manifest.mjs --root . --sha "$DASHBOARD_CANDIDATE_SHA" --verify /tmp/dashboard-rpi5-production-candidate.json
 
       - name: Validate manifest-only base runtime
+        if: needs.classify.outputs.runtime == 'true'
         env:
           DASHBOARD_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
@@ -63,13 +126,17 @@ jobs:
             --sha "$DASHBOARD_CANDIDATE_SHA"
 
       - name: Install Chromium
+        if: needs.classify.outputs.browser == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Responsive browser tests
+        if: needs.classify.outputs.browser == 'true'
         run: npm run test:e2e
 
   terminal-native:
     name: terminal-native (${{ matrix.arch }})
+    needs: classify
+    if: needs.classify.outputs.terminal == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -110,3 +177,33 @@ jobs:
 
       - name: Verify native PTY binding
         run: npm run test:native --workspace @dashboard-rpi5/terminal-agent
+
+  fast-lane-merge-gate:
+    name: FAST-LANE Merge Gate
+    needs: [classify, check, terminal-native]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify required validation results
+        env:
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          CORE_REQUIRED: ${{ needs.classify.outputs.core }}
+          CHECK_RESULT: ${{ needs.check.result }}
+          TERMINAL_REQUIRED: ${{ needs.classify.outputs.terminal }}
+          TERMINAL_RESULT: ${{ needs.terminal-native.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CLASSIFY_RESULT" == success ]]
+          if [[ "$CORE_REQUIRED" == true ]]; then
+            [[ "$CHECK_RESULT" == success ]]
+          else
+            [[ "$CHECK_RESULT" == skipped ]]
+          fi
+          if [[ "$TERMINAL_REQUIRED" == true ]]; then
+            [[ "$TERMINAL_RESULT" == success ]]
+          else
+            [[ "$TERMINAL_RESULT" == skipped ]]
+          fi
+          echo "FAST_LANE_MERGE_GATE=PASS"

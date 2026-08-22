@@ -196,3 +196,19 @@ Stop and ask for owner authorization when the next step would cross a production
 Do not disguise a production mutation as “verification”.
 
 If a live command changes host/container/service/Cloudflare state, it is a mutation and requires authorization.
+
+<!-- BEGIN FAST-LANE-V2.1-MANAGED -->
+## 12. FAST-LANE v2.1 Hybrid
+
+This repository adopts the cross-project FAST/STRICT delivery model documented in `docs/FAST_LANE_V2_1.md`.
+
+- **FAST** covers source-only work with no new trust boundary or live mutation. A clear FAST task may proceed in one execution batch from fresh `main` through Ready.
+- FAST may batch **2-5 closely related same-risk work items** when they form one coherent acceptance story.
+- After initial publication, at most **two scope-preserving corrective commits** may address CI/review findings without a new owner authorization. A third correction or any scope/risk expansion requires STOP.
+- Use selective CI by changed-file classification and one stable `FAST-LANE Merge Gate`; required workflows must not rely on a top-level path skip that can leave checks pending.
+- Produce one complete Ready receipt. At merge time refresh only mutable evidence: current main/base, exact head, mergeability, CI/checks, reviews/threads and policy state.
+- **STRICT** includes first-time or live privilege/runtime authority: PTY, Quick Commands, Docker authority, systemd, host/root, Cloudflare, secrets, production deploy, writes and equivalent trust-boundary changes.
+- Explicit owner merge authorization remains mandatory. Merge never authorizes deploy or another live mutation.
+
+All earlier repository-specific security boundaries remain in force and override FAST when stricter.
+<!-- END FAST-LANE-V2.1-MANAGED -->
