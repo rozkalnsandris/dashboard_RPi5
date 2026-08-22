@@ -30,7 +30,12 @@ test("preflight path cannot reach production mutation commands", () => {
   assert.doesNotMatch(preflight, /systemctl restart/u);
   assert.doesNotMatch(preflight, /--apply/u);
   assert.match(preflight, /write_preflight_receipt/u);
-  assert.match(preflight, /PRODUCTION_MUTATION=NO/u);
+
+  const receiptStart = helper.indexOf("write_preflight_receipt() {");
+  const receiptEnd = helper.indexOf("verify_existing_preflight() {", receiptStart);
+  assert.ok(receiptStart >= 0 && receiptEnd > receiptStart);
+  const receiptWriter = helper.slice(receiptStart, receiptEnd);
+  assert.match(receiptWriter, /PRODUCTION_MUTATION=NO/u);
 });
 
 test("apply is fail closed and restarts only broker then agent then web", () => {
