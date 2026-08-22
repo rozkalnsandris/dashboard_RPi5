@@ -7,6 +7,9 @@ import assert from "node:assert/strict";
 
 const helperPath = resolve("tools/operator/issue196-live-evidence-diagnostic.sh");
 const helper = await readFile(helperPath, "utf8");
+const agentApp = await readFile(resolve("apps/agent/src/app.ts"), "utf8");
+const liveShell = await readFile(resolve("apps/web/src/LiveShell.tsx"), "utf8");
+const webMain = await readFile(resolve("apps/web/src/main.tsx"), "utf8");
 
 test("issue196 diagnostic helper is valid bash", () => {
   execFileSync("bash", ["-n", helperPath], { stdio: "pipe" });
@@ -65,4 +68,17 @@ test("issue196 helper is read-only and contains no mutation or retry path", () =
   assert.match(helper, /DOCKER_AUTHORITY_MUTATION=NO/u);
   assert.match(helper, /CLOUDFLARE_MUTATION=NO/u);
   assert.match(helper, /TERMINAL_ACTIVATION=NO/u);
+});
+
+test("issue196 production agent uses the bounded broker-backed Docker log reader", () => {
+  assert.match(agentApp, /import \{ readLiveLogSnapshot \} from "\.\/docker-logs-live\.js";/u);
+  assert.match(agentApp, /readLiveLogSnapshot\(sourceId, range, signal\)/u);
+  assert.doesNotMatch(agentApp, /readLogSnapshot\(sourceId, range, undefined, signal\)/u);
+});
+
+test("issue196 production navigation does not expose the Phase 1 settings fixture", () => {
+  assert.doesNotMatch(liveShell, /to: "\/settings"/u);
+  assert.doesNotMatch(webMain, /ReliabilityStatesPage/u);
+  assert.doesNotMatch(webMain, /path: "settings"/u);
+  assert.doesNotMatch(webMain, /reliability-states\.css/u);
 });
