@@ -10,6 +10,7 @@ GATE_BASE_SHA=5bb54d108bcacf5c0c35f9d34a349929d1ca8029
 PROCESS_EVIDENCE_FIX_SHA=d65da90a567f3eed6a0d515493dadbe3ef056eb8
 TRUST_CHAIN_FIX_SHA=0bd658524df93f28a2302c1a12327b47b3f31f21
 NATIVE_BUILD_FIX_SHA=5a8bc0372ce0c20e310f75a41564553dcbf62bef
+CONTROLLER_CWD_FIX_SHA=4a6931a523672e6607ebf88b58b6ba66cccc1bd3
 ```
 
 This document and `tools/operator/issue186-exact-main-production-rollout.sh` are source-only. Their merge does not authorize production mutation.
@@ -163,6 +164,36 @@ $HOME/.cache/dashboard-rpi5-operator/issue186-46c47fbd53e6933e2d8db86abdab30edea
 
 A future separately authorized run after this correction is merged selects a different sibling because `GATE_MAIN_SHA` changes.
 
+That correction was squash-merged as `4a6931a523672e6607ebf88b58b6ba66cccc1bd3`.
+
+## 2026-08-22 correction 5 — root-only installed manifest evidence for PLAN
+
+The next separately authorized RPi5 preflight used exact merged main `4a6931a...`. It passed the live production baseline, the explicit native `node-pty` build proof, the complete source check, deterministic candidate manifest and isolated runtime smoke. The candidate-cwd correction also worked: the release controller reached the live production release instead of resolving against `/home/andris`. PLAN then stopped before unchanged-production reproof and before receipt creation:
+
+```text
+GITHUB_MAIN_SHA=4a6931a523672e6607ebf88b58b6ba66cccc1bd3
+STAGE=LIVE_PRODUCTION_READ_ONLY_BASELINE
+STAGE=EXACT_CANDIDATE_BUILD_AND_VALIDATION
+...
+{"status":"PASS","sourceSha":"46c47fbd53e6933e2d8db86abdab30edea2badd0","candidateSha256":"b1f1029d01f5eb4f50b6c2453fa87c07f71aceca49e31afbf2b5deed4a44dcb9"}
+{"status":"PASS","sourceSha":"46c47fbd53e6933e2d8db86abdab30edea2badd0","candidateSha256":"b1f1029d01f5eb4f50b6c2453fa87c07f71aceca49e31afbf2b5deed4a44dcb9","terminal":"disabled"}
+{"status":"BLOCKED","error":"EACCES: permission denied, open '/opt/dashboard_RPi5/releases/a39fc7a9873eedb58cfa49568f9b2e05483cf7c2/.dashboard-production-candidate.json'"}
+```
+
+This was not production drift. The reviewed release-activation contract intentionally makes `.dashboard-production-candidate.json` `root:root` mode `0600`, while regular release files remain `0644`. The controller PLAN intentionally verifies the observed current installed release by reading that marker and hashing the installed allowlisted files before it reports an activation plan. A normal operator therefore cannot complete that exact installed-release verification without read privilege for the marker.
+
+The correction does **not** weaken marker permissions, add ACLs/groups, copy the marker into a less-protected host location, or grant the operator general release-root authority. Instead, the already-reviewed exact-target controller PLAN runs from the immutable candidate cwd through the fixed executable `sudo /usr/bin/node`. The PLAN invocation supplies only `--candidate-root`, `--manifest` and `--sha`; it contains no `--apply`, no acknowledgement and no expected-current mutation gate. Its JSON output is redirected to the operator-owned immutable run directory and must report `"status":"PLAN"` or the helper fails closed.
+
+The target controller's existing tests already prove that PLAN validates an exact candidate without writing the activation root and remains non-mutating under a restrictive caller umask. Full `npm run check` remains mandatory before the privileged PLAN invocation. The separately authorized apply path remains a different helper and still requires the receipt hash, exact owner acknowledgement and prewrite revalidation.
+
+The failed `4a6931a...` gate-main run directory is immutable evidence and must not be deleted or reused:
+
+```text
+$HOME/.cache/dashboard-rpi5-operator/issue186-46c47fbd53e6933e2d8db86abdab30edea2badd0-gate-4a6931a523672e6607ebf88b58b6ba66cccc1bd3
+```
+
+A future separately authorized run after this correction is merged selects a new gate-main-keyed sibling. No cleanup of any earlier failed directory is required.
+
 ## Corrective lineage contract
 
 The rollout gate is pinned as a short reviewed chain:
@@ -175,7 +206,8 @@ The rollout gate is pinned as a short reviewed chain:
    - `tools/operator/issue186-exact-main-production-rollout.sh`;
 4. trust-chain correction `0bd6585...`, exactly one direct child of `d65da90a...` with the same three-file boundary;
 5. native-build/evidence-namespace correction `5a8bc037...`, exactly one direct child of `0bd6585...` with that same three-file boundary;
-6. live GitHub `main` may then be either exact `5a8bc037...` or exactly one direct controller-cwd/native-proof corrective child with that same three-file boundary.
+6. controller-cwd/native-proof correction `4a6931a...`, exactly one direct child of `5a8bc037...` with that same three-file boundary;
+7. live GitHub `main` may then be either exact `4a6931a...` or exactly one direct read-only PLAN privilege corrective child with that same three-file boundary.
 
 Any later or broader GitHub movement fails closed. This does not make arbitrary future `main` a valid production target: runtime target remains immutable `46c47fbd...`.
 
@@ -187,7 +219,7 @@ After the current corrective gate source is merged and exact-main post-merge ver
 bash tools/operator/issue186-exact-main-production-rollout.sh --preflight-only
 ```
 
-The helper may request the operator's existing sudo authentication solely for read-only service-CWD evidence. Preflight does not use sudo for a production write and does not require direct broker/agent socket authority.
+The helper may request the operator's existing sudo authentication only for two reviewed read-only evidence paths: fixed `/usr/bin/readlink` reads of service `/proc/<MainPID>/cwd`, and the exact-target release-controller PLAN through fixed `/usr/bin/node` so it can verify the root-only installed manifest marker. Preflight never passes `--apply` or an activation acknowledgement to that controller, does not use sudo for a production write, and does not require direct broker/agent socket authority.
 
 The helper resolves fresh GitHub `main` first, then selects an immutable gate-main-keyed run directory. It fails if that exact run directory already exists. Any future BLOCKED run after that run directory is created remains a STOP; do not delete/reuse it without a new owner decision.
 
@@ -202,9 +234,9 @@ All earlier failed run directories are preserved untouched.
 Preflight performs:
 
 1. fresh GitHub `main` resolution;
-2. fail-closed proof of target -> gate base -> process-evidence fix -> trust-chain fix -> native-build fix -> at most one exact controller-cwd/native-proof corrective child;
+2. fail-closed proof of target -> gate base -> process-evidence fix -> trust-chain fix -> native-build fix -> controller-cwd fix -> at most one exact read-only PLAN privilege corrective child;
 3. read-only proof that `/opt/dashboard_RPi5/current` is still `a39fc7a9...`;
-4. broker, agent and web service Active/MainPID/exact-CWD/stable-NRestarts evidence, with only exact CWD reads elevated through `sudo /usr/bin/readlink`;
+4. broker, agent and web service Active/MainPID/exact-CWD/stable-NRestarts evidence, with only exact CWD reads elevated through fixed `sudo /usr/bin/readlink`;
 5. loopback `/api/health=200`;
 6. loopback `/api/current/host=200` as web-to-agent evidence;
 7. loopback `/api/current/docker=200` as end-to-end web-to-agent-to-broker-to-Docker evidence;
@@ -215,7 +247,7 @@ Preflight performs:
 12. `npm ci --ignore-scripts`, a package-spec-limited forced `node-pty` lifecycle rebuild, direct `build/Release/pty.node` existence + module-load proof, high-severity dependency audit and full `npm run check`;
 13. deterministic production candidate manifest generation + exact verification;
 14. isolated manifest-only runtime smoke;
-15. `production-release-controller.mjs` PLAN only from exact candidate cwd;
+15. exact-target `production-release-controller.mjs` PLAN from exact candidate cwd through fixed `sudo /usr/bin/node`, with no `--apply`, no acknowledgement and no expected-current mutation argument; require JSON `status=PLAN`;
 16. unchanged live production reproof through the same least-privilege chain;
 17. immutable `PREFLIGHT_PASS.txt` receipt + SHA-256 and STOP.
 
@@ -258,7 +290,7 @@ Immediately before the first mutation the helper re-proves:
 - GitHub main has not moved since the preflight receipt;
 - candidate SHA/tree/manifest still match;
 - isolated runtime smoke still passes;
-- release-controller PLAN still passes from candidate cwd;
+- release-controller PLAN still passes from candidate cwd through the same fixed read-only privileged PLAN helper;
 - current production remains exactly `a39fc7a9...` and healthy through the loopback web trust chain;
 - trust-boundary invariants still hold.
 
