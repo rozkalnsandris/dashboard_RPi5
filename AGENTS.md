@@ -197,13 +197,13 @@ Do not disguise a production mutation as “verification”.
 
 If a live command changes host/container/service/Cloudflare state, it is a mutation and requires authorization.
 
-<!-- BEGIN FAST-LANE-V2.1-MANAGED -->
+<!-- BEGIN FAST-LANE-V2.2-MANAGED -->
 ## 12. FAST-LANE v2.2 Composite
 
-This repository adopts the cross-project FAST/STRICT delivery model documented through the compatibility path `docs/FAST_LANE_V2_1.md`.
+Read `docs/FAST_LANE_V2_2.md` as the active dashboard-specific startup contract.
 
 - **Core rule:** the human approves the risk/decision; automation executes the technical steps. STRICT is a risk class, not a reason to create approval checkpoints for read-only work.
-- **FAST:** a clear source-only task may proceed in one batch from fresh `main` through Ready, may batch **2-5 closely related same-risk work items**, and may use at most **two scope-preserving corrective commits** after CI/review findings.
+- **FAST:** `START`, `turpini`, or equivalent continuation may carry a clear source-only task in one batch from fresh `main` through Ready, may batch **2-5 closely related same-risk work items**, and may use at most **two scope-preserving corrective commits** after CI/review findings.
 - **Human gate budget:** normal delivery has at most two owner decision gates — explicit **MERGE**, then one bounded **COMPOSITE LIVE** only when live mutation is required. Read-only/preflight/evidence/reconciliation work is not an owner gate.
 - **Composite Live:** bind the exact repository/SHA, target, allowed mutation categories, practical limits, explicit exclusions, and expected baseline; revalidate immediately before the first live write and fail closed on drift.
 - **One-shot execution:** after Composite Live authorization, execute the tightly coupled approved technical sequence through reconciliation/final receipt without returning for intermediate approvals.
@@ -214,4 +214,4 @@ This repository adopts the cross-project FAST/STRICT delivery model documented t
 - Explicit owner merge authorization remains mandatory. Merge never authorizes deploy or another live mutation.
 
 All earlier repository-specific security boundaries remain in force and override FAST when stricter.
-<!-- END FAST-LANE-V2.1-MANAGED -->
+<!-- END FAST-LANE-V2.2-MANAGED -->
