@@ -7,13 +7,13 @@ TARGET_TREE="4244c8b5105cad996c87c743b3ba90519a4d092a"
 EXPECTED_CURRENT_SHA="a39fc7a9873eedb58cfa49568f9b2e05483cf7c2"
 GATE_BASE_SHA="5bb54d108bcacf5c0c35f9d34a349929d1ca8029"
 GATE_BASE_TREE="ceef7bcc20ace3333d84c9c3d8c5bb8f00b5f925"
+PROCESS_EVIDENCE_FIX_SHA="d65da90a567f3eed6a0d515493dadbe3ef056eb8"
+PROCESS_EVIDENCE_FIX_TREE="25450cc5ed720e59136ab1f6fe36b476a5f40194"
 PRODUCTION_ROOT="/opt/dashboard_RPi5"
 CURRENT_LINK="${PRODUCTION_ROOT}/current"
 BROKER_SERVICE="dashboard-rpi5-docker-broker.service"
 AGENT_SERVICE="dashboard-rpi5-agent.service"
 WEB_SERVICE="dashboard-rpi5-web.service"
-BROKER_SOCKET="/run/dashboard-rpi5-docker-broker/broker.sock"
-AGENT_SOCKET="/run/dashboard-rpi5/agent.sock"
 TERMINAL_SOCKET="/run/dashboard-rpi5-terminal.sock"
 CONTROLLER_ACK="I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ACTIVATION"
 RUN_ROOT="${HOME}/.cache/dashboard-rpi5-operator/issue186-${TARGET_SHA}"
@@ -79,12 +79,6 @@ current_release_sha() {
   basename "$resolved"
 }
 
-http_status_unix() {
-  local socket="$1" path="$2"
-  curl --silent --show-error --max-time 5 --output /dev/null --write-out '%{http_code}' \
-    --unix-socket "$socket" "http://localhost${path}"
-}
-
 http_status_loopback() {
   local path="$1"
   curl --silent --show-error --max-time 5 --output /dev/null --write-out '%{http_code}' \
@@ -125,19 +119,13 @@ verify_live_acceptance() {
   verify_service_release "$AGENT_SERVICE" "$expected_sha"
   verify_service_release "$WEB_SERVICE" "$expected_sha"
   verify_security_invariants
-  [[ -S "$BROKER_SOCKET" ]] || fail "broker socket missing"
-  [[ -S "$AGENT_SOCKET" ]] || fail "agent socket missing"
 
-  status="$(http_status_unix "$BROKER_SOCKET" "/v1/health")"
-  [[ "$status" == "200" ]] || fail "broker health status ${status}"
-  status="$(http_status_unix "$BROKER_SOCKET" "/v1/docker/containers")"
-  [[ "$status" == "200" ]] || fail "broker Docker status ${status}"
-  status="$(http_status_unix "$AGENT_SOCKET" "/v1/health")"
-  [[ "$status" == "200" ]] || fail "agent health status ${status}"
   status="$(http_status_loopback "/api/health")"
   [[ "$status" == "200" ]] || fail "web health status ${status}"
+  status="$(http_status_loopback "/api/current/host")"
+  [[ "$status" == "200" ]] || fail "web-to-agent host trust-chain status ${status}"
   status="$(http_status_loopback "/api/current/docker")"
-  [[ "$status" == "200" ]] || fail "web Docker status ${status}"
+  [[ "$status" == "200" ]] || fail "web-to-agent-to-broker Docker trust-chain status ${status}"
 
   access_status="$(curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' https://dash.rozkalns.net/)"
   [[ "$access_status" == "302" || "$access_status" == "403" ]] || fail "unexpected unauthenticated Access status ${access_status}"
@@ -156,9 +144,10 @@ refresh_github_main() {
 }
 
 verify_gate_lineage_in_clone() {
-  local gate_parent main_parent gate_actual gate_expected corrective_actual corrective_expected
+  local gate_parent process_fix_parent main_parent gate_actual gate_expected process_fix_actual process_fix_expected corrective_actual corrective_expected
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$TARGET_SHA^{tree}")" == "$TARGET_TREE" ]] || fail "target tree mismatch"
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$GATE_BASE_SHA^{tree}")" == "$GATE_BASE_TREE" ]] || fail "gate base tree mismatch"
+  [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$PROCESS_EVIDENCE_FIX_SHA^{tree}")" == "$PROCESS_EVIDENCE_FIX_TREE" ]] || fail "process-evidence fix tree mismatch"
 
   gate_parent="$(git -C "$CANDIDATE_ROOT" rev-parse "${GATE_BASE_SHA}^")"
   [[ "$gate_parent" == "$TARGET_SHA" ]] || fail "reviewed issue186 gate base is not a direct child of target"
@@ -169,16 +158,25 @@ verify_gate_lineage_in_clone() {
     'tools/issue186-exact-main-production-rollout.test.mjs' \
     'tools/operator/issue186-exact-main-production-rollout.sh' | sort)"
   [[ "$gate_actual" == "$gate_expected" ]] || fail "reviewed issue186 gate base contains unexpected files"
-  [[ "$GITHUB_MAIN_SHA" == "$GATE_BASE_SHA" ]] && return 0
+
+  process_fix_parent="$(git -C "$CANDIDATE_ROOT" rev-parse "${PROCESS_EVIDENCE_FIX_SHA}^")"
+  [[ "$process_fix_parent" == "$GATE_BASE_SHA" ]] || fail "reviewed process-evidence fix is not a direct child of issue186 gate base"
+  process_fix_actual="$(git -C "$CANDIDATE_ROOT" diff --name-only "$GATE_BASE_SHA" "$PROCESS_EVIDENCE_FIX_SHA" | sort)"
+  process_fix_expected="$(printf '%s\n' \
+    'docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md' \
+    'tools/issue186-exact-main-production-rollout.test.mjs' \
+    'tools/operator/issue186-exact-main-production-rollout.sh' | sort)"
+  [[ "$process_fix_actual" == "$process_fix_expected" ]] || fail "reviewed process-evidence fix contains unexpected files"
+  [[ "$GITHUB_MAIN_SHA" == "$PROCESS_EVIDENCE_FIX_SHA" ]] && return 0
 
   main_parent="$(git -C "$CANDIDATE_ROOT" rev-parse "${GITHUB_MAIN_SHA}^")"
-  [[ "$main_parent" == "$GATE_BASE_SHA" ]] || fail "GitHub main is not reviewed gate base or one direct issue186 corrective child"
-  corrective_actual="$(git -C "$CANDIDATE_ROOT" diff --name-only "$GATE_BASE_SHA" "$GITHUB_MAIN_SHA" | sort)"
+  [[ "$main_parent" == "$PROCESS_EVIDENCE_FIX_SHA" ]] || fail "GitHub main is not reviewed process-evidence fix or one direct trust-chain corrective child"
+  corrective_actual="$(git -C "$CANDIDATE_ROOT" diff --name-only "$PROCESS_EVIDENCE_FIX_SHA" "$GITHUB_MAIN_SHA" | sort)"
   corrective_expected="$(printf '%s\n' \
     'docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md' \
     'tools/issue186-exact-main-production-rollout.test.mjs' \
     'tools/operator/issue186-exact-main-production-rollout.sh' | sort)"
-  [[ "$corrective_actual" == "$corrective_expected" ]] || fail "post-gate GitHub main contains changes outside reviewed issue186 corrective source"
+  [[ "$corrective_actual" == "$corrective_expected" ]] || fail "post-process-fix GitHub main contains changes outside reviewed issue186 trust-chain corrective source"
 }
 
 build_candidate_once() {
@@ -186,7 +184,7 @@ build_candidate_once() {
   mkdir -p -m 0700 "$CANDIDATE_ROOT"
   git -C "$CANDIDATE_ROOT" init --quiet
   git -C "$CANDIDATE_ROOT" remote add origin "$REPO_URL"
-  git -C "$CANDIDATE_ROOT" fetch --quiet --depth=3 origin "$GITHUB_MAIN_SHA"
+  git -C "$CANDIDATE_ROOT" fetch --quiet --depth=4 origin "$GITHUB_MAIN_SHA"
   git -C "$CANDIDATE_ROOT" fetch --quiet --depth=1 origin "$TARGET_SHA"
   verify_gate_lineage_in_clone
   git -c advice.detachedHead=false -C "$CANDIDATE_ROOT" checkout --quiet --detach "$TARGET_SHA"
@@ -253,26 +251,18 @@ verify_existing_preflight() {
   node "$CANDIDATE_ROOT/tools/production-release-controller.mjs" --candidate-root "$CANDIDATE_ROOT" --manifest "$MANIFEST" --sha "$TARGET_SHA" >"${RUN_ROOT}/release-plan-prewrite.json"
 }
 
-wait_unix_200() {
-  local socket="$1" path="$2" label="$3" status=""
+wait_web_path_200() {
+  local path="$1" label="$2" status=""
   for _ in {1..30}; do
-    if [[ -S "$socket" ]]; then
-      status="$(http_status_unix "$socket" "$path" 2>/dev/null || true)"
-      [[ "$status" == "200" ]] && return 0
-    fi
-    sleep 1
-  done
-  fail "${label} did not reach HTTP 200"
-}
-
-wait_web_200() {
-  local status=""
-  for _ in {1..30}; do
-    status="$(http_status_loopback "/api/health" 2>/dev/null || true)"
+    status="$(http_status_loopback "$path" 2>/dev/null || true)"
     [[ "$status" == "200" ]] && return 0
     sleep 1
   done
-  fail "web did not reach HTTP 200"
+  fail "${label} did not reach HTTP 200 through loopback web trust chain"
+}
+
+wait_web_200() {
+  wait_web_path_200 "/api/health" "web"
 }
 
 if [[ "$MODE" == "preflight" ]]; then
@@ -311,19 +301,21 @@ sudo /usr/bin/node "$CANDIDATE_ROOT/tools/production-release-controller.mjs" \
 
 log "STAGE=RESTART_BROKER"
 sudo systemctl restart "$BROKER_SERVICE"
-wait_unix_200 "$BROKER_SOCKET" "/v1/health" "broker"
 verify_service_release "$BROKER_SERVICE" "$TARGET_SHA"
-[[ "$(http_status_unix "$BROKER_SOCKET" "/v1/docker/containers")" == "200" ]] || fail "broker Docker acceptance failed"
+wait_web_path_200 "/api/current/docker" "broker Docker trust chain"
 
 log "STAGE=RESTART_AGENT"
 sudo systemctl restart "$AGENT_SERVICE"
-wait_unix_200 "$AGENT_SOCKET" "/v1/health" "agent"
 verify_service_release "$AGENT_SERVICE" "$TARGET_SHA"
+wait_web_path_200 "/api/current/host" "agent host trust chain"
+wait_web_path_200 "/api/current/docker" "agent Docker trust chain"
 
 log "STAGE=RESTART_WEB"
 sudo systemctl restart "$WEB_SERVICE"
 wait_web_200
 verify_service_release "$WEB_SERVICE" "$TARGET_SHA"
+wait_web_path_200 "/api/current/host" "web-to-agent host trust chain"
+wait_web_path_200 "/api/current/docker" "web-to-agent-to-broker Docker trust chain"
 
 log "STAGE=FINAL_ACCEPTANCE"
 verify_live_acceptance "$TARGET_SHA"
