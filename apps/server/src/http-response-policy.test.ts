@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import type { OutgoingHttpHeaders } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,7 +12,7 @@ import {
   REFERRER_POLICY,
 } from "./http-response-policy.js";
 
-function expectSecurityHeaders(headers: Record<string, string | string[] | undefined>) {
+function expectSecurityHeaders(headers: OutgoingHttpHeaders) {
   expect(headers["content-security-policy"]).toBe(CONTENT_SECURITY_POLICY);
   expect(headers["x-content-type-options"]).toBe("nosniff");
   expect(headers["referrer-policy"]).toBe(REFERRER_POLICY);
