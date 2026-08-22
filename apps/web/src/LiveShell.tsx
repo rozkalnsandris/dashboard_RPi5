@@ -6,7 +6,6 @@ import {
   LayoutDashboard,
   ScrollText,
   ServerCog,
-  Settings,
   ShieldCheck,
   TerminalSquare,
 } from "lucide-react";
@@ -35,7 +34,6 @@ const primaryNavigation = [
   { to: "/activity", label: "Activity", icon: Activity },
   { to: "/backups", label: "Backups", icon: DatabaseBackup },
   { to: "/deployments", label: "Deployments", icon: ShieldCheck },
-  { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 const mobilePrimaryPaths = new Set(["/", "/docker", "/logs", "/terminal"]);

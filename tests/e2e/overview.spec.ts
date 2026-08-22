@@ -75,12 +75,13 @@ test("mobile More menu performs touch route navigation", async ({ page }, testIn
   await page.goto("/");
 
   await page.getByRole("button", { name: "More destinations" }).tap();
-  const settingsItem = page.getByRole("menuitem", { name: "Settings" });
-  await expect(settingsItem).toBeVisible();
-  await settingsItem.tap();
+  const deploymentsItem = page.getByRole("menuitem", { name: "Deployments" });
+  await expect(deploymentsItem).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Settings" })).toHaveCount(0);
+  await deploymentsItem.tap();
 
-  await expect(page).toHaveURL(/\/settings$/);
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page).toHaveURL(/\/deployments$/);
+  await expect(page.getByRole("heading", { name: "Deployments" })).toBeVisible();
 });
 
 test("keyboard reaches the skip link first", async ({ page }) => {
@@ -144,12 +145,12 @@ test("Logs route exposes only the registered-source explorer", async ({ page }) 
   await expect(page.getByText("Docker health check completed")).toHaveCount(0);
 });
 
-test("Settings route documents loading stale unavailable and unknown states", async ({ page }) => {
+test("Settings fixture is not exposed as a production route", async ({ page }) => {
   await page.goto("/settings");
 
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await expect(page.getByText("Checking current evidence")).toBeVisible();
-  await expect(page.getByText("Last observation is old")).toBeVisible();
-  await expect(page.getByText("Evidence source unavailable")).toBeVisible();
-  await expect(page.getByText("No trustworthy evidence")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "That dashboard view could not be opened." })).toBeVisible();
+  await expect(page.getByText("Checking current evidence")).toHaveCount(0);
+  await expect(page.getByText("Last observation is old")).toHaveCount(0);
+  await expect(page.getByText("Evidence source unavailable")).toHaveCount(0);
+  await expect(page.getByText("No trustworthy evidence")).toHaveCount(0);
 });
