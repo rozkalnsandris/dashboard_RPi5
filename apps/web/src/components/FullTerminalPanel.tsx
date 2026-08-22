@@ -1,9 +1,14 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { Keyboard, LockKeyhole, TerminalSquare } from "lucide-react";
+import { Accessibility, Keyboard, LockKeyhole, TerminalSquare } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "react-aria-components";
 
+import {
+  applyTerminalScreenReaderMode,
+  persistTerminalScreenReaderPreference,
+  readTerminalScreenReaderPreference,
+} from "../terminal-accessibility";
 import {
   createTerminalSession,
   createTerminalWebSocket,
@@ -98,6 +103,7 @@ export function FullTerminalPanel() {
   const [phase, setPhase] = useState<TerminalPhase>("idle");
   const [inputNotice, setInputNotice] = useState<string | null>(null);
   const [terminalMounted, setTerminalMounted] = useState(false);
+  const [screenReaderMode, setScreenReaderMode] = useState(readInitialScreenReaderPreference);
 
   const cleanupRuntimeListeners = useCallback(() => {
     inputDisposableRef.current?.dispose();
@@ -222,7 +228,7 @@ export function FullTerminalPanel() {
         lineHeight: 1.16,
         scrollback: 2_000,
         minimumContrastRatio: 4.5,
-        screenReaderMode: false,
+        screenReaderMode,
         theme: {
           background: "#05080d",
           foreground: "#e4ebf5",
@@ -361,7 +367,7 @@ export function FullTerminalPanel() {
       }
       setPhase("error");
     }
-  }, [closeActiveSocket, disposeTerminal, finishRemoteConnection, installResizeLifecycle]);
+  }, [closeActiveSocket, disposeTerminal, finishRemoteConnection, installResizeLifecycle, screenReaderMode]);
 
   const disconnectTerminal = useCallback(() => {
     generationRef.current += 1;
@@ -375,6 +381,18 @@ export function FullTerminalPanel() {
   const focusKeyboard = useCallback(() => {
     if (phase === "ready") terminalRef.current?.focus();
   }, [phase]);
+
+  const toggleScreenReaderMode = useCallback(() => {
+    const next = !screenReaderMode;
+    setScreenReaderMode(next);
+    applyTerminalScreenReaderMode(terminalRef.current, next);
+    if (typeof window === "undefined") return;
+    try {
+      persistTerminalScreenReaderPreference(window.localStorage, next);
+    } catch {
+      // The accessibility mode still works for this page when browser storage is unavailable.
+    }
+  }, [screenReaderMode]);
 
   useEffect(() => () => {
     generationRef.current += 1;
@@ -419,10 +437,20 @@ export function FullTerminalPanel() {
         <Button
           className="full-terminal-button"
           isDisabled={!isConnected}
+          aria-label="Focus terminal input and open the on-screen keyboard"
           onPress={focusKeyboard}
         >
           <Keyboard size={18} aria-hidden="true" />
           Open keyboard
+        </Button>
+        <Button
+          className="full-terminal-button"
+          aria-pressed={screenReaderMode}
+          aria-describedby="full-terminal-accessibility-detail"
+          onPress={toggleScreenReaderMode}
+        >
+          <Accessibility size={18} aria-hidden="true" />
+          Screen reader: {screenReaderMode ? "On" : "Off"}
         </Button>
         <Button
           className="full-terminal-button"
@@ -433,10 +461,20 @@ export function FullTerminalPanel() {
         </Button>
       </div>
 
+      <p id="full-terminal-accessibility-detail" className="full-terminal-accessibility-detail">
+        xterm.js screen-reader support is {screenReaderMode ? "enabled" : "disabled"}. You can change it before or during a session; the preference affects only this browser.
+      </p>
+
       {inputNotice !== null ? <p className="full-terminal-input-notice" role="status">{inputNotice}</p> : null}
 
       <div className="full-terminal-frame" data-terminal-mounted={terminalMounted ? "true" : "false"}>
-        <div ref={hostRef} className="full-terminal-viewport" aria-label="Interactive terminal viewport" />
+        <div
+          ref={hostRef}
+          className="full-terminal-viewport"
+          aria-label="Interactive terminal viewport"
+          aria-describedby="full-terminal-accessibility-detail"
+          data-screen-reader-mode={screenReaderMode ? "enabled" : "disabled"}
+        />
         {!terminalMounted ? (
           <div className="full-terminal-placeholder" aria-hidden="true">
             <TerminalSquare size={30} />
@@ -446,10 +484,19 @@ export function FullTerminalPanel() {
       </div>
 
       <p className="full-terminal-privacy">
-        Session tokens stay in memory only and are never placed in the URL or browser storage. Terminal output is rendered live and is not persisted by the dashboard.
+        The screen-reader preference may be stored in this browser. Session tokens stay in memory only and are never placed in the URL or browser storage. Terminal output is rendered live and is not persisted by the dashboard.
       </p>
     </section>
   );
+}
+
+function readInitialScreenReaderPreference(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return readTerminalScreenReaderPreference(window.localStorage);
+  } catch {
+    return false;
+  }
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {

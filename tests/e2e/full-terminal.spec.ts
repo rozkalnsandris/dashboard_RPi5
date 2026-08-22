@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const TOKEN_A = "a".repeat(64);
+const OPEN_KEYBOARD_NAME = "Focus terminal input and open the on-screen keyboard";
+const SCREEN_READER_STORAGE_KEY = "dashboard-rpi5.terminal.screen-reader";
 const catalog = {
   commands: [
     { id: "host.uptime", label: "Uptime", description: "Human-readable host uptime" },
@@ -58,11 +60,33 @@ test("full terminal requires explicit start, keeps capability out of DOM/storage
   expect(sessionRequests).toEqual([]);
   expect(socketOpened).toBe(false);
 
+  const screenReaderOff = page.getByRole("button", { name: "Screen reader: Off" });
+  await expect(screenReaderOff).toHaveAttribute("aria-pressed", "false");
+  await screenReaderOff.click();
+  const screenReaderOn = page.getByRole("button", { name: "Screen reader: On" });
+  await expect(screenReaderOn).toHaveAttribute("aria-pressed", "true");
+  expect(await page.evaluate((key) => localStorage.getItem(key), SCREEN_READER_STORAGE_KEY)).toBe("enabled");
+  expect(sessionRequests).toEqual([]);
+  expect(socketOpened).toBe(false);
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Screen reader: On" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".xterm")).toHaveCount(0);
+  expect(sessionRequests).toEqual([]);
+  expect(socketOpened).toBe(false);
+
   await page.getByRole("button", { name: "Start terminal" }).click();
   await expect(page.locator(".terminal-session-state")).toHaveText("Connected");
   await expect(page.locator(".xterm")).toHaveCount(1);
+  await expect(page.locator(".full-terminal-viewport")).toHaveAttribute("data-screen-reader-mode", "enabled");
   expect(sessionRequests).toEqual([{}]);
   expect(socketOpened).toBe(true);
+
+  await page.getByRole("button", { name: "Screen reader: On" }).click();
+  await expect(page.getByRole("button", { name: "Screen reader: Off" })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".full-terminal-viewport")).toHaveAttribute("data-screen-reader-mode", "disabled");
+  expect(await page.evaluate((key) => localStorage.getItem(key), SCREEN_READER_STORAGE_KEY)).toBe("disabled");
+  expect(sessionRequests).toEqual([{}]);
 
   expect(page.url()).not.toContain(TOKEN_A);
   expect(await page.locator("body").innerText()).not.toContain(TOKEN_A);
@@ -75,7 +99,7 @@ test("full terminal requires explicit start, keeps capability out of DOM/storage
   sendServer?.('{"type":"output","data":"hello-from-rpi5\\r\\n"}');
   await expect(page.locator(".xterm-rows")).toContainText("hello-from-rpi5");
 
-  await page.getByRole("button", { name: "Open keyboard" }).click();
+  await page.getByRole("button", { name: OPEN_KEYBOARD_NAME }).click();
   await page.keyboard.type("pwd");
   await page.keyboard.press("Enter");
   await expect.poll(() => clientFrames.length).toBeGreaterThan(0);
@@ -114,15 +138,24 @@ test("A55 terminal controls remain touch-sized and refit after a mobile viewport
   const start = page.getByRole("button", { name: "Start terminal" });
   const startBox = await start.boundingBox();
   expect(startBox?.height ?? 0).toBeGreaterThanOrEqual(48);
+
+  const screenReader = page.getByRole("button", { name: "Screen reader: Off" });
+  const screenReaderBox = await screenReader.boundingBox();
+  expect(screenReaderBox?.height ?? 0).toBeGreaterThanOrEqual(48);
+
   await start.click();
   await expect(page.locator(".terminal-session-state")).toHaveText("Connected");
 
-  for (const label of ["Open keyboard", "Disconnect"]) {
-    const box = await page.getByRole("button", { name: label }).boundingBox();
+  for (const locator of [
+    page.getByRole("button", { name: OPEN_KEYBOARD_NAME }),
+    page.getByRole("button", { name: "Screen reader: Off" }),
+    page.getByRole("button", { name: "Disconnect" }),
+  ]) {
+    const box = await locator.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(48);
   }
 
-  await page.getByRole("button", { name: "Open keyboard" }).click();
+  await page.getByRole("button", { name: OPEN_KEYBOARD_NAME }).click();
   await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
 
   const frame = page.locator(".full-terminal-frame");
