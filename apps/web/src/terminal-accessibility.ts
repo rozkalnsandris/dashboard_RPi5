@@ -7,7 +7,7 @@ export interface TerminalAccessibilityStorage {
 
 export interface TerminalScreenReaderTarget {
   options: {
-    screenReaderMode: boolean;
+    screenReaderMode?: boolean;
   };
 }
 
