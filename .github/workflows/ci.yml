@@ -19,70 +19,62 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      mode: ${{ steps.scope.outputs.mode }}
       docs_only: ${{ steps.scope.outputs.docs_only }}
-      terminal_native: ${{ steps.scope.outputs.terminal_native }}
+      core: ${{ steps.scope.outputs.core }}
+      runtime: ${{ steps.scope.outputs.runtime }}
+      browser: ${{ steps.scope.outputs.browser }}
+      terminal: ${{ steps.scope.outputs.terminal }}
     steps:
-      - name: Checkout exact source SHA
+      - name: Checkout exact source SHA with comparison history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
-      - name: Classify changed files
+      - name: Validate CI scope classifier
+        run: node --test tools/ci-scope.test.mjs
+
+      - name: Classify changed paths
         id: scope
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import os
-          import pathlib
-          import subprocess
+          changed_file_list="$(mktemp)"
+          trap 'rm -f "$changed_file_list"' EXIT
 
-          event = os.environ['EVENT_NAME']
-          if event != 'pull_request':
-              docs_only = False
-              terminal_native = True
-          else:
-              base = os.environ['BASE_SHA']
-              head = os.environ['HEAD_SHA']
-              if not base or not head:
-                  raise SystemExit('missing pull request base/head SHA')
-              changed = subprocess.check_output(
-                  ['git', 'diff', '--name-only', '--diff-filter=ACMR', base, head],
-                  text=True,
-              ).splitlines()
-              if not changed:
-                  raise SystemExit('empty pull request diff')
+          if [[ -z "${BASE_SHA:-}" || -z "${HEAD_SHA:-}" || "$BASE_SHA" =~ ^0+$ ]]; then
+            node tools/ci-scope.mjs >> "$GITHUB_OUTPUT"
+          elif ! git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" > "$changed_file_list"; then
+            node tools/ci-scope.mjs >> "$GITHUB_OUTPUT"
+          else
+            mapfile -t changed_paths < "$changed_file_list"
+            node tools/ci-scope.mjs "${changed_paths[@]}" >> "$GITHUB_OUTPUT"
+          fi
 
-              def is_docs(path: str) -> bool:
-                  p = pathlib.PurePosixPath(path)
-                  return (
-                      p.suffix.lower() in {'.md', '.txt'}
-                      or p.parts[:1] == ('docs',)
-                  )
-
-              docs_only = all(is_docs(path) for path in changed)
-              terminal_native = any(
-                  path.startswith('apps/terminal-agent/')
-                  or path in {'.node-version', 'package.json', 'package-lock.json'}
-                  or path.startswith('.github/workflows/')
-                  for path in changed
-              )
-
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
-              output.write(f"docs_only={'true' if docs_only else 'false'}\n")
-              output.write(f"terminal_native={'true' if terminal_native else 'false'}\n")
-          print(f'FAST_LANE_DOCS_ONLY={str(docs_only).lower()}')
-          print(f'FAST_LANE_TERMINAL_NATIVE={str(terminal_native).lower()}')
-          PY
+      - name: Record selected CI scope
+        env:
+          MODE: ${{ steps.scope.outputs.mode }}
+          CORE: ${{ steps.scope.outputs.core }}
+          RUNTIME: ${{ steps.scope.outputs.runtime }}
+          BROWSER: ${{ steps.scope.outputs.browser }}
+          TERMINAL: ${{ steps.scope.outputs.terminal }}
+        run: |
+          {
+            echo "### FAST-LANE CI scope"
+            echo "- mode: $MODE"
+            echo "- core: $CORE"
+            echo "- runtime: $RUNTIME"
+            echo "- browser: $BROWSER"
+            echo "- terminal-native: $TERMINAL"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   check:
     needs: classify
-    if: needs.classify.outputs.docs_only != 'true'
+    if: needs.classify.outputs.core == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -116,6 +108,7 @@ jobs:
         run: npm run build
 
       - name: Validate production candidate manifest
+        if: needs.classify.outputs.runtime == 'true'
         env:
           DASHBOARD_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
@@ -123,6 +116,7 @@ jobs:
           node tools/production-candidate-manifest.mjs --root . --sha "$DASHBOARD_CANDIDATE_SHA" --verify /tmp/dashboard-rpi5-production-candidate.json
 
       - name: Validate manifest-only base runtime
+        if: needs.classify.outputs.runtime == 'true'
         env:
           DASHBOARD_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
@@ -132,15 +126,17 @@ jobs:
             --sha "$DASHBOARD_CANDIDATE_SHA"
 
       - name: Install Chromium
+        if: needs.classify.outputs.browser == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Responsive browser tests
+        if: needs.classify.outputs.browser == 'true'
         run: npm run test:e2e
 
   terminal-native:
     name: terminal-native (${{ matrix.arch }})
     needs: classify
-    if: needs.classify.outputs.docs_only != 'true' && needs.classify.outputs.terminal_native == 'true'
+    if: needs.classify.outputs.terminal == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -192,22 +188,22 @@ jobs:
       - name: Verify required validation results
         env:
           CLASSIFY_RESULT: ${{ needs.classify.result }}
-          DOCS_ONLY: ${{ needs.classify.outputs.docs_only }}
-          TERMINAL_NATIVE: ${{ needs.classify.outputs.terminal_native }}
+          CORE_REQUIRED: ${{ needs.classify.outputs.core }}
           CHECK_RESULT: ${{ needs.check.result }}
+          TERMINAL_REQUIRED: ${{ needs.classify.outputs.terminal }}
           TERMINAL_RESULT: ${{ needs.terminal-native.result }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$CLASSIFY_RESULT" == success ]]
-          if [[ "$DOCS_ONLY" == true ]]; then
-            [[ "$CHECK_RESULT" == skipped ]]
-          else
+          if [[ "$CORE_REQUIRED" == true ]]; then
             [[ "$CHECK_RESULT" == success ]]
-          fi
-          if [[ "$DOCS_ONLY" == true || "$TERMINAL_NATIVE" != true ]]; then
-            [[ "$TERMINAL_RESULT" == skipped ]]
           else
+            [[ "$CHECK_RESULT" == skipped ]]
+          fi
+          if [[ "$TERMINAL_REQUIRED" == true ]]; then
             [[ "$TERMINAL_RESULT" == success ]]
+          else
+            [[ "$TERMINAL_RESULT" == skipped ]]
           fi
           echo "FAST_LANE_MERGE_GATE=PASS"

@@ -31,13 +31,18 @@ Source-only preparation of STRICT capability may be reviewed in Git, but activat
 
 ## CI classification
 
-The CI workflow always starts. For pull requests it classifies changed files:
+The CI workflow always starts and validates the classifier itself before using its outputs. Changed paths are classified conservatively:
 
-- `docs_only`: Markdown/text documentation and repository guidance only;
-- `terminal_native`: changes under `apps/terminal-agent/**`, `.node-version`, `package.json`, or `package-lock.json`;
-- all other source changes use the existing main application validation.
+- `docs-only`: documentation/repository guidance only; expensive Node/browser/native lanes are skipped;
+- `web`: core + runtime contract + responsive browser validation;
+- `runtime`: server/agent/contracts changes keep core + runtime validation without browser/native PTY work;
+- `e2e`: core + responsive browser validation;
+- `terminal`: core + runtime + native PTY x64/arm64 validation;
+- workflow, dependency/toolchain, `ops/**`, classifier/tool changes, unknown paths, or missing diff evidence fail open to the full validation surface.
 
-Docs-only PRs skip Node dependency install, production build, Chromium/Playwright and native `node-pty` matrices. UI/source PRs keep application validation but skip native PTY matrices unless the native boundary is touched. Pushes to `main` retain full validation.
+The classifier implementation lives in `tools/ci-scope.mjs` with focused tests in `tools/ci-scope.test.mjs`. Workflow changes therefore select full CI and validate the optimization using the complete affected surface.
+
+Pushes to `main` are classified from the exact before/after SHAs; missing or ambiguous comparison evidence fails open to full CI.
 
 The stable aggregate status is `FAST-LANE Merge Gate`.
 
