@@ -11,6 +11,8 @@ PROCESS_EVIDENCE_FIX_SHA="d65da90a567f3eed6a0d515493dadbe3ef056eb8"
 PROCESS_EVIDENCE_FIX_TREE="25450cc5ed720e59136ab1f6fe36b476a5f40194"
 TRUST_CHAIN_FIX_SHA="0bd658524df93f28a2302c1a12327b47b3f31f21"
 TRUST_CHAIN_FIX_TREE="61a7baab82b38bcb287460bb7d7110f8876139db"
+NATIVE_BUILD_FIX_SHA="5a8bc0372ce0c20e310f75a41564553dcbf62bef"
+NATIVE_BUILD_FIX_TREE="e2ae2f8b0f0b181236e1159f447452e4fbe38c6b"
 PRODUCTION_ROOT="/opt/dashboard_RPi5"
 CURRENT_LINK="${PRODUCTION_ROOT}/current"
 BROKER_SERVICE="dashboard-rpi5-docker-broker.service"
@@ -155,11 +157,12 @@ configure_run_paths() {
 }
 
 verify_gate_lineage_in_clone() {
-  local gate_parent process_fix_parent trust_fix_parent main_parent gate_actual gate_expected process_fix_actual process_fix_expected trust_fix_actual trust_fix_expected corrective_actual corrective_expected
+  local gate_parent process_fix_parent trust_fix_parent native_fix_parent main_parent gate_actual gate_expected process_fix_actual process_fix_expected trust_fix_actual trust_fix_expected native_fix_actual native_fix_expected corrective_actual corrective_expected
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$TARGET_SHA^{tree}")" == "$TARGET_TREE" ]] || fail "target tree mismatch"
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$GATE_BASE_SHA^{tree}")" == "$GATE_BASE_TREE" ]] || fail "gate base tree mismatch"
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$PROCESS_EVIDENCE_FIX_SHA^{tree}")" == "$PROCESS_EVIDENCE_FIX_TREE" ]] || fail "process-evidence fix tree mismatch"
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$TRUST_CHAIN_FIX_SHA^{tree}")" == "$TRUST_CHAIN_FIX_TREE" ]] || fail "trust-chain fix tree mismatch"
+  [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$NATIVE_BUILD_FIX_SHA^{tree}")" == "$NATIVE_BUILD_FIX_TREE" ]] || fail "native-build fix tree mismatch"
 
   gate_parent="$(git -C "$CANDIDATE_ROOT" rev-parse "${GATE_BASE_SHA}^")"
   [[ "$gate_parent" == "$TARGET_SHA" ]] || fail "reviewed issue186 gate base is not a direct child of target"
@@ -188,16 +191,49 @@ verify_gate_lineage_in_clone() {
     'tools/issue186-exact-main-production-rollout.test.mjs' \
     'tools/operator/issue186-exact-main-production-rollout.sh' | sort)"
   [[ "$trust_fix_actual" == "$trust_fix_expected" ]] || fail "reviewed trust-chain fix contains unexpected files"
-  [[ "$GITHUB_MAIN_SHA" == "$TRUST_CHAIN_FIX_SHA" ]] && return 0
+
+  native_fix_parent="$(git -C "$CANDIDATE_ROOT" rev-parse "${NATIVE_BUILD_FIX_SHA}^")"
+  [[ "$native_fix_parent" == "$TRUST_CHAIN_FIX_SHA" ]] || fail "reviewed native-build fix is not a direct child of trust-chain fix"
+  native_fix_actual="$(git -C "$CANDIDATE_ROOT" diff --name-only "$TRUST_CHAIN_FIX_SHA" "$NATIVE_BUILD_FIX_SHA" | sort)"
+  native_fix_expected="$(printf '%s\n' \
+    'docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md' \
+    'tools/issue186-exact-main-production-rollout.test.mjs' \
+    'tools/operator/issue186-exact-main-production-rollout.sh' | sort)"
+  [[ "$native_fix_actual" == "$native_fix_expected" ]] || fail "reviewed native-build fix contains unexpected files"
+  [[ "$GITHUB_MAIN_SHA" == "$NATIVE_BUILD_FIX_SHA" ]] && return 0
 
   main_parent="$(git -C "$CANDIDATE_ROOT" rev-parse "${GITHUB_MAIN_SHA}^")"
-  [[ "$main_parent" == "$TRUST_CHAIN_FIX_SHA" ]] || fail "GitHub main is not reviewed trust-chain fix or one direct native-build corrective child"
-  corrective_actual="$(git -C "$CANDIDATE_ROOT" diff --name-only "$TRUST_CHAIN_FIX_SHA" "$GITHUB_MAIN_SHA" | sort)"
+  [[ "$main_parent" == "$NATIVE_BUILD_FIX_SHA" ]] || fail "GitHub main is not reviewed native-build fix or one direct controller-cwd corrective child"
+  corrective_actual="$(git -C "$CANDIDATE_ROOT" diff --name-only "$NATIVE_BUILD_FIX_SHA" "$GITHUB_MAIN_SHA" | sort)"
   corrective_expected="$(printf '%s\n' \
     'docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md' \
     'tools/issue186-exact-main-production-rollout.test.mjs' \
     'tools/operator/issue186-exact-main-production-rollout.sh' | sort)"
-  [[ "$corrective_actual" == "$corrective_expected" ]] || fail "post-trust-fix GitHub main contains changes outside reviewed issue186 native-build corrective source"
+  [[ "$corrective_actual" == "$corrective_expected" ]] || fail "post-native-build GitHub main contains changes outside reviewed issue186 controller-cwd corrective source"
+}
+
+run_release_controller_plan() {
+  local output="$1"
+  (
+    cd "$CANDIDATE_ROOT"
+    node ./tools/production-release-controller.mjs \
+      --candidate-root "$CANDIDATE_ROOT" \
+      --manifest "$MANIFEST" \
+      --sha "$TARGET_SHA"
+  ) >"$output"
+}
+
+run_release_controller_apply() {
+  (
+    cd "$CANDIDATE_ROOT"
+    sudo /usr/bin/node ./tools/production-release-controller.mjs \
+      --candidate-root "$CANDIDATE_ROOT" \
+      --manifest "$MANIFEST" \
+      --sha "$TARGET_SHA" \
+      --expected-current "$EXPECTED_CURRENT_SHA" \
+      --apply \
+      --ack "$CONTROLLER_ACK"
+  )
 }
 
 build_candidate_once() {
@@ -205,7 +241,7 @@ build_candidate_once() {
   mkdir -p -m 0700 "$CANDIDATE_ROOT"
   git -C "$CANDIDATE_ROOT" init --quiet
   git -C "$CANDIDATE_ROOT" remote add origin "$REPO_URL"
-  git -C "$CANDIDATE_ROOT" fetch --quiet --depth=5 origin "$GITHUB_MAIN_SHA"
+  git -C "$CANDIDATE_ROOT" fetch --quiet --depth=6 origin "$GITHUB_MAIN_SHA"
   git -C "$CANDIDATE_ROOT" fetch --quiet --depth=1 origin "$TARGET_SHA"
   verify_gate_lineage_in_clone
   git -c advice.detachedHead=false -C "$CANDIDATE_ROOT" checkout --quiet --detach "$TARGET_SHA"
@@ -213,14 +249,19 @@ build_candidate_once() {
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse HEAD^{tree})" == "$TARGET_TREE" ]] || fail "candidate tree mismatch"
 
   npm --prefix "$CANDIDATE_ROOT" ci --ignore-scripts
-  npm_config_build_from_source=true npm --prefix "$CANDIDATE_ROOT" rebuild node-pty
+  npm_config_build_from_source=true npm --prefix "$CANDIDATE_ROOT" rebuild node-pty --dangerously-allow-all-scripts
+  [[ -f "$CANDIDATE_ROOT/node_modules/node-pty/build/Release/pty.node" ]] || fail "node-pty source build did not produce build/Release/pty.node"
+  (
+    cd "$CANDIDATE_ROOT"
+    node --input-type=module -e 'const pty = await import("node-pty"); if (typeof pty.spawn !== "function") process.exit(1);'
+  ) || fail "node-pty native module load verification failed"
   npm --prefix "$CANDIDATE_ROOT" audit --audit-level=high
   npm --prefix "$CANDIDATE_ROOT" run check
 
   node "$CANDIDATE_ROOT/tools/production-candidate-manifest.mjs" --root "$CANDIDATE_ROOT" --sha "$TARGET_SHA" >"$MANIFEST"
   node "$CANDIDATE_ROOT/tools/production-candidate-manifest.mjs" --root "$CANDIDATE_ROOT" --sha "$TARGET_SHA" --verify "$MANIFEST"
   node "$CANDIDATE_ROOT/tools/production-runtime-smoke.mjs" --root "$CANDIDATE_ROOT" --manifest "$MANIFEST" --sha "$TARGET_SHA"
-  node "$CANDIDATE_ROOT/tools/production-release-controller.mjs" --candidate-root "$CANDIDATE_ROOT" --manifest "$MANIFEST" --sha "$TARGET_SHA" >"$PLAN"
+  run_release_controller_plan "$PLAN"
 }
 
 write_preflight_receipt() {
@@ -269,7 +310,7 @@ verify_existing_preflight() {
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse HEAD^{tree})" == "$TARGET_TREE" ]] || fail "candidate tree drifted"
   node "$CANDIDATE_ROOT/tools/production-candidate-manifest.mjs" --root "$CANDIDATE_ROOT" --sha "$TARGET_SHA" --verify "$MANIFEST"
   node "$CANDIDATE_ROOT/tools/production-runtime-smoke.mjs" --root "$CANDIDATE_ROOT" --manifest "$MANIFEST" --sha "$TARGET_SHA"
-  node "$CANDIDATE_ROOT/tools/production-release-controller.mjs" --candidate-root "$CANDIDATE_ROOT" --manifest "$MANIFEST" --sha "$TARGET_SHA" >"${RUN_ROOT}/release-plan-prewrite.json"
+  run_release_controller_plan "${RUN_ROOT}/release-plan-prewrite.json"
 }
 
 wait_web_path_200() {
@@ -313,13 +354,7 @@ log "PREWRITE_REVALIDATION=PASS"
 log "STAGE=PRODUCTION_MUTATION_BEGIN"
 MUTATION_STARTED="YES"
 log "PRODUCTION_MUTATION_STARTED=YES"
-sudo /usr/bin/node "$CANDIDATE_ROOT/tools/production-release-controller.mjs" \
-  --candidate-root "$CANDIDATE_ROOT" \
-  --manifest "$MANIFEST" \
-  --sha "$TARGET_SHA" \
-  --expected-current "$EXPECTED_CURRENT_SHA" \
-  --apply \
-  --ack "$CONTROLLER_ACK"
+run_release_controller_apply
 [[ "$(current_release_sha)" == "$TARGET_SHA" ]] || fail "release pointer did not activate exact target"
 
 log "STAGE=RESTART_BROKER"
