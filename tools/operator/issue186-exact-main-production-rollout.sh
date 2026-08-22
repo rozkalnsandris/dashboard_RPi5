@@ -22,6 +22,7 @@ PREFLIGHT_RECEIPT="${RUN_ROOT}/PREFLIGHT_PASS.txt"
 MODE="preflight"
 OWNER_ACK=""
 EXPECTED_RECEIPT_SHA256=""
+GITHUB_MAIN_SHA=""
 MUTATION_STARTED="NO"
 
 log() { printf '%s\n' "$*"; }
@@ -29,10 +30,10 @@ fail() { printf 'BLOCKED: %s\n' "$*" >&2; exit 1; }
 
 on_error() {
   local rc=$?
-  if [[ "${MUTATION_STARTED}" == "YES" ]]; then
+  if [[ "$MUTATION_STARTED" == "YES" ]]; then
     printf 'PRODUCTION_MUTATION_STARTED=YES\nRESULT=STOP_AFTER_MUTATION_ERROR\nNO_RETRY_ROLLBACK_CLEANUP=YES\n' >&2
   fi
-  exit "${rc}"
+  exit "$rc"
 }
 trap on_error ERR
 
@@ -40,11 +41,12 @@ usage() {
   cat <<'EOF'
 Usage:
   issue186-exact-main-production-rollout.sh --preflight-only
-  issue186-exact-main-production-rollout.sh --apply --receipt-sha256 <sha256> --ack <exact-ack>
+  issue186-exact-main-production-rollout.sh --apply --receipt-sha256 <sha256> --ack AUTHORIZE_ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT
 
 Default behavior is preflight-only. Preflight writes only below $HOME/.cache and performs
-read-only production/GitHub checks. Apply requires a prior PASS receipt plus a separate exact
-owner acknowledgement; merge or a generic continuation command is not authorization.
+read-only production/GitHub checks. Apply requires a prior immutable PASS receipt plus a
+separate exact owner acknowledgement. Merge or a generic continuation command is not deploy
+authorization.
 EOF
 }
 
@@ -63,16 +65,14 @@ while (($# > 0)); do
   esac
 done
 
-for cmd in git node npm curl systemctl readlink sha256sum id grep awk sed sleep sudo; do
+for cmd in git node npm curl systemctl readlink sha256sum id grep awk sort sleep sudo tr; do
   command -v "$cmd" >/dev/null || fail "required command missing: $cmd"
 done
-
-node_major="$(node -p 'process.versions.node.split(".")[0]')"
-[[ "$node_major" == "24" ]] || fail "Node major must be 24, got ${node_major}"
+[[ "$(node -p 'process.versions.node.split(".")[0]')" == "24" ]] || fail "Node major must be 24"
 
 current_release_sha() {
   local resolved
-  resolved="$(readlink -f "${CURRENT_LINK}")" || return 1
+  resolved="$(readlink -f "$CURRENT_LINK")" || return 1
   [[ "$resolved" == "${PRODUCTION_ROOT}/releases/"* ]] || return 1
   basename "$resolved"
 }
@@ -121,7 +121,6 @@ verify_live_acceptance() {
   verify_service_release "$AGENT_SERVICE" "$expected_sha"
   verify_service_release "$WEB_SERVICE" "$expected_sha"
   verify_security_invariants
-
   [[ -S "$BROKER_SOCKET" ]] || fail "broker socket missing"
   [[ -S "$AGENT_SOCKET" ]] || fail "agent socket missing"
 
@@ -147,13 +146,25 @@ verify_live_acceptance() {
   fi
 }
 
-verify_github_target() {
-  local remote_sha remote_tree
-  remote_sha="$(git ls-remote "$REPO_URL" refs/heads/main | awk '{print $1}')"
-  [[ "$remote_sha" == "$TARGET_SHA" ]] || fail "GitHub main moved: ${remote_sha:-missing}"
-  remote_tree="$(git ls-remote "$REPO_URL" "$TARGET_SHA^{}" 2>/dev/null | awk '{print $1}' || true)"
-  # ls-remote cannot expose a commit tree; exact tree is proven after fetching the immutable target below.
-  : "$remote_tree"
+refresh_github_main() {
+  GITHUB_MAIN_SHA="$(git ls-remote "$REPO_URL" refs/heads/main | awk '{print $1}')"
+  [[ "$GITHUB_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "unable to resolve GitHub main"
+}
+
+verify_gate_lineage_in_clone() {
+  local parent actual expected
+  [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$TARGET_SHA^{tree}")" == "$TARGET_TREE" ]] || fail "target tree mismatch"
+  [[ "$GITHUB_MAIN_SHA" == "$TARGET_SHA" ]] && return 0
+
+  parent="$(git -C "$CANDIDATE_ROOT" rev-parse "${GITHUB_MAIN_SHA}^")"
+  [[ "$parent" == "$TARGET_SHA" ]] || fail "GitHub main is not target or one direct gate-only child"
+  actual="$(git -C "$CANDIDATE_ROOT" diff --name-only "$TARGET_SHA" "$GITHUB_MAIN_SHA" | sort)"
+  expected="$(printf '%s\n' \
+    'docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md' \
+    'package.json' \
+    'tools/issue186-exact-main-production-rollout.test.mjs' \
+    'tools/operator/issue186-exact-main-production-rollout.sh' | sort)"
+  [[ "$actual" == "$expected" ]] || fail "post-target GitHub main contains changes outside issue186 gate source"
 }
 
 build_candidate_once() {
@@ -161,8 +172,10 @@ build_candidate_once() {
   mkdir -p -m 0700 "$CANDIDATE_ROOT"
   git -C "$CANDIDATE_ROOT" init --quiet
   git -C "$CANDIDATE_ROOT" remote add origin "$REPO_URL"
+  git -C "$CANDIDATE_ROOT" fetch --quiet --depth=2 origin "$GITHUB_MAIN_SHA"
   git -C "$CANDIDATE_ROOT" fetch --quiet --depth=1 origin "$TARGET_SHA"
-  git -c advice.detachedHead=false -C "$CANDIDATE_ROOT" checkout --quiet --detach FETCH_HEAD
+  verify_gate_lineage_in_clone
+  git -c advice.detachedHead=false -C "$CANDIDATE_ROOT" checkout --quiet --detach "$TARGET_SHA"
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse HEAD)" == "$TARGET_SHA" ]] || fail "candidate SHA mismatch"
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse HEAD^{tree})" == "$TARGET_TREE" ]] || fail "candidate tree mismatch"
 
@@ -171,26 +184,23 @@ build_candidate_once() {
   npm --prefix "$CANDIDATE_ROOT" audit --audit-level=high
   npm --prefix "$CANDIDATE_ROOT" run check
 
-  node "$CANDIDATE_ROOT/tools/production-candidate-manifest.mjs" \
-    --root "$CANDIDATE_ROOT" --sha "$TARGET_SHA" >"$MANIFEST"
-  node "$CANDIDATE_ROOT/tools/production-candidate-manifest.mjs" \
-    --root "$CANDIDATE_ROOT" --sha "$TARGET_SHA" --verify "$MANIFEST"
-  node "$CANDIDATE_ROOT/tools/production-runtime-smoke.mjs" \
-    --root "$CANDIDATE_ROOT" --manifest "$MANIFEST" --sha "$TARGET_SHA"
-  node "$CANDIDATE_ROOT/tools/production-release-controller.mjs" \
-    --candidate-root "$CANDIDATE_ROOT" --manifest "$MANIFEST" --sha "$TARGET_SHA" >"$PLAN"
+  node "$CANDIDATE_ROOT/tools/production-candidate-manifest.mjs" --root "$CANDIDATE_ROOT" --sha "$TARGET_SHA" >"$MANIFEST"
+  node "$CANDIDATE_ROOT/tools/production-candidate-manifest.mjs" --root "$CANDIDATE_ROOT" --sha "$TARGET_SHA" --verify "$MANIFEST"
+  node "$CANDIDATE_ROOT/tools/production-runtime-smoke.mjs" --root "$CANDIDATE_ROOT" --manifest "$MANIFEST" --sha "$TARGET_SHA"
+  node "$CANDIDATE_ROOT/tools/production-release-controller.mjs" --candidate-root "$CANDIDATE_ROOT" --manifest "$MANIFEST" --sha "$TARGET_SHA" >"$PLAN"
 }
 
 write_preflight_receipt() {
-  local candidate_sha256
-  candidate_sha256="$(node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(m.candidateSha256)' "$MANIFEST")"
+  local candidate_sha256 receipt_sha
+  candidate_sha256="$(node -e 'const fs=require("fs");const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(m.candidateSha256)' "$MANIFEST")"
   cat >"$PREFLIGHT_RECEIPT" <<EOF
 ISSUE=186
 TARGET_SHA=${TARGET_SHA}
 TARGET_TREE=${TARGET_TREE}
+GATE_MAIN_SHA=${GITHUB_MAIN_SHA}
 EXPECTED_CURRENT_SHA=${EXPECTED_CURRENT_SHA}
 CANDIDATE_SHA256=${candidate_sha256}
-GITHUB_MAIN=PASS
+GITHUB_LINEAGE=PASS
 LIVE_BASELINE=PASS
 SOURCE_CHECK=PASS
 CANDIDATE_MANIFEST=PASS
@@ -201,9 +211,10 @@ CLOUDFLARE_MUTATION=NO
 SYSTEMD_MUTATION=NO
 EOF
   chmod 0600 "$PREFLIGHT_RECEIPT"
-  local receipt_sha
   receipt_sha="$(sha256sum "$PREFLIGHT_RECEIPT" | awk '{print $1}')"
   log "PREFLIGHT_RESULT=PASS"
+  log "TARGET_SHA=${TARGET_SHA}"
+  log "GATE_MAIN_SHA=${GITHUB_MAIN_SHA}"
   log "PREFLIGHT_RECEIPT_SHA256=${receipt_sha}"
   log "RUN_ROOT=${RUN_ROOT}"
   log "PRODUCTION_MUTATION=NO"
@@ -211,7 +222,7 @@ EOF
 }
 
 verify_existing_preflight() {
-  local actual_receipt_sha
+  local actual_receipt_sha receipt_gate_main
   [[ "$EXPECTED_RECEIPT_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail "--receipt-sha256 must be 64 lowercase hex characters"
   [[ -f "$PREFLIGHT_RECEIPT" && -f "$MANIFEST" && -f "$PLAN" ]] || fail "preflight evidence is incomplete"
   actual_receipt_sha="$(sha256sum "$PREFLIGHT_RECEIPT" | awk '{print $1}')"
@@ -219,20 +230,18 @@ verify_existing_preflight() {
   grep -qx "TARGET_SHA=${TARGET_SHA}" "$PREFLIGHT_RECEIPT" || fail "preflight target mismatch"
   grep -qx "EXPECTED_CURRENT_SHA=${EXPECTED_CURRENT_SHA}" "$PREFLIGHT_RECEIPT" || fail "preflight baseline mismatch"
   grep -qx 'PRODUCTION_MUTATION=NO' "$PREFLIGHT_RECEIPT" || fail "preflight mutation marker invalid"
-
+  receipt_gate_main="$(awk -F= '$1=="GATE_MAIN_SHA"{print $2}' "$PREFLIGHT_RECEIPT")"
+  [[ "$GITHUB_MAIN_SHA" == "$receipt_gate_main" ]] || fail "GitHub main moved after preflight"
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse HEAD)" == "$TARGET_SHA" ]] || fail "candidate checkout drifted"
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse HEAD^{tree})" == "$TARGET_TREE" ]] || fail "candidate tree drifted"
-  node "$CANDIDATE_ROOT/tools/production-candidate-manifest.mjs" \
-    --root "$CANDIDATE_ROOT" --sha "$TARGET_SHA" --verify "$MANIFEST"
-  node "$CANDIDATE_ROOT/tools/production-runtime-smoke.mjs" \
-    --root "$CANDIDATE_ROOT" --manifest "$MANIFEST" --sha "$TARGET_SHA"
-  node "$CANDIDATE_ROOT/tools/production-release-controller.mjs" \
-    --candidate-root "$CANDIDATE_ROOT" --manifest "$MANIFEST" --sha "$TARGET_SHA" >"${RUN_ROOT}/release-plan-prewrite.json"
+  node "$CANDIDATE_ROOT/tools/production-candidate-manifest.mjs" --root "$CANDIDATE_ROOT" --sha "$TARGET_SHA" --verify "$MANIFEST"
+  node "$CANDIDATE_ROOT/tools/production-runtime-smoke.mjs" --root "$CANDIDATE_ROOT" --manifest "$MANIFEST" --sha "$TARGET_SHA"
+  node "$CANDIDATE_ROOT/tools/production-release-controller.mjs" --candidate-root "$CANDIDATE_ROOT" --manifest "$MANIFEST" --sha "$TARGET_SHA" >"${RUN_ROOT}/release-plan-prewrite.json"
 }
 
 wait_unix_200() {
   local socket="$1" path="$2" label="$3" status=""
-  for _ in $(seq 1 30); do
+  for _ in {1..30}; do
     if [[ -S "$socket" ]]; then
       status="$(http_status_unix "$socket" "$path" 2>/dev/null || true)"
       [[ "$status" == "200" ]] && return 0
@@ -244,7 +253,7 @@ wait_unix_200() {
 
 wait_web_200() {
   local status=""
-  for _ in $(seq 1 30); do
+  for _ in {1..30}; do
     status="$(http_status_loopback "/api/health" 2>/dev/null || true)"
     [[ "$status" == "200" ]] && return 0
     sleep 1
@@ -254,7 +263,8 @@ wait_web_200() {
 
 if [[ "$MODE" == "preflight" ]]; then
   log "STAGE=EXACT_GITHUB_TARGET"
-  verify_github_target
+  refresh_github_main
+  log "GITHUB_MAIN_SHA=${GITHUB_MAIN_SHA}"
   log "STAGE=LIVE_PRODUCTION_READ_ONLY_BASELINE"
   verify_live_acceptance "$EXPECTED_CURRENT_SHA"
   log "STAGE=EXACT_CANDIDATE_BUILD_AND_VALIDATION"
@@ -267,7 +277,7 @@ fi
 
 [[ "$OWNER_ACK" == "AUTHORIZE_ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT" ]] || fail "exact owner acknowledgement missing"
 log "STAGE=APPLY_PREWRITE_REVALIDATION"
-verify_github_target
+refresh_github_main
 verify_existing_preflight
 verify_live_acceptance "$EXPECTED_CURRENT_SHA"
 [[ "$(current_release_sha)" == "$EXPECTED_CURRENT_SHA" ]] || fail "production current drift before mutation"
