@@ -9,6 +9,7 @@ EXPECTED_CURRENT_PRODUCTION=a39fc7a9873eedb58cfa49568f9b2e05483cf7c2
 GATE_BASE_SHA=5bb54d108bcacf5c0c35f9d34a349929d1ca8029
 PROCESS_EVIDENCE_FIX_SHA=d65da90a567f3eed6a0d515493dadbe3ef056eb8
 TRUST_CHAIN_FIX_SHA=0bd658524df93f28a2302c1a12327b47b3f31f21
+NATIVE_BUILD_FIX_SHA=5a8bc0372ce0c20e310f75a41564553dcbf62bef
 ```
 
 This document and `tools/operator/issue186-exact-main-production-rollout.sh` are source-only. Their merge does not authorize production mutation.
@@ -92,11 +93,7 @@ npm error   - --build-from-source
 
 No production apply/restart path was entered. The failure happened in the operator-owned candidate build workspace and production mutation remained absent.
 
-`node-pty@1.1.0` itself supports a source-build request through `npm_config_build_from_source=true`: its install path checks that environment variable, discards the packaged prebuild for the current install, and falls through to `node-gyp rebuild`. The helper therefore keeps the native-source-build requirement but expresses it in the npm 11-compatible form:
-
-```bash
-npm_config_build_from_source=true npm --prefix "$CANDIDATE_ROOT" rebuild node-pty
-```
+`node-pty@1.1.0` itself supports a source-build request through `npm_config_build_from_source=true`. The helper therefore retained the source-build request using that environment contract instead of the unsupported npm CLI flag.
 
 The failed RPi5 attempt had already created the original immutable run directory:
 
@@ -114,6 +111,58 @@ The helper still fails closed if that exact new run directory already exists. It
 
 The `1 low severity vulnerability` reported by `npm ci` was not the observed blocker. The rollout retains the existing explicit `npm audit --audit-level=high` gate after the native rebuild.
 
+That correction was squash-merged as `5a8bc0372ce0c20e310f75a41564553dcbf62bef`.
+
+## 2026-08-22 correction 4 — candidate cwd for release-controller and explicit native-build proof
+
+The next separately authorized RPi5 preflight used exact merged main `5a8bc037...`. It passed the live production baseline, dependency install, complete source check, deterministic candidate manifest and isolated runtime smoke. It then stopped before unchanged-production reproof and before receipt creation:
+
+```text
+GITHUB_MAIN_SHA=5a8bc0372ce0c20e310f75a41564553dcbf62bef
+STAGE=LIVE_PRODUCTION_READ_ONLY_BASELINE
+STAGE=EXACT_CANDIDATE_BUILD_AND_VALIDATION
+...
+{"status":"PASS","sourceSha":"46c47fbd53e6933e2d8db86abdab30edea2badd0","candidateSha256":"b1f1029d01f5eb4f50b6c2453fa87c07f71aceca49e31afbf2b5deed4a44dcb9"}
+{"status":"PASS","sourceSha":"46c47fbd53e6933e2d8db86abdab30edea2badd0","candidateSha256":"b1f1029d01f5eb4f50b6c2453fa87c07f71aceca49e31afbf2b5deed4a44dcb9","terminal":"disabled"}
+{"status":"BLOCKED","error":"ENOENT: no such file or directory, lstat '/home/andris/ops/production/release-activation-contract.json'"}
+```
+
+`tools/production-release-controller.mjs` intentionally resolves `ops/production/release-activation-contract.json` relative to `process.cwd()`. The #186 helper invoked the controller using an absolute script path but did not change cwd, so an interactive invocation from `/home/andris` caused the controller to look for `/home/andris/ops/...` instead of the immutable candidate contract.
+
+The correction keeps the release controller unchanged and binds every controller invocation to the immutable candidate repository root:
+
+- preflight PLAN runs after `cd "$CANDIDATE_ROOT"`;
+- production prewrite PLAN revalidation uses the same helper;
+- the separately owner-gated `sudo /usr/bin/node ... --apply` path also runs from `CANDIDATE_ROOT` before the first release-controller mutation.
+
+This is necessary for both correctness and fail-closed safety: fixing only the preflight PLAN would leave the later production apply vulnerable to the same cwd mismatch after `PRODUCTION_MUTATION_BEGIN`.
+
+The same RPi5 run also emitted:
+
+```text
+npm warn Unknown env config "build-from-source".
+npm warn rebuild 3 packages had install scripts blocked because they are not covered by allowScripts.
+rebuilt dependencies successfully
+```
+
+Therefore a zero exit from the earlier `npm rebuild node-pty` form is not sufficient proof that node-pty's native lifecycle build actually ran. npm 11 blocks unapproved dependency install scripts by default. The corrected helper remains narrow:
+
+```bash
+npm --prefix "$CANDIDATE_ROOT" ci --ignore-scripts
+npm_config_build_from_source=true \
+  npm --prefix "$CANDIDATE_ROOT" rebuild node-pty --dangerously-allow-all-scripts
+```
+
+`npm rebuild` is still package-spec limited to `node-pty`; the broad-script override applies only inside that explicit rebuild operation and is not used for `npm ci` or the rest of the candidate tree. The helper then fails closed unless Linux source output `node_modules/node-pty/build/Release/pty.node` exists and `import("node-pty")` exposes `spawn`. This converts the native-build requirement from intent into direct artifact/load evidence.
+
+The failed `5a8bc037...` gate-main run directory is immutable evidence and must not be deleted or reused:
+
+```text
+$HOME/.cache/dashboard-rpi5-operator/issue186-46c47fbd53e6933e2d8db86abdab30edea2badd0-gate-5a8bc0372ce0c20e310f75a41564553dcbf62bef
+```
+
+A future separately authorized run after this correction is merged selects a different sibling because `GATE_MAIN_SHA` changes.
+
 ## Corrective lineage contract
 
 The rollout gate is pinned as a short reviewed chain:
@@ -125,7 +174,8 @@ The rollout gate is pinned as a short reviewed chain:
    - `tools/issue186-exact-main-production-rollout.test.mjs`;
    - `tools/operator/issue186-exact-main-production-rollout.sh`;
 4. trust-chain correction `0bd6585...`, exactly one direct child of `d65da90a...` with the same three-file boundary;
-5. live GitHub `main` may then be either exact `0bd6585...` or exactly one direct native-build/evidence-namespace corrective child with that same three-file boundary.
+5. native-build/evidence-namespace correction `5a8bc037...`, exactly one direct child of `0bd6585...` with that same three-file boundary;
+6. live GitHub `main` may then be either exact `5a8bc037...` or exactly one direct controller-cwd/native-proof corrective child with that same three-file boundary.
 
 Any later or broader GitHub movement fails closed. This does not make arbitrary future `main` a valid production target: runtime target remains immutable `46c47fbd...`.
 
@@ -147,12 +197,12 @@ Preflight may write only below the newly selected operator-cache sibling:
 $HOME/.cache/dashboard-rpi5-operator/issue186-46c47fbd53e6933e2d8db86abdab30edea2badd0-gate-<GATE_MAIN_SHA>
 ```
 
-The earlier failed target-only run directory is preserved untouched.
+All earlier failed run directories are preserved untouched.
 
 Preflight performs:
 
 1. fresh GitHub `main` resolution;
-2. fail-closed proof of target -> gate base -> process-evidence fix -> trust-chain fix -> at most one exact native-build corrective child;
+2. fail-closed proof of target -> gate base -> process-evidence fix -> trust-chain fix -> native-build fix -> at most one exact controller-cwd/native-proof corrective child;
 3. read-only proof that `/opt/dashboard_RPi5/current` is still `a39fc7a9...`;
 4. broker, agent and web service Active/MainPID/exact-CWD/stable-NRestarts evidence, with only exact CWD reads elevated through `sudo /usr/bin/readlink`;
 5. loopback `/api/health=200`;
@@ -162,10 +212,10 @@ Preflight performs:
 9. terminal socket/unit absent/fail-closed invariant;
 10. unauthenticated public Access still challenge/deny (`302` or `403`) without changing Cloudflare;
 11. fresh immutable candidate checkout of exact target SHA/tree into the new operator-cache run directory;
-12. `npm ci --ignore-scripts`, forced source rebuild of `node-pty` through `npm_config_build_from_source=true`, high-severity dependency audit and full `npm run check`;
+12. `npm ci --ignore-scripts`, a package-spec-limited forced `node-pty` lifecycle rebuild, direct `build/Release/pty.node` existence + module-load proof, high-severity dependency audit and full `npm run check`;
 13. deterministic production candidate manifest generation + exact verification;
 14. isolated manifest-only runtime smoke;
-15. `production-release-controller.mjs` PLAN only;
+15. `production-release-controller.mjs` PLAN only from exact candidate cwd;
 16. unchanged live production reproof through the same least-privilege chain;
 17. immutable `PREFLIGHT_PASS.txt` receipt + SHA-256 and STOP.
 
@@ -208,7 +258,7 @@ Immediately before the first mutation the helper re-proves:
 - GitHub main has not moved since the preflight receipt;
 - candidate SHA/tree/manifest still match;
 - isolated runtime smoke still passes;
-- release-controller PLAN still passes;
+- release-controller PLAN still passes from candidate cwd;
 - current production remains exactly `a39fc7a9...` and healthy through the loopback web trust chain;
 - trust-boundary invariants still hold.
 
@@ -216,7 +266,7 @@ Any drift before mutation => STOP with no production write.
 
 ## Mutation order after authorization
 
-The first production mutation is the existing reviewed release controller in apply mode. It copies/verifies the immutable release under `/opt/dashboard_RPi5/releases/<sha>` and atomically changes `/opt/dashboard_RPi5/current` using its own exact acknowledgement/lock contract.
+The first production mutation is the existing reviewed release controller in apply mode, invoked from the immutable candidate cwd. It copies/verifies the immutable release under `/opt/dashboard_RPi5/releases/<sha>` and atomically changes `/opt/dashboard_RPi5/current` using its own exact acknowledgement/lock contract.
 
 Then, and only then:
 

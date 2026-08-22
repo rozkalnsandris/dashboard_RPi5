@@ -22,6 +22,8 @@ test("issue186 helper is pinned to the reviewed target, production baseline, and
   assert.match(helper, /PROCESS_EVIDENCE_FIX_TREE="25450cc5ed720e59136ab1f6fe36b476a5f40194"/u);
   assert.match(helper, /TRUST_CHAIN_FIX_SHA="0bd658524df93f28a2302c1a12327b47b3f31f21"/u);
   assert.match(helper, /TRUST_CHAIN_FIX_TREE="61a7baab82b38bcb287460bb7d7110f8876139db"/u);
+  assert.match(helper, /NATIVE_BUILD_FIX_SHA="5a8bc0372ce0c20e310f75a41564553dcbf62bef"/u);
+  assert.match(helper, /NATIVE_BUILD_FIX_TREE="e2ae2f8b0f0b181236e1159f447452e4fbe38c6b"/u);
   assert.match(helper, /MODE="preflight"/u);
   assert.match(helper, /AUTHORIZE_ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT/u);
   assert.match(helper, /I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ACTIVATION/u);
@@ -74,16 +76,39 @@ test("operator acceptance uses the loopback web trust chain and never direct run
   assert.doesNotMatch(helper, /http_status_unix/u);
 });
 
-test("candidate native build is npm 11 compatible and still forces node-pty source compilation", () => {
+test("candidate native build is npm 11 compatible, narrowly enables node-pty scripts, and proves the native artifact", () => {
   const start = helper.indexOf("build_candidate_once() {");
   const end = helper.indexOf("write_preflight_receipt() {", start);
   assert.ok(start >= 0 && end > start);
   const build = helper.slice(start, end);
 
   assert.match(build, /npm --prefix "\$CANDIDATE_ROOT" ci --ignore-scripts/u);
-  assert.match(build, /npm_config_build_from_source=true npm --prefix "\$CANDIDATE_ROOT" rebuild node-pty/u);
+  assert.match(build, /npm_config_build_from_source=true npm --prefix "\$CANDIDATE_ROOT" rebuild node-pty --dangerously-allow-all-scripts/u);
   assert.doesNotMatch(build, /--build-from-source/u);
+  assert.match(build, /node-pty\/build\/Release\/pty\.node/u);
+  assert.match(build, /import\("node-pty"\)/u);
+  assert.match(build, /node-pty native module load verification failed/u);
   assert.match(build, /npm --prefix "\$CANDIDATE_ROOT" audit --audit-level=high/u);
+});
+
+test("release controller plan, prewrite plan, and apply all execute from immutable candidate cwd", () => {
+  const planStart = helper.indexOf("run_release_controller_plan() {");
+  const applyStart = helper.indexOf("run_release_controller_apply() {", planStart);
+  const buildStart = helper.indexOf("build_candidate_once() {", applyStart);
+  assert.ok(planStart >= 0 && applyStart > planStart && buildStart > applyStart);
+
+  const planHelper = helper.slice(planStart, applyStart);
+  const applyHelper = helper.slice(applyStart, buildStart);
+  assert.match(planHelper, /cd "\$CANDIDATE_ROOT"/u);
+  assert.match(planHelper, /node \.\/tools\/production-release-controller\.mjs/u);
+  assert.match(applyHelper, /cd "\$CANDIDATE_ROOT"/u);
+  assert.match(applyHelper, /sudo \/usr\/bin\/node \.\/tools\/production-release-controller\.mjs/u);
+
+  assert.match(helper, /run_release_controller_plan "\$PLAN"/u);
+  assert.match(helper, /run_release_controller_plan "\$\{RUN_ROOT\}\/release-plan-prewrite\.json"/u);
+  assert.match(helper, /run_release_controller_apply/u);
+  assert.doesNotMatch(helper, /node "\$CANDIDATE_ROOT\/tools\/production-release-controller\.mjs"/u);
+  assert.doesNotMatch(helper, /sudo \/usr\/bin\/node "\$CANDIDATE_ROOT\/tools\/production-release-controller\.mjs"/u);
 });
 
 test("failed preflight evidence is preserved by using an immutable gate-main keyed sibling run root", () => {
@@ -92,10 +117,7 @@ test("failed preflight evidence is preserved by using an immutable gate-main key
   assert.ok(start >= 0 && end > start);
   const runPaths = helper.slice(start, end);
 
-  assert.match(
-    runPaths,
-    /issue186-\$\{TARGET_SHA\}-gate-\$\{GITHUB_MAIN_SHA\}/u,
-  );
+  assert.match(runPaths, /issue186-\$\{TARGET_SHA\}-gate-\$\{GITHUB_MAIN_SHA\}/u);
   assert.doesNotMatch(helper, /RUN_ROOT="\$\{HOME\}\/\.cache\/dashboard-rpi5-operator\/issue186-\$\{TARGET_SHA\}"/u);
   assert.match(helper, /preflight run directory already exists/u);
   assert.doesNotMatch(helper, /rm\s+-rf/u);
@@ -103,7 +125,7 @@ test("failed preflight evidence is preserved by using an immutable gate-main key
 
 test("apply is fail closed and revalidates through web after broker then agent then web restarts", () => {
   const mutation = helper.indexOf('MUTATION_STARTED="YES"');
-  const controller = helper.indexOf('sudo /usr/bin/node', mutation);
+  const controller = helper.indexOf("run_release_controller_apply", mutation);
   const broker = helper.indexOf('sudo systemctl restart "$BROKER_SERVICE"', controller);
   const brokerDocker = helper.indexOf('wait_web_path_200 "/api/current/docker" "broker Docker trust chain"', broker);
   const agent = helper.indexOf('sudo systemctl restart "$AGENT_SERVICE"', brokerDocker);
@@ -129,7 +151,7 @@ test("apply is fail closed and revalidates through web after broker then agent t
   assert.doesNotMatch(helper, /cloudflared/u);
 });
 
-test("GitHub lineage permits only the reviewed chain or one exact native-build corrective child", () => {
+test("GitHub lineage permits only the reviewed chain or one exact controller-cwd corrective child", () => {
   for (const path of [
     "docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md",
     "package.json",
@@ -144,9 +166,11 @@ test("GitHub lineage permits only the reviewed chain or one exact native-build c
   assert.match(helper, /reviewed process-evidence fix contains unexpected files/u);
   assert.match(helper, /reviewed trust-chain fix is not a direct child of process-evidence fix/u);
   assert.match(helper, /reviewed trust-chain fix contains unexpected files/u);
-  assert.match(helper, /GitHub main is not reviewed trust-chain fix or one direct native-build corrective child/u);
-  assert.match(helper, /post-trust-fix GitHub main contains changes outside reviewed issue186 native-build corrective source/u);
-  assert.match(helper, /fetch --quiet --depth=5 origin "\$GITHUB_MAIN_SHA"/u);
+  assert.match(helper, /reviewed native-build fix is not a direct child of trust-chain fix/u);
+  assert.match(helper, /reviewed native-build fix contains unexpected files/u);
+  assert.match(helper, /GitHub main is not reviewed native-build fix or one direct controller-cwd corrective child/u);
+  assert.match(helper, /post-native-build GitHub main contains changes outside reviewed issue186 controller-cwd corrective source/u);
+  assert.match(helper, /fetch --quiet --depth=6 origin "\$GITHUB_MAIN_SHA"/u);
 });
 
 test("target acceptance preserves trust boundaries and proves issue167 headers", () => {
