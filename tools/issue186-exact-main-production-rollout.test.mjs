@@ -20,6 +20,8 @@ test("issue186 helper is pinned to the reviewed target, production baseline, and
   assert.match(helper, /GATE_BASE_TREE="ceef7bcc20ace3333d84c9c3d8c5bb8f00b5f925"/u);
   assert.match(helper, /PROCESS_EVIDENCE_FIX_SHA="d65da90a567f3eed6a0d515493dadbe3ef056eb8"/u);
   assert.match(helper, /PROCESS_EVIDENCE_FIX_TREE="25450cc5ed720e59136ab1f6fe36b476a5f40194"/u);
+  assert.match(helper, /TRUST_CHAIN_FIX_SHA="0bd658524df93f28a2302c1a12327b47b3f31f21"/u);
+  assert.match(helper, /TRUST_CHAIN_FIX_TREE="61a7baab82b38bcb287460bb7d7110f8876139db"/u);
   assert.match(helper, /MODE="preflight"/u);
   assert.match(helper, /AUTHORIZE_ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT/u);
   assert.match(helper, /I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ACTIVATION/u);
@@ -34,6 +36,7 @@ test("preflight dispatcher cannot reach production mutation commands", () => {
   assert.doesNotMatch(preflight, /systemctl restart/u);
   assert.doesNotMatch(preflight, /--apply/u);
   assert.match(preflight, /write_preflight_receipt/u);
+  assert.match(preflight, /configure_run_paths/u);
 
   const receiptStart = helper.indexOf("write_preflight_receipt() {");
   const receiptEnd = helper.indexOf("verify_existing_preflight() {", receiptStart);
@@ -71,6 +74,33 @@ test("operator acceptance uses the loopback web trust chain and never direct run
   assert.doesNotMatch(helper, /http_status_unix/u);
 });
 
+test("candidate native build is npm 11 compatible and still forces node-pty source compilation", () => {
+  const start = helper.indexOf("build_candidate_once() {");
+  const end = helper.indexOf("write_preflight_receipt() {", start);
+  assert.ok(start >= 0 && end > start);
+  const build = helper.slice(start, end);
+
+  assert.match(build, /npm --prefix "\$CANDIDATE_ROOT" ci --ignore-scripts/u);
+  assert.match(build, /npm_config_build_from_source=true npm --prefix "\$CANDIDATE_ROOT" rebuild node-pty/u);
+  assert.doesNotMatch(build, /--build-from-source/u);
+  assert.match(build, /npm --prefix "\$CANDIDATE_ROOT" audit --audit-level=high/u);
+});
+
+test("failed preflight evidence is preserved by using an immutable gate-main keyed sibling run root", () => {
+  const start = helper.indexOf("configure_run_paths() {");
+  const end = helper.indexOf("verify_gate_lineage_in_clone() {", start);
+  assert.ok(start >= 0 && end > start);
+  const runPaths = helper.slice(start, end);
+
+  assert.match(
+    runPaths,
+    /issue186-\$\{TARGET_SHA\}-gate-\$\{GITHUB_MAIN_SHA\}/u,
+  );
+  assert.doesNotMatch(helper, /RUN_ROOT="\$\{HOME\}\/\.cache\/dashboard-rpi5-operator\/issue186-\$\{TARGET_SHA\}"/u);
+  assert.match(helper, /preflight run directory already exists/u);
+  assert.doesNotMatch(helper, /rm\s+-rf/u);
+});
+
 test("apply is fail closed and revalidates through web after broker then agent then web restarts", () => {
   const mutation = helper.indexOf('MUTATION_STARTED="YES"');
   const controller = helper.indexOf('sudo /usr/bin/node', mutation);
@@ -99,7 +129,7 @@ test("apply is fail closed and revalidates through web after broker then agent t
   assert.doesNotMatch(helper, /cloudflared/u);
 });
 
-test("GitHub lineage permits only gate base, process-evidence fix, or one exact trust-chain child", () => {
+test("GitHub lineage permits only the reviewed chain or one exact native-build corrective child", () => {
   for (const path of [
     "docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md",
     "package.json",
@@ -112,9 +142,11 @@ test("GitHub lineage permits only gate base, process-evidence fix, or one exact 
   assert.match(helper, /reviewed issue186 gate base is not a direct child of target/u);
   assert.match(helper, /reviewed process-evidence fix is not a direct child of issue186 gate base/u);
   assert.match(helper, /reviewed process-evidence fix contains unexpected files/u);
-  assert.match(helper, /GitHub main is not reviewed process-evidence fix or one direct trust-chain corrective child/u);
-  assert.match(helper, /post-process-fix GitHub main contains changes outside reviewed issue186 trust-chain corrective source/u);
-  assert.match(helper, /fetch --quiet --depth=4 origin "\$GITHUB_MAIN_SHA"/u);
+  assert.match(helper, /reviewed trust-chain fix is not a direct child of process-evidence fix/u);
+  assert.match(helper, /reviewed trust-chain fix contains unexpected files/u);
+  assert.match(helper, /GitHub main is not reviewed trust-chain fix or one direct native-build corrective child/u);
+  assert.match(helper, /post-trust-fix GitHub main contains changes outside reviewed issue186 native-build corrective source/u);
+  assert.match(helper, /fetch --quiet --depth=5 origin "\$GITHUB_MAIN_SHA"/u);
 });
 
 test("target acceptance preserves trust boundaries and proves issue167 headers", () => {

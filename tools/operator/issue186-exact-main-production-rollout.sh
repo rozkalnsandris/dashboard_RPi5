@@ -9,6 +9,8 @@ GATE_BASE_SHA="5bb54d108bcacf5c0c35f9d34a349929d1ca8029"
 GATE_BASE_TREE="ceef7bcc20ace3333d84c9c3d8c5bb8f00b5f925"
 PROCESS_EVIDENCE_FIX_SHA="d65da90a567f3eed6a0d515493dadbe3ef056eb8"
 PROCESS_EVIDENCE_FIX_TREE="25450cc5ed720e59136ab1f6fe36b476a5f40194"
+TRUST_CHAIN_FIX_SHA="0bd658524df93f28a2302c1a12327b47b3f31f21"
+TRUST_CHAIN_FIX_TREE="61a7baab82b38bcb287460bb7d7110f8876139db"
 PRODUCTION_ROOT="/opt/dashboard_RPi5"
 CURRENT_LINK="${PRODUCTION_ROOT}/current"
 BROKER_SERVICE="dashboard-rpi5-docker-broker.service"
@@ -16,11 +18,11 @@ AGENT_SERVICE="dashboard-rpi5-agent.service"
 WEB_SERVICE="dashboard-rpi5-web.service"
 TERMINAL_SOCKET="/run/dashboard-rpi5-terminal.sock"
 CONTROLLER_ACK="I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ACTIVATION"
-RUN_ROOT="${HOME}/.cache/dashboard-rpi5-operator/issue186-${TARGET_SHA}"
-CANDIDATE_ROOT="${RUN_ROOT}/candidate"
-MANIFEST="${RUN_ROOT}/candidate-manifest.json"
-PLAN="${RUN_ROOT}/release-plan.json"
-PREFLIGHT_RECEIPT="${RUN_ROOT}/PREFLIGHT_PASS.txt"
+RUN_ROOT=""
+CANDIDATE_ROOT=""
+MANIFEST=""
+PLAN=""
+PREFLIGHT_RECEIPT=""
 MODE="preflight"
 OWNER_ACK=""
 EXPECTED_RECEIPT_SHA256=""
@@ -40,7 +42,7 @@ on_error() {
 trap on_error ERR
 
 usage() {
-  cat <<'EOF'
+  cat <<'EOF_USAGE'
 Usage:
   issue186-exact-main-production-rollout.sh --preflight-only
   issue186-exact-main-production-rollout.sh --apply --receipt-sha256 <sha256> --ack AUTHORIZE_ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT
@@ -49,7 +51,7 @@ Default behavior is preflight-only. Preflight writes only below $HOME/.cache and
 read-only production/GitHub checks. Apply requires a prior immutable PASS receipt plus a
 separate exact owner acknowledgement. Merge or a generic continuation command is not deploy
 authorization.
-EOF
+EOF_USAGE
 }
 
 while (($# > 0)); do
@@ -143,11 +145,21 @@ refresh_github_main() {
   [[ "$GITHUB_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "unable to resolve GitHub main"
 }
 
+configure_run_paths() {
+  [[ "$GITHUB_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "GitHub main must be resolved before run path selection"
+  RUN_ROOT="${HOME}/.cache/dashboard-rpi5-operator/issue186-${TARGET_SHA}-gate-${GITHUB_MAIN_SHA}"
+  CANDIDATE_ROOT="${RUN_ROOT}/candidate"
+  MANIFEST="${RUN_ROOT}/candidate-manifest.json"
+  PLAN="${RUN_ROOT}/release-plan.json"
+  PREFLIGHT_RECEIPT="${RUN_ROOT}/PREFLIGHT_PASS.txt"
+}
+
 verify_gate_lineage_in_clone() {
-  local gate_parent process_fix_parent main_parent gate_actual gate_expected process_fix_actual process_fix_expected corrective_actual corrective_expected
+  local gate_parent process_fix_parent trust_fix_parent main_parent gate_actual gate_expected process_fix_actual process_fix_expected trust_fix_actual trust_fix_expected corrective_actual corrective_expected
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$TARGET_SHA^{tree}")" == "$TARGET_TREE" ]] || fail "target tree mismatch"
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$GATE_BASE_SHA^{tree}")" == "$GATE_BASE_TREE" ]] || fail "gate base tree mismatch"
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$PROCESS_EVIDENCE_FIX_SHA^{tree}")" == "$PROCESS_EVIDENCE_FIX_TREE" ]] || fail "process-evidence fix tree mismatch"
+  [[ "$(git -C "$CANDIDATE_ROOT" rev-parse "$TRUST_CHAIN_FIX_SHA^{tree}")" == "$TRUST_CHAIN_FIX_TREE" ]] || fail "trust-chain fix tree mismatch"
 
   gate_parent="$(git -C "$CANDIDATE_ROOT" rev-parse "${GATE_BASE_SHA}^")"
   [[ "$gate_parent" == "$TARGET_SHA" ]] || fail "reviewed issue186 gate base is not a direct child of target"
@@ -167,16 +179,25 @@ verify_gate_lineage_in_clone() {
     'tools/issue186-exact-main-production-rollout.test.mjs' \
     'tools/operator/issue186-exact-main-production-rollout.sh' | sort)"
   [[ "$process_fix_actual" == "$process_fix_expected" ]] || fail "reviewed process-evidence fix contains unexpected files"
-  [[ "$GITHUB_MAIN_SHA" == "$PROCESS_EVIDENCE_FIX_SHA" ]] && return 0
+
+  trust_fix_parent="$(git -C "$CANDIDATE_ROOT" rev-parse "${TRUST_CHAIN_FIX_SHA}^")"
+  [[ "$trust_fix_parent" == "$PROCESS_EVIDENCE_FIX_SHA" ]] || fail "reviewed trust-chain fix is not a direct child of process-evidence fix"
+  trust_fix_actual="$(git -C "$CANDIDATE_ROOT" diff --name-only "$PROCESS_EVIDENCE_FIX_SHA" "$TRUST_CHAIN_FIX_SHA" | sort)"
+  trust_fix_expected="$(printf '%s\n' \
+    'docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md' \
+    'tools/issue186-exact-main-production-rollout.test.mjs' \
+    'tools/operator/issue186-exact-main-production-rollout.sh' | sort)"
+  [[ "$trust_fix_actual" == "$trust_fix_expected" ]] || fail "reviewed trust-chain fix contains unexpected files"
+  [[ "$GITHUB_MAIN_SHA" == "$TRUST_CHAIN_FIX_SHA" ]] && return 0
 
   main_parent="$(git -C "$CANDIDATE_ROOT" rev-parse "${GITHUB_MAIN_SHA}^")"
-  [[ "$main_parent" == "$PROCESS_EVIDENCE_FIX_SHA" ]] || fail "GitHub main is not reviewed process-evidence fix or one direct trust-chain corrective child"
-  corrective_actual="$(git -C "$CANDIDATE_ROOT" diff --name-only "$PROCESS_EVIDENCE_FIX_SHA" "$GITHUB_MAIN_SHA" | sort)"
+  [[ "$main_parent" == "$TRUST_CHAIN_FIX_SHA" ]] || fail "GitHub main is not reviewed trust-chain fix or one direct native-build corrective child"
+  corrective_actual="$(git -C "$CANDIDATE_ROOT" diff --name-only "$TRUST_CHAIN_FIX_SHA" "$GITHUB_MAIN_SHA" | sort)"
   corrective_expected="$(printf '%s\n' \
     'docs/ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT.md' \
     'tools/issue186-exact-main-production-rollout.test.mjs' \
     'tools/operator/issue186-exact-main-production-rollout.sh' | sort)"
-  [[ "$corrective_actual" == "$corrective_expected" ]] || fail "post-process-fix GitHub main contains changes outside reviewed issue186 trust-chain corrective source"
+  [[ "$corrective_actual" == "$corrective_expected" ]] || fail "post-trust-fix GitHub main contains changes outside reviewed issue186 native-build corrective source"
 }
 
 build_candidate_once() {
@@ -184,7 +205,7 @@ build_candidate_once() {
   mkdir -p -m 0700 "$CANDIDATE_ROOT"
   git -C "$CANDIDATE_ROOT" init --quiet
   git -C "$CANDIDATE_ROOT" remote add origin "$REPO_URL"
-  git -C "$CANDIDATE_ROOT" fetch --quiet --depth=4 origin "$GITHUB_MAIN_SHA"
+  git -C "$CANDIDATE_ROOT" fetch --quiet --depth=5 origin "$GITHUB_MAIN_SHA"
   git -C "$CANDIDATE_ROOT" fetch --quiet --depth=1 origin "$TARGET_SHA"
   verify_gate_lineage_in_clone
   git -c advice.detachedHead=false -C "$CANDIDATE_ROOT" checkout --quiet --detach "$TARGET_SHA"
@@ -192,7 +213,7 @@ build_candidate_once() {
   [[ "$(git -C "$CANDIDATE_ROOT" rev-parse HEAD^{tree})" == "$TARGET_TREE" ]] || fail "candidate tree mismatch"
 
   npm --prefix "$CANDIDATE_ROOT" ci --ignore-scripts
-  npm --prefix "$CANDIDATE_ROOT" rebuild node-pty --build-from-source
+  npm_config_build_from_source=true npm --prefix "$CANDIDATE_ROOT" rebuild node-pty
   npm --prefix "$CANDIDATE_ROOT" audit --audit-level=high
   npm --prefix "$CANDIDATE_ROOT" run check
 
@@ -205,7 +226,7 @@ build_candidate_once() {
 write_preflight_receipt() {
   local candidate_sha256 receipt_sha
   candidate_sha256="$(node -e 'const fs=require("fs");const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(m.candidateSha256)' "$MANIFEST")"
-  cat >"$PREFLIGHT_RECEIPT" <<EOF
+  cat >"$PREFLIGHT_RECEIPT" <<EOF_RECEIPT
 ISSUE=186
 TARGET_SHA=${TARGET_SHA}
 TARGET_TREE=${TARGET_TREE}
@@ -221,7 +242,7 @@ RELEASE_CONTROLLER_PLAN=PASS
 PRODUCTION_MUTATION=NO
 CLOUDFLARE_MUTATION=NO
 SYSTEMD_MUTATION=NO
-EOF
+EOF_RECEIPT
   chmod 0600 "$PREFLIGHT_RECEIPT"
   receipt_sha="$(sha256sum "$PREFLIGHT_RECEIPT" | awk '{print $1}')"
   log "PREFLIGHT_RESULT=PASS"
@@ -268,6 +289,7 @@ wait_web_200() {
 if [[ "$MODE" == "preflight" ]]; then
   log "STAGE=EXACT_GITHUB_TARGET"
   refresh_github_main
+  configure_run_paths
   log "GITHUB_MAIN_SHA=${GITHUB_MAIN_SHA}"
   log "STAGE=LIVE_PRODUCTION_READ_ONLY_BASELINE"
   verify_live_acceptance "$EXPECTED_CURRENT_SHA"
@@ -282,6 +304,7 @@ fi
 [[ "$OWNER_ACK" == "AUTHORIZE_ISSUE186_EXACT_MAIN_PRODUCTION_ROLLOUT" ]] || fail "exact owner acknowledgement missing"
 log "STAGE=APPLY_PREWRITE_REVALIDATION"
 refresh_github_main
+configure_run_paths
 verify_existing_preflight
 verify_live_acceptance "$EXPECTED_CURRENT_SHA"
 [[ "$(current_release_sha)" == "$EXPECTED_CURRENT_SHA" ]] || fail "production current drift before mutation"
