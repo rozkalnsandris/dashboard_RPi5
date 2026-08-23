@@ -88,6 +88,8 @@ test("backup baseline recognizes the reviewed V25 wrapper/core split and preserv
   const baseline = helper.slice(start, end);
 
   assert.match(baseline, /0:0:750:regular file/u);
+  assert.match(baseline, /! -L "\$BACKUP_ENTRYPOINT"/u);
+  assert.match(baseline, /! -L "\$BACKUP_CORE"/u);
   assert.match(baseline, /bcf43633a61139153e3bac3b2c61f5118c742459/u);
   assert.match(baseline, /sudo \/usr\/bin\/git hash-object "\$BACKUP_ENTRYPOINT"/u);
   assert.match(baseline, /sudo \/usr\/bin\/sha256sum "\$BACKUP_CORE"/u);
