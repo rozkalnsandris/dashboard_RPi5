@@ -40,7 +40,7 @@ bash tools/operator/issue196-composite-live-restoration.sh --preflight-only --ru
 
 `--run-backup` is optional and **OFF by default**. Including it only binds the future receipt to one real backup run; preflight itself does not execute a backup.
 
-Preflight is production read-only. It may write only below the invoking user's cache in order to build and validate the exact candidate.
+Preflight is production read-only. It may write only below the invoking user's cache in order to build and validate the exact candidate. Where root-owned `0750` maintenance files must be identified, it uses bounded read-only `sudo` calls only for `git hash-object` / `sha256sum`; it does not alter those files or their metadata.
 
 It verifies:
 
@@ -52,7 +52,8 @@ It verifies:
 - broker/agent/web baseline active state;
 - no forbidden `docker`, `video`, `adm`, or `systemd-journal` membership on the dashboard agent;
 - terminal socket remains absent/inactive;
-- current backup entrypoint is the trusted byte-identical V10 core;
+- current `/usr/local/sbin/rpi5-backup` is the reviewed pre-evidence V25 serialized wrapper (`bcf43633a61139153e3bac3b2c61f5118c742459`), root-owned `0750`;
+- current `/usr/local/lib/rpi5-maintenance/rpi5-backup-v10-core` is the trusted byte-identical V10 ownership snapshot / runtime V12 core (`5ca85ae53bdf4fa3b99e21e1a30ddaa077d9e1791505b1e8389ee8587d011735`), root-owned `0750`;
 - `/etc/dashboard-rpi5/web.env` remains a root-owned `0600` regular file without reading or printing its contents;
 - Prometheus has one reviewed non-wildcard IPv4 `9090/tcp` host binding and responds to readiness/query probes;
 - the raw Prometheus target is never written into GitHub evidence or printed by the operator; only its SHA-256 is stored in the receipt;
@@ -104,8 +105,8 @@ After all pre-write checks pass:
    - sanitized evidence helper;
    - maintenance lock helper;
    - evidence collector wrapper;
-   - byte-identical V10 backup core;
-   - serialized backup wrapper;
+   - byte-identical V10 backup core as `root:root 0750`;
+   - evidence-aware serialized backup wrapper as `root:root 0750`, preserving the reviewed V25 execution boundary;
    - exact evidence service/timer;
 4. `systemctl daemon-reload`, enable/start only the evidence timer, and start one evidence oneshot to seed required endpoint/throttle evidence and maintenance evidence when a valid maintenance invocation exists;
 5. atomically replace/add only `DASHBOARD_PROMETHEUS_URL` in `/etc/dashboard-rpi5/web.env`, preserving every other line and root-owned `0600` metadata; the target is rediscovered locally and never printed;
@@ -131,6 +132,7 @@ The one-shot requires:
   - `docker:prometheus`
 - Docker Prometheus logs = 200;
 - endpoint and throttle evidence files are root-owned `0644` regular files; maintenance evidence, when produced, is also root-owned `0644`;
+- backup entrypoint and immutable core remain root-owned `0750` regular files after cutover;
 - `/api/backups` = 200 when the live envelope includes one real backup run;
 - exact production release pointer equals the authorized dashboard target;
 - dashboard agent still has no forbidden broad groups;
@@ -159,6 +161,7 @@ This transaction does not authorize:
 - agent `docker`, `video`, `adm`, or `systemd-journal` group membership;
 - generic Docker socket access;
 - chmod/chgrp relaxation of raw backup logs;
+- backup entrypoint/core permission widening beyond the reviewed V25 `0750` boundary;
 - new generic journal/root/filesystem proxies;
 - Quick Command changes;
 - terminal/PTTY installation or activation;
