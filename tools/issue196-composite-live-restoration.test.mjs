@@ -208,6 +208,7 @@ test("post-live correction pins exact old and corrected producer identities", ()
   assert.match(correction, /NEW_HELPER_BLOB="883b741f884c3f122ca8bcd2f8ce8a2eb029a3f5"/u);
   assert.match(correction, /NEW_COLLECTOR_BLOB="ec96beb7ac9062a88ec17253c80d70fad419f550"/u);
   assert.match(correction, /AUTHORIZE_ISSUE196_POST_LIVE_EVIDENCE_CORRECTION/u);
+  assert.match(correction, /for command_name in curl date git node sha256sum readlink stat systemctl id python3/u);
   assert.match(correction, /merge-base --is-ancestor "\$PRODUCER_BASE_SHA" "\$PRODUCER_CURRENT_SHA"/u);
 });
 
