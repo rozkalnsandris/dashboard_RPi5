@@ -94,12 +94,24 @@ require_web_env_metadata() {
 }
 
 require_backup_baseline() {
+  local entrypoint_metadata core_metadata entrypoint_blob core_digest
   [[ -f "$BACKUP_ENTRYPOINT" && ! -L "$BACKUP_ENTRYPOINT" ]] ||
     fail "backup entrypoint is not a real file"
-  local digest
-  digest="$(sha256sum "$BACKUP_ENTRYPOINT" | awk '{print $1}')"
-  [[ "$digest" == "$TRUSTED_BACKUP_SHA256" ]] ||
-    fail "backup incumbent is not the reviewed V10 byte-identical core"
+  [[ -f "$BACKUP_CORE" && ! -L "$BACKUP_CORE" ]] ||
+    fail "backup core is not a real file"
+  entrypoint_metadata="$(stat -c '%u:%g:%a:%F' "$BACKUP_ENTRYPOINT" 2>/dev/null || true)"
+  [[ "$entrypoint_metadata" == "0:0:750:regular file" ]] ||
+    fail "backup entrypoint metadata differs from reviewed V25 root:root 0750 boundary"
+  core_metadata="$(stat -c '%u:%g:%a:%F' "$BACKUP_CORE" 2>/dev/null || true)"
+  [[ "$core_metadata" == "0:0:750:regular file" ]] ||
+    fail "backup core metadata differs from reviewed V25 root:root 0750 boundary"
+
+  entrypoint_blob="$(sudo /usr/bin/git hash-object "$BACKUP_ENTRYPOINT" 2>/dev/null || true)"
+  [[ "$entrypoint_blob" == "bcf43633a61139153e3bac3b2c61f5118c742459" ]] ||
+    fail "backup entrypoint is not the reviewed pre-evidence V25 serialized wrapper"
+  core_digest="$(sudo /usr/bin/sha256sum "$BACKUP_CORE" 2>/dev/null | awk '{print $1}' || true)"
+  [[ "$core_digest" == "$TRUSTED_BACKUP_SHA256" ]] ||
+    fail "backup core is not the reviewed V10 ownership snapshot / runtime V12 bytes"
 }
 
 require_public_access_boundary() {
