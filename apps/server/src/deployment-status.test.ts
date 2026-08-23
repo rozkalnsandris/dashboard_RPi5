@@ -98,7 +98,7 @@ describe("deployment status reader", () => {
     });
   });
 
-  it("classifies reviewed controlled-deploy path drift as DEPLOY_REQUIRED", async () => {
+  it("classifies the reviewed V25 target bundle and deploy engine as DEPLOY_REQUIRED", async () => {
     const read = createDeploymentStatusReader({
       deployEventsReader: async () => deployEvidence([verifiedEvent]),
       githubMainReader: async () => ({
@@ -108,6 +108,8 @@ describe("deployment status reader", () => {
         aheadBy: 2,
         changedFiles: [
           "scripts/rpi5_deploy_lib.py",
+          "ops/lib/rpi5-maintenance-locks.sh",
+          "ops/bin/rpi5-backup-serialized",
           "ops/bin/rpi5-backup",
           "README.md",
         ],
@@ -120,7 +122,12 @@ describe("deployment status reader", () => {
         classification: "DEPLOY_REQUIRED",
         aheadBy: 2,
         productionImpact: true,
-        impactPaths: ["ops/bin/rpi5-backup", "scripts/rpi5_deploy_lib.py"],
+        impactPaths: [
+          "ops/bin/rpi5-backup",
+          "ops/bin/rpi5-backup-serialized",
+          "ops/lib/rpi5-maintenance-locks.sh",
+          "scripts/rpi5_deploy_lib.py",
+        ],
       },
     });
   });
