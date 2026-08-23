@@ -95,10 +95,14 @@ require_web_env_metadata() {
 
 require_backup_baseline() {
   local entrypoint_metadata core_metadata entrypoint_blob core_digest
-  entrypoint_metadata="$(stat -Lc '%u:%g:%a:%F' "$BACKUP_ENTRYPOINT" 2>/dev/null || true)"
+  [[ -f "$BACKUP_ENTRYPOINT" && ! -L "$BACKUP_ENTRYPOINT" ]] ||
+    fail "backup entrypoint is not a real file"
+  [[ -f "$BACKUP_CORE" && ! -L "$BACKUP_CORE" ]] ||
+    fail "backup core is not a real file"
+  entrypoint_metadata="$(stat -c '%u:%g:%a:%F' "$BACKUP_ENTRYPOINT" 2>/dev/null || true)"
   [[ "$entrypoint_metadata" == "0:0:750:regular file" ]] ||
     fail "backup entrypoint metadata differs from reviewed V25 root:root 0750 boundary"
-  core_metadata="$(stat -Lc '%u:%g:%a:%F' "$BACKUP_CORE" 2>/dev/null || true)"
+  core_metadata="$(stat -c '%u:%g:%a:%F' "$BACKUP_CORE" 2>/dev/null || true)"
   [[ "$core_metadata" == "0:0:750:regular file" ]] ||
     fail "backup core metadata differs from reviewed V25 root:root 0750 boundary"
 
