@@ -7,6 +7,7 @@ import {
   readLogSnapshot,
   type LogReadDependencies,
 } from "./logs-read.js";
+import { isProductionLogSourceId } from "./production-log-sources.js";
 
 const DOCKER_SOURCE_MAP: Readonly<
   Partial<Record<LogSourceId, { brokerSource: DockerBrokerLogSource; containerName: string }>>
@@ -22,10 +23,10 @@ export async function readLiveLogSnapshot(
   range: LogRange,
   signal?: AbortSignal,
 ): Promise<LogSnapshot> {
+  if (!isProductionLogSourceId(sourceId)) throw new LogSourceUnavailableError();
+
   const mapping = DOCKER_SOURCE_MAP[sourceId];
-  if (mapping === undefined) {
-    return readLogSnapshot(sourceId, range, undefined, signal);
-  }
+  if (mapping === undefined) throw new LogSourceUnavailableError();
 
   const dependencies: LogReadDependencies = {
     now: () => new Date(),

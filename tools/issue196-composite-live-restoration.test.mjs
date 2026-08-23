@@ -30,6 +30,8 @@ test("helper pins the reviewed functional and producer boundaries", () => {
 test("dashboard post-base lineage is limited to the final issue196 gate", () => {
   for (const path of [
     "apps/agent/src/app.ts",
+    "apps/agent/src/docker-logs-live.test.ts",
+    "apps/agent/src/docker-logs-live.ts",
     "apps/agent/src/production-log-sources.test.ts",
     "apps/agent/src/production-log-sources.ts",
     "docs/ISSUE196_COMPOSITE_LIVE_RESTORATION.md",

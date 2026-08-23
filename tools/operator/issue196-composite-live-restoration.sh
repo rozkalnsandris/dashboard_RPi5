@@ -40,6 +40,8 @@ readonly PRODUCER_WRAPPER="/usr/local/sbin/rpi5-dashboard-evidence"
 
 readonly -a ALLOWED_TARGET_DIFF=(
   "apps/agent/src/app.ts"
+  "apps/agent/src/docker-logs-live.test.ts"
+  "apps/agent/src/docker-logs-live.ts"
   "apps/agent/src/production-log-sources.test.ts"
   "apps/agent/src/production-log-sources.ts"
   "docs/ISSUE196_COMPOSITE_LIVE_RESTORATION.md"
@@ -157,7 +159,6 @@ require_command() {
 for command_name in curl git node npm sha256sum readlink stat systemctl id python3 docker; do
   require_command "$command_name"
 done
-
 
 readonly ISSUE196_OPERATOR_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 # shellcheck source=tools/operator/issue196-composite-live-common.sh
