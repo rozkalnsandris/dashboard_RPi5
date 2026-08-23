@@ -1,0 +1,1 @@
+This path is intentionally unused; dormant source read coverage lives in docker-logs-live.test.ts.
