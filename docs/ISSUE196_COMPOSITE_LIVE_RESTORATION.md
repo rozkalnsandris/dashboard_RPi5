@@ -1,24 +1,35 @@
-# Issue #196 — Composite Live restoration gate
+# Issue #196 — Composite Live restoration and post-live correction
 
-This document defines the **source-only** operator contract for the final live restoration of the read-only dashboard evidence chains tracked by issue #196.
+This document records the **source-only** operator contract used for the original live restoration of the read-only dashboard evidence chains tracked by issue #196 and the narrower correction required by the evidence observed after that transaction.
 
-Nothing in this document or the associated script authorizes production mutation. Merge authorization is not live authorization.
+Nothing in this document or the associated scripts authorizes production mutation. Merge authorization is not live authorization.
 
-## Reviewed source anchors
+## Current status
+
+The original #196 Composite Live transaction has already been executed successfully enough to restore the major read-only surfaces: backup evidence, endpoint evidence, throttle state, Docker detail, Prometheus history and bounded Docker logs. Its owner authorization is consumed and **must not be reused**.
+
+Post-live browser evidence exposed two source defects:
+
+1. deployment evidence was recorded with the dashboard application release SHA even though Phase 6C compares production against `rozkalnsandris/RPi5_main`;
+2. maintenance evidence used the evidence-collector observation time rather than the actual `rpi5-update.service` execution exit time.
+
+The original `--apply` path is therefore retired and fails closed before mutation. It must not be retried. The only supported next live path, after the producer and dashboard source corrections are merged and freshly revalidated, is the separate `issue196-post-live-evidence-correction.sh` gate described below.
+
+## Reviewed source anchors for the historical Composite Live
 
 Dashboard functional base:
 
 - commit: `fb8b6067ae12eacfbfc21d2c104602f7fa257c1f`
 - tree: `ec859e2b1d5c74be47986305d126dacf75093e0e`
 
-Authoritative producer merge:
+Authoritative producer baseline:
 
 - repository: `rozkalnsandris/RPi5_main`
 - reviewed producer commit: `dff7d6346140f8be98c2edb09a6663d80688e0d7`
 
-The operator resolves the future dashboard target from fresh GitHub `main`. It accepts only descendants of the functional base whose post-base diff is limited to this final #196 rollout/log-advertisement gate. It also requires the reviewed producer commit to remain an ancestor of current `RPi5_main/main` and verifies exact producer blob pins before any live action.
+The historical operator resolved the dashboard target from fresh GitHub `main`, verified exact producer blob pins, and restored the missing live read-only integrations without widening the dashboard agent into broad host authorities.
 
-## Why another source gate is required
+## Why the original source gate was required
 
 The #196 audits found two distinct classes of failure:
 
@@ -28,123 +39,123 @@ The #196 audits found two distinct classes of failure:
    - Docker stats nested timeout too small;
 2. selectable log sources that production could not read with the reviewed least-privilege agent identity.
 
-The second problem must not be "fixed" by adding `adm`, `systemd-journal`, `video`, direct Docker or root authority to the dashboard agent. The final source correction therefore advertises only the two broker-backed Docker log sources that are actually live-capable under the current boundary. Dormant journal/root-only file registrations stay fail-closed and can be reintroduced only through a separately reviewed narrow capability.
+The second problem was not fixed by adding `adm`, `systemd-journal`, `video`, direct Docker or root authority to the dashboard agent. Only the two broker-backed Docker log sources that were actually live-capable under the current boundary were advertised.
 
-## Preflight-only mode
+## Historical preflight-only mode
 
-Run only after this operator is merged to current dashboard `main`:
+The original source gate exposed:
 
 ```bash
 bash tools/operator/issue196-composite-live-restoration.sh --preflight-only --run-backup
 ```
 
-`--run-backup` is optional and **OFF by default**. Including it only binds the future receipt to one real backup run; preflight itself does not execute a backup.
+`--run-backup` in preflight only bound the future receipt to one real backup run; it did not execute a backup.
 
-Preflight is production read-only. It may write only below the invoking user's cache in order to build and validate the exact candidate. Where root-owned `0750` maintenance files must be identified, it uses bounded read-only `sudo` calls only for `git hash-object` / `sha256sum`; it does not alter those files or their metadata.
+The historical preflight verified fresh dashboard and producer GitHub `main`, exact-main push CI, reviewed dashboard/producer lineage, production release state, broker/agent/web trust boundaries, the V25 backup wrapper/core split, root-owned web environment metadata, the Prometheus target, candidate build/smoke, Cloudflare Access interception and absence of terminal activation.
 
-It verifies:
+The original apply authorization has now been consumed. The corresponding `--apply` path is intentionally retired and fails closed before its first mutation.
 
-- fresh dashboard and producer GitHub `main`;
-- successful exact-main push CI for both repositories;
-- dashboard functional-base ancestry and an allowlisted final #196 diff only;
-- producer reviewed-commit ancestry plus exact blob pins;
-- current production release pointer;
-- broker/agent/web baseline active state;
-- no forbidden `docker`, `video`, `adm`, or `systemd-journal` membership on the dashboard agent;
-- terminal socket remains absent/inactive;
-- current `/usr/local/sbin/rpi5-backup` is the reviewed pre-evidence V25 serialized wrapper (`bcf43633a61139153e3bac3b2c61f5118c742459`), root-owned `0750`;
-- current `/usr/local/lib/rpi5-maintenance/rpi5-backup-v10-core` is the trusted byte-identical V10 ownership snapshot / runtime V12 core (`5ca85ae53bdf4fa3b99e21e1a30ddaa077d9e1791505b1e8389ee8587d011735`), root-owned `0750`;
-- `/etc/dashboard-rpi5/web.env` remains a root-owned `0600` regular file without reading or printing its contents;
-- Prometheus has one reviewed non-wildcard IPv4 `9090/tcp` host binding and responds to readiness/query probes;
-- the raw Prometheus target is never written into GitHub evidence or printed by the operator; only its SHA-256 is stored in the receipt;
-- exact production candidate install/audit/check/build/native/manifest/runtime smoke;
-- current Cloudflare Access interception remains present;
-- evidence producer has not already been unexpectedly activated.
+## Historical Composite Live mutation sequence
 
-A PASS receipt binds:
+The consumed transaction performed the reviewed bounded restoration:
 
-- dashboard target SHA;
-- pre-deploy production SHA;
-- current producer-main SHA;
-- reviewed producer SHA;
-- Prometheus target hash;
-- backup-run YES/NO category;
-- candidate manifest hash.
+1. activated the exact dashboard release;
+2. restarted only the reviewed Docker broker and dashboard agent with trust checks;
+3. installed the reviewed producer helper/collector, backup core/wrapper and evidence service/timer;
+4. enabled/started the evidence timer and seeded one evidence oneshot;
+5. atomically added/replaced only `DASHBOARD_PROMETHEUS_URL` while preserving the root-owned `0600` web environment;
+6. restarted only the dashboard web service;
+7. executed exactly one backup because that category was bound in the owner authorization;
+8. ran final acceptance;
+9. **historically, the operator then wrote a deployment evidence record using the dashboard target SHA.** This step was later proven semantically wrong for Phase 6C and must not be repeated.
 
-## Composite Live apply mode
+The observed live result proved that the core restoration succeeded, but the deployment page correctly remained `UNKNOWN` because `f80da3848d7e` is a dashboard release commit and is not a commit in `RPi5_main`.
 
-Apply is valid only after a separate owner authorization that explicitly names:
+## Correct deployment authority
 
-- exact dashboard target SHA;
-- exact host `rpi5`;
-- #196 restoration scope;
-- producer systemd installation/activation;
-- dashboard release activation and bounded service restarts;
-- exact single `DASHBOARD_PROMETHEUS_URL` production environment-key replacement;
-- backup-wrapper cutover;
-- whether **one real backup execution** is included;
-- explicit exclusions: no identity/group expansion, no Docker-authority expansion, no Cloudflare mutation, no terminal/PTTY activation.
+The deployment page contract is explicitly about `rozkalnsandris/RPi5_main`. Its production commit must therefore originate from the authoritative `RPi5_main` controlled-deploy state, not from the dashboard release controller.
 
-The apply command requires both the immutable preflight receipt SHA-256 and the exact acknowledgement:
+The corrected producer projects only the latest successful transaction selected by the fixed root-owned `/var/lib/rpi5-deploy/latest-success` state. It validates:
 
-```text
-AUTHORIZE_ISSUE196_COMPOSITE_LIVE_RESTORATION
+- transaction schema `rpi5.controlled-deploy-transaction.v1`;
+- repository exactly `rozkalnsandris/RPi5_main`;
+- successful transaction status;
+- transaction-id / 12-char commit agreement;
+- full 40-char commit agreement;
+- UTC completion timestamp.
+
+It copies only transaction id, short commit and completion time into browser-safe evidence. It never exposes deploy target paths, before/after fingerprints, logs, rollback material or arbitrary state files.
+
+## Correct maintenance time authority
+
+The corrected producer continues to avoid broad journal access. It reads only fixed `systemctl show rpi5-update.service` properties:
+
+- `ActiveState`;
+- `InvocationID`;
+- `Result`;
+- `ExecMainExitTimestamp`.
+
+The event `occurredAt` now comes from the unit's actual `ExecMainExitTimestamp`. For an already-retained invocation with the same result, the producer may replace only the old collector-time timestamp and re-sort the bounded event list. A conflicting result for the same invocation fails closed.
+
+## Post-live correction preflight
+
+After both source corrections are merged and current mains are freshly revalidated, use only:
+
+```bash
+bash tools/operator/issue196-post-live-evidence-correction.sh --preflight-only
 ```
 
-Before the first mutation, apply revalidates the whole receipt boundary and executes the release controller in PLAN mode.
+This preflight is production read-only. It may write only under the invoking user's cache to clone and validate the exact producer source. It binds:
 
-The first live write consumes the authorization.
-
-## Bounded mutation sequence
-
-After all pre-write checks pass:
-
-1. activate the exact dashboard release through the reviewed production release controller;
-2. restart only the reviewed Docker broker and dashboard agent, verifying the existing web trust chain after each;
-3. install exact reviewed producer files from the pinned `RPi5_main` producer commit:
-   - sanitized evidence helper;
-   - maintenance lock helper;
-   - evidence collector wrapper;
-   - byte-identical V10 backup core as `root:root 0750`;
-   - evidence-aware serialized backup wrapper as `root:root 0750`, preserving the reviewed V25 execution boundary;
-   - exact evidence service/timer;
-4. `systemctl daemon-reload`, enable/start only the evidence timer, and start one evidence oneshot to seed required endpoint/throttle evidence and maintenance evidence when a valid maintenance invocation exists;
-5. atomically replace/add only `DASHBOARD_PROMETHEUS_URL` in `/etc/dashboard-rpi5/web.env`, preserving every other line and root-owned `0600` metadata; the target is rediscovered locally and never printed;
-6. restart only the dashboard web service;
-7. if and only if the receipt and owner Composite Live authorization include `--run-backup`, execute exactly one `/usr/local/sbin/rpi5-backup`;
-8. run final acceptance;
-9. only after the preceding acceptance passes, write the bounded deployment evidence receipt and require `/api/deployments` to return HTTP 200.
-
-No automatic rollback or cleanup is part of this transaction.
-
-## Acceptance
-
-The one-shot requires:
-
-- `/api/health` = 200;
-- `/api/current/host` = 200;
-- `/api/current/docker` = 200 and all running containers expose available detailed stats;
-- `/api/services` = 200;
-- `/api/history/host?range=24h` = 200;
-- `/api/endpoints` = 200;
-- `/api/logs/sources` = 200 and advertises exactly:
-  - `docker:homeassistant`
-  - `docker:prometheus`
-- Docker Prometheus logs = 200;
-- endpoint and throttle evidence files are root-owned `0644` regular files; maintenance evidence, when produced, is also root-owned `0644`;
-- backup entrypoint and immutable core remain root-owned `0750` regular files after cutover;
-- `/api/backups` = 200 when the live envelope includes one real backup run;
-- exact production release pointer equals the authorized dashboard target;
-- dashboard agent still has no forbidden broad groups;
+- fresh dashboard `main` SHA and successful exact-main `CI`;
+- fresh producer `main` SHA and successful exact-main `Validate`;
+- current dashboard production release still exactly `f80da3848d7e8981f096aed4b43d3ff251ab383b`;
+- current live evidence helper/collector are exactly the pre-fix blobs installed by the consumed Composite Live;
+- corrected producer helper/collector exact Git blobs from current `RPi5_main/main`;
+- broker, agent, web and evidence timer remain active;
+- evidence service is not failed;
+- dashboard agent still lacks `docker`, `video`, `adm` and `systemd-journal` groups;
 - terminal remains absent/inactive;
-- unauthenticated public access remains intercepted by Cloudflare Access;
-- after the bounded deployment receipt is recorded, `/api/deployments` = 200.
+- current `/api/deployments` still exhibits the exact pre-fix `UNKNOWN` state with dashboard short commit `f80da3848d7e`.
 
-If `--run-backup` is omitted, backup evidence is intentionally deferred until the next successful scheduled backup and issue #196 must remain open until that evidence is observed.
+A PASS receipt contains only the exact SHA/blob bindings and explicit no-mutation categories. Preflight does not install files, start/restart services, run a backup or change evidence.
+
+## Post-live correction apply gate
+
+Apply requires a **new separate owner authorization** and the immutable preflight receipt SHA-256. The exact acknowledgement is:
+
+```text
+AUTHORIZE_ISSUE196_POST_LIVE_EVIDENCE_CORRECTION
+```
+
+This authorization is not implied by the original Composite Live, by any merge, or by `turpini`.
+
+Before the first write the apply path revalidates both GitHub mains/CI, the receipt, exact production release, exact old live producer blobs and all trust-boundary invariants.
+
+After that, the only authorized mutations are:
+
+1. replace `/usr/local/lib/rpi5-maintenance/dashboard-evidence.py` with the exact corrected producer blob as `root:root 0644`;
+2. replace `/usr/local/sbin/rpi5-dashboard-evidence` with the exact corrected producer blob as `root:root 0755`;
+3. start the **existing** `rpi5-dashboard-evidence.service` oneshot exactly once so the bounded evidence files self-correct.
+
+It does **not** deploy dashboard source, change the current release, daemon-reload systemd, install/change units, enable/disable timers, restart broker/agent/web, execute backup/update/deploy, mutate controlled-deploy state, or change Cloudflare/terminal/identity/permissions.
+
+## Post-live acceptance
+
+The narrow correction requires:
+
+- corrected helper and collector exact Git blobs and original root ownership/modes;
+- existing evidence timer remains active;
+- dashboard release remains exactly `f80da3848d7e8981f096aed4b43d3ff251ab383b`;
+- dashboard agent group boundary remains unchanged;
+- terminal remains absent/inactive;
+- `/api/health` remains 200;
+- `/api/deployments` resolves to repository `rozkalnsandris/RPi5_main`, has a real 12-char `RPi5_main` production commit, has a full GitHub-main SHA, and classification is no longer `UNKNOWN`;
+- when a valid current `rpi5-update.service` invocation exists, `maintenance.json` contains that invocation at its actual normalized `ExecMainExitTimestamp`.
 
 ## Fail-closed rule
 
-Once `MUTATION_STARTED=YES`, **any** error, ambiguity or drift means:
+For both historical and correction gates, once `MUTATION_STARTED=YES`, **any** error, ambiguity or drift means:
 
 ```text
 RESULT=STOP_AFTER_MUTATION_ERROR
@@ -155,15 +166,18 @@ Preserve evidence and stop. Do not retry, roll back, clean up, reset, rebase, ru
 
 ## Explicit non-scope
 
-This transaction does not authorize:
+The correction does not authorize:
 
 - Cloudflare DNS/Tunnel/Access changes;
 - agent `docker`, `video`, `adm`, or `systemd-journal` group membership;
 - generic Docker socket access;
 - chmod/chgrp relaxation of raw backup logs;
-- backup entrypoint/core permission widening beyond the reviewed V25 `0750` boundary;
+- backup entrypoint/core changes or backup execution;
 - new generic journal/root/filesystem proxies;
 - Quick Command changes;
 - terminal/PTTY installation or activation;
 - sudo/root access from the browser/dashboard agent;
-- package upgrades or unrelated host maintenance.
+- dashboard release activation or any broker/agent/web restart;
+- systemd unit/timer installation, daemon-reload, enable/disable changes;
+- package upgrades or unrelated host maintenance;
+- any mutation of `/var/lib/rpi5-deploy` controlled-deploy state.

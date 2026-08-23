@@ -87,6 +87,11 @@ usage:
 under the invoking user's cache to build and validate an exact candidate.
 
 --run-backup binds one real backup execution into the receipt. It is OFF by default.
+
+NOTE: the original Composite Live apply authorization was consumed by the first
+successful #196 live transaction. The apply path is retired and fails closed.
+Use issue196-post-live-evidence-correction.sh for the separately authorized
+narrow evidence-authority correction after its source gate is merged.
 EOF
 }
 
@@ -196,6 +201,8 @@ run_preflight() {
 }
 
 run_apply() {
+  fail "original #196 Composite Live apply path is consumed and retired; use issue196-post-live-evidence-correction.sh"
+
   printf 'STAGE=ISSUE196_COMPOSITE_LIVE_APPLY\n'
   TARGET_SHA="$(github_branch_sha "$DASHBOARD_API")"
   PRODUCER_CURRENT_SHA="$(github_branch_sha "$PRODUCER_API")"
