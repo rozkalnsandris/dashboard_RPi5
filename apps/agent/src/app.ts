@@ -52,13 +52,13 @@ import { readLiveLogSnapshot } from "./docker-logs-live.js";
 import { readDockerContainers } from "./docker-read.js";
 import { readEndpointEvidence } from "./endpoint-evidence.js";
 import { readHostSummary } from "./host-read.js";
-import { listRegisteredLogSources } from "./logs-read.js";
 import { readRecentMaintenanceEvents } from "./maintenance-events.js";
 import {
   normalizeAgentError,
   OperationRegistry,
   runWithTimeout,
 } from "./operation-registry.js";
+import { listProductionLogSources } from "./production-log-sources.js";
 import {
   AGENT_CAPABILITIES,
   AGENT_MODE,
@@ -110,7 +110,7 @@ export function buildAgentApp(options: BuildAgentAppOptions = {}) {
   const endpointEventsReader =
     options.endpointEventsReader ??
     ((signal: AbortSignal) => readEndpointEvidence(undefined, signal));
-  const logSourcesReader = options.logSourcesReader ?? (() => listRegisteredLogSources());
+  const logSourcesReader = options.logSourcesReader ?? (() => listProductionLogSources());
   const logsReader =
     options.logsReader ??
     ((sourceId: LogSourceId, range: LogRange, signal: AbortSignal) =>
