@@ -107,7 +107,7 @@ After all pre-write checks pass:
    - byte-identical V10 backup core;
    - serialized backup wrapper;
    - exact evidence service/timer;
-4. `systemctl daemon-reload`, enable/start only the evidence timer, and start one evidence oneshot to seed endpoint/maintenance/throttle evidence;
+4. `systemctl daemon-reload`, enable/start only the evidence timer, and start one evidence oneshot to seed required endpoint/throttle evidence and maintenance evidence when a valid maintenance invocation exists;
 5. atomically replace/add only `DASHBOARD_PROMETHEUS_URL` in `/etc/dashboard-rpi5/web.env`, preserving every other line and root-owned `0600` metadata; the target is rediscovered locally and never printed;
 6. restart only the dashboard web service;
 7. if and only if the receipt and owner Composite Live authorization include `--run-backup`, execute exactly one `/usr/local/sbin/rpi5-backup`;
@@ -130,7 +130,7 @@ The one-shot requires:
   - `docker:homeassistant`
   - `docker:prometheus`
 - Docker Prometheus logs = 200;
-- endpoint, maintenance and throttle evidence files are root-owned `0644` regular files;
+- endpoint and throttle evidence files are root-owned `0644` regular files; maintenance evidence, when produced, is also root-owned `0644`;
 - `/api/backups` = 200 when the live envelope includes one real backup run;
 - exact production release pointer equals the authorized dashboard target;
 - dashboard agent still has no forbidden broad groups;
