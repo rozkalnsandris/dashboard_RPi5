@@ -1,10 +1,12 @@
 import type { HostSummary, HostThrottleFlags } from "@dashboard-rpi5/contracts";
-import { execFile as nodeExecFile } from "node:child_process";
 import { readFile, statfs } from "node:fs/promises";
 import { setTimeout as sleepTimer } from "node:timers/promises";
 
+import { readThrottleEvidence } from "./throttle-evidence.js";
+
 export const CPU_SAMPLE_WINDOW_MS = 200;
 export const THERMAL_ZONE_TEMP_PATH = "/sys/class/thermal/thermal_zone0/temp";
+// Kept for pure parser/injected legacy regression tests only. Runtime default no longer executes vcgencmd.
 export const VCGENCMD_PATH = "/usr/bin/vcgencmd";
 export const VCGENCMD_TIMEOUT_MS = 1_000;
 export const VCGENCMD_MAX_BUFFER_BYTES = 4_096;
@@ -65,22 +67,8 @@ const defaultDependencies: HostReadDependencies = {
       bavail: result.bavail,
     };
   },
-  async execFile(file, args, options) {
-    return new Promise((resolve, reject) => {
-      nodeExecFile(
-        file,
-        [...args],
-        options,
-        (error, stdout) => {
-          if (error !== null) {
-            reject(error);
-            return;
-          }
-
-          resolve({ stdout });
-        },
-      );
-    });
+  async execFile() {
+    throw new Error("Direct host command execution is disabled for runtime throttle reads");
   },
   async sleep(ms, signal) {
     await sleepTimer(ms, undefined, signal === undefined ? undefined : { signal });
@@ -292,6 +280,11 @@ async function readThrottleState(
   signal?: AbortSignal,
 ): Promise<HostSummary["throttle"]> {
   try {
+    if (dependencies === defaultDependencies) {
+      return await readThrottleEvidence({}, signal);
+    }
+
+    // Compatibility path for injected unit-test dependencies only. Runtime uses the evidence file above.
     const { stdout } = await dependencies.execFile(VCGENCMD_PATH, ["get_throttled"], {
       timeout: VCGENCMD_TIMEOUT_MS,
       maxBuffer: VCGENCMD_MAX_BUFFER_BYTES,

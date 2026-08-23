@@ -1,15 +1,20 @@
 import {
   DEPLOY_MAX_EVENTS,
+  parseDeployEventsSnapshot,
   type DeployEventsSnapshot,
   type DeployVerifiedEvent,
 } from "@dashboard-rpi5/contracts/deploy";
 import { execFile as nodeExecFile } from "node:child_process";
+
+import { readRootOwnedEvidenceJson } from "./evidence-file.js";
 
 export const JOURNALCTL_PATH = "/usr/bin/journalctl";
 export const DEPLOY_SYSLOG_IDENTIFIER = "rpi5-deploy" as const;
 export const DEPLOY_JOURNAL_TIMEOUT_MS = 1_500;
 export const DEPLOY_JOURNAL_MAX_BYTES = 128 * 1024;
 export const DEPLOY_JOURNAL_SINCE = "-7d" as const;
+export const DEFAULT_DEPLOY_EVIDENCE_PATH = "/var/lib/dashboard-rpi5/evidence/deployments.json";
+export const DEFAULT_DEPLOY_EVIDENCE_MAX_BYTES = 64 * 1024;
 
 interface ExecFileOptions {
   timeout: number;
@@ -30,6 +35,13 @@ export interface DeployReadDependencies {
     options: ExecFileOptions,
   ): Promise<ExecFileResult>;
   now(): Date;
+}
+
+export interface DeployEvidenceReadOptions {
+  path?: string;
+  maxBytes?: number;
+  requiredUid?: number;
+  now?: () => Date;
 }
 
 const defaultDependencies: DeployReadDependencies = {
@@ -150,7 +162,30 @@ export function parseDeployJournalJsonLines(stdout: string): DeployVerifiedEvent
     .slice(0, DEPLOY_MAX_EVENTS);
 }
 
-export async function readRecentDeployEvents(
+export async function readDeployEvidence(
+  options: DeployEvidenceReadOptions = {},
+  signal?: AbortSignal,
+): Promise<DeployEventsSnapshot> {
+  try {
+    const value = await readRootOwnedEvidenceJson(
+      {
+        path: options.path ?? DEFAULT_DEPLOY_EVIDENCE_PATH,
+        maxBytes: options.maxBytes ?? DEFAULT_DEPLOY_EVIDENCE_MAX_BYTES,
+        requiredUid: options.requiredUid ?? 0,
+      },
+      signal,
+    );
+    const parsed = parseDeployEventsSnapshot(value);
+    const observedAt = (options.now ?? (() => new Date()))();
+    if (!Number.isFinite(observedAt.getTime())) throw new DeploySourceUnavailableError();
+    return { observedAt: observedAt.toISOString(), events: parsed.events };
+  } catch (error) {
+    if (error instanceof DeploySourceUnavailableError) throw error;
+    throw new DeploySourceUnavailableError();
+  }
+}
+
+async function readDeployJournalEvents(
   dependencies: DeployReadDependencies = defaultDependencies,
   signal?: AbortSignal,
 ): Promise<DeployEventsSnapshot> {
@@ -174,4 +209,12 @@ export async function readRecentDeployEvents(
     if (error instanceof DeploySourceUnavailableError) throw error;
     throw new DeploySourceUnavailableError();
   }
+}
+
+export async function readRecentDeployEvents(
+  dependencies?: DeployReadDependencies,
+  signal?: AbortSignal,
+): Promise<DeployEventsSnapshot> {
+  if (dependencies === undefined) return readDeployEvidence({}, signal);
+  return readDeployJournalEvents(dependencies, signal);
 }

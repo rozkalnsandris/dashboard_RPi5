@@ -17,7 +17,9 @@ import {
   type DockerBrokerLogSource,
 } from "./docker-broker-protocol.js";
 
-export const DOCKER_BROKER_REQUEST_TIMEOUT_MS = 1_500;
+// Keep the outer broker budget above the bounded Engine read so the broker
+// does not abort a valid two-cycle Docker stats response first.
+export const DOCKER_BROKER_REQUEST_TIMEOUT_MS = 3_500;
 
 export class DockerBrokerRequestError extends Error {
   constructor(readonly statusCode: number | null = null) {

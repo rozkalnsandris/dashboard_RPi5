@@ -7,12 +7,18 @@ import assert from "node:assert/strict";
 
 const helperPath = resolve("tools/operator/issue196-live-evidence-diagnostic.sh");
 const helper = await readFile(helperPath, "utf8");
+const secondPassHelperPath = resolve("tools/operator/issue196-second-pass-read-only-preflight.sh");
+const secondPassHelper = await readFile(secondPassHelperPath, "utf8");
 const agentApp = await readFile(resolve("apps/agent/src/app.ts"), "utf8");
 const liveShell = await readFile(resolve("apps/web/src/LiveShell.tsx"), "utf8");
 const webMain = await readFile(resolve("apps/web/src/main.tsx"), "utf8");
 
 test("issue196 diagnostic helper is valid bash", () => {
   execFileSync("bash", ["-n", helperPath], { stdio: "pipe" });
+});
+
+test("issue196 second-pass preflight is valid bash", () => {
+  execFileSync("bash", ["-n", secondPassHelperPath], { stdio: "pipe" });
 });
 
 test("issue196 helper is fixed to loopback and reviewed evidence paths", () => {
@@ -75,6 +81,29 @@ test("issue196 helper is read-only and contains no mutation or retry path", () =
   assert.match(helper, /DOCKER_AUTHORITY_MUTATION=NO/u);
   assert.match(helper, /CLOUDFLARE_MUTATION=NO/u);
   assert.match(helper, /TERMINAL_ACTIVATION=NO/u);
+});
+
+test("issue196 second-pass preflight is bounded and read-only", () => {
+  assert.match(secondPassHelper, /WEB_BASE='http:\/\/127\.0\.0\.1:8787'/u);
+  assert.match(secondPassHelper, /docker port "\$PROMETHEUS_CONTAINER" 9090\/tcp/u);
+  assert.match(secondPassHelper, /docker stats --no-stream/u);
+  assert.match(secondPassHelper, /journalctl --no-pager/u);
+  assert.match(secondPassHelper, /stat -Lc '%F:%U:%G:%a' \/dev\/vcio/u);
+  assert.match(secondPassHelper, /VCGENCMD_OPERATOR_RESULT/u);
+  assert.match(secondPassHelper, /JOURNAL_RPI5_DEPLOY_VISIBLE/u);
+  assert.match(secondPassHelper, /JOURNAL_RPI5_MONITOR_VISIBLE/u);
+  assert.match(secondPassHelper, /DOCKER_DIRECT_STATS_DURATION_MS/u);
+  assert.doesNotMatch(secondPassHelper, /\bsudo\b/u);
+  assert.doesNotMatch(secondPassHelper, /docker\s+(exec|inspect|restart|stop|start|rm|kill|update|run)\b/u);
+  assert.doesNotMatch(secondPassHelper, /systemctl\s+(start|stop|restart|reload|enable|disable|daemon-reload)/u);
+  assert.doesNotMatch(secondPassHelper, /\b(chmod|chown|usermod|useradd|groupadd|install|tee|truncate|touch|mkdir|rm|mv|cp)\b/u);
+  assert.doesNotMatch(secondPassHelper, /curl[^\n]*(--request|-X)\s*(POST|PUT|PATCH|DELETE)/u);
+  assert.match(secondPassHelper, /PRODUCTION_MUTATION=NO/u);
+  assert.match(secondPassHelper, /SYSTEMD_MUTATION=NO/u);
+  assert.match(secondPassHelper, /IDENTITY_PERMISSION_MUTATION=NO/u);
+  assert.match(secondPassHelper, /DOCKER_AUTHORITY_MUTATION=NO/u);
+  assert.match(secondPassHelper, /CLOUDFLARE_MUTATION=NO/u);
+  assert.match(secondPassHelper, /TERMINAL_ACTIVATION=NO/u);
 });
 
 test("issue196 production agent uses the bounded broker-backed Docker log reader", () => {

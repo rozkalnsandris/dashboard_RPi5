@@ -1,9 +1,12 @@
 import {
   MAINTENANCE_MAX_EVENTS,
+  parseMaintenanceEventsSnapshot,
   type MaintenanceEvent,
   type MaintenanceEventsSnapshot,
 } from "@dashboard-rpi5/contracts/maintenance";
 import { execFile as nodeExecFile } from "node:child_process";
+
+import { readRootOwnedEvidenceJson } from "./evidence-file.js";
 
 export const JOURNALCTL_PATH = "/usr/bin/journalctl";
 export const MAINTENANCE_UNIT = "rpi5-update.service" as const;
@@ -12,6 +15,8 @@ export const MAINTENANCE_FAILURE_MESSAGE_ID = "d9b373ed55a64feb8242e02dbe79a49c"
 export const MAINTENANCE_JOURNAL_TIMEOUT_MS = 1_500;
 export const MAINTENANCE_JOURNAL_MAX_BYTES = 128 * 1024;
 export const MAINTENANCE_JOURNAL_SINCE = "-7d" as const;
+export const DEFAULT_MAINTENANCE_EVIDENCE_PATH = "/var/lib/dashboard-rpi5/evidence/maintenance.json";
+export const DEFAULT_MAINTENANCE_EVIDENCE_MAX_BYTES = 64 * 1024;
 
 interface ExecFileOptions {
   timeout: number;
@@ -32,6 +37,13 @@ export interface MaintenanceReadDependencies {
     options: ExecFileOptions,
   ): Promise<ExecFileResult>;
   now(): Date;
+}
+
+export interface MaintenanceEvidenceReadOptions {
+  path?: string;
+  maxBytes?: number;
+  requiredUid?: number;
+  now?: () => Date;
 }
 
 const defaultDependencies: MaintenanceReadDependencies = {
@@ -163,7 +175,30 @@ export function parseMaintenanceJournalJsonLines(stdout: string): MaintenanceEve
     .slice(0, MAINTENANCE_MAX_EVENTS);
 }
 
-export async function readRecentMaintenanceEvents(
+export async function readMaintenanceEvidence(
+  options: MaintenanceEvidenceReadOptions = {},
+  signal?: AbortSignal,
+): Promise<MaintenanceEventsSnapshot> {
+  try {
+    const value = await readRootOwnedEvidenceJson(
+      {
+        path: options.path ?? DEFAULT_MAINTENANCE_EVIDENCE_PATH,
+        maxBytes: options.maxBytes ?? DEFAULT_MAINTENANCE_EVIDENCE_MAX_BYTES,
+        requiredUid: options.requiredUid ?? 0,
+      },
+      signal,
+    );
+    const parsed = parseMaintenanceEventsSnapshot(value);
+    const observedAt = (options.now ?? (() => new Date()))();
+    if (!Number.isFinite(observedAt.getTime())) throw new MaintenanceSourceUnavailableError();
+    return { observedAt: observedAt.toISOString(), events: parsed.events };
+  } catch (error) {
+    if (error instanceof MaintenanceSourceUnavailableError) throw error;
+    throw new MaintenanceSourceUnavailableError();
+  }
+}
+
+async function readMaintenanceJournalEvents(
   dependencies: MaintenanceReadDependencies = defaultDependencies,
   signal?: AbortSignal,
 ): Promise<MaintenanceEventsSnapshot> {
@@ -185,4 +220,12 @@ export async function readRecentMaintenanceEvents(
     if (error instanceof MaintenanceSourceUnavailableError) throw error;
     throw new MaintenanceSourceUnavailableError();
   }
+}
+
+export async function readRecentMaintenanceEvents(
+  dependencies?: MaintenanceReadDependencies,
+  signal?: AbortSignal,
+): Promise<MaintenanceEventsSnapshot> {
+  if (dependencies === undefined) return readMaintenanceEvidence({}, signal);
+  return readMaintenanceJournalEvents(dependencies, signal);
 }
