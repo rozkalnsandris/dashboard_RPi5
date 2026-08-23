@@ -6,6 +6,8 @@ export const DEPLOYMENT_REPOSITORY = "rozkalnsandris/RPi5_main" as const;
 
 export const DEPLOYMENT_IMPACT_PATHS = [
   "ops/bin/rpi5-backup",
+  "ops/bin/rpi5-backup-serialized",
+  "ops/lib/rpi5-maintenance-locks.sh",
   "ops/cron.d/rpi5-backup",
   "ops/logrotate.d/rpi5-backup",
   "ops/deploy/targets.json",
@@ -26,6 +28,8 @@ export type DeploymentClassification = Static<typeof DeploymentClassificationSch
 
 const DeploymentImpactPathSchema = Type.Union([
   Type.Literal("ops/bin/rpi5-backup"),
+  Type.Literal("ops/bin/rpi5-backup-serialized"),
+  Type.Literal("ops/lib/rpi5-maintenance-locks.sh"),
   Type.Literal("ops/cron.d/rpi5-backup"),
   Type.Literal("ops/logrotate.d/rpi5-backup"),
   Type.Literal("ops/deploy/targets.json"),
