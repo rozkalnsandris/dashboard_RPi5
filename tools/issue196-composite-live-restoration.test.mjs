@@ -6,10 +6,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const helperPath = resolve("tools/operator/issue196-composite-live-restoration.sh");
-const helper = await readFile(helperPath, "utf8");
+const helperModules = [
+  helperPath,
+  resolve("tools/operator/issue196-composite-live-common.sh"),
+  resolve("tools/operator/issue196-composite-live-transaction.sh"),
+  resolve("tools/operator/issue196-composite-live-apply.sh"),
+];
+const helper = (await Promise.all(helperModules.map((path) => readFile(path, "utf8")))).join("\n");
 
 test("issue196 Composite Live helper is valid bash", () => {
-  execFileSync("bash", ["-n", helperPath], { stdio: "pipe" });
+  for (const path of helperModules) execFileSync("bash", ["-n", path], { stdio: "pipe" });
 });
 
 test("helper pins the reviewed functional and producer boundaries", () => {
@@ -31,6 +37,9 @@ test("dashboard post-base lineage is limited to the final issue196 gate", () => 
     "package.json",
     "tools/issue196-composite-live-restoration.test.mjs",
     "tools/operator/issue196-composite-live-restoration.sh",
+    "tools/operator/issue196-composite-live-common.sh",
+    "tools/operator/issue196-composite-live-transaction.sh",
+    "tools/operator/issue196-composite-live-apply.sh",
   ]) {
     assert.ok(helper.includes(`"${path}"`));
   }
