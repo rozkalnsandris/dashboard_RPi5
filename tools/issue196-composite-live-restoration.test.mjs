@@ -23,6 +23,7 @@ test("helper pins the reviewed functional and producer boundaries", () => {
   assert.match(helper, /FUNCTIONAL_BASE_TREE="ec859e2b1d5c74be47986305d126dacf75093e0e"/u);
   assert.match(helper, /PRODUCER_REVIEWED_SHA="dff7d6346140f8be98c2edb09a6663d80688e0d7"/u);
   assert.match(helper, /TRUSTED_BACKUP_SHA256="5ca85ae53bdf4fa3b99e21e1a30ddaa077d9e1791505b1e8389ee8587d011735"/u);
+  assert.match(helper, /bcf43633a61139153e3bac3b2c61f5118c742459/u);
   assert.match(helper, /AUTHORIZE_ISSUE196_COMPOSITE_LIVE_RESTORATION/u);
   assert.match(helper, /I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ACTIVATION/u);
 });
@@ -78,6 +79,21 @@ test("preflight dispatcher is production read-only", () => {
   assert.doesNotMatch(preflight, /systemctl restart/u);
   assert.doesNotMatch(preflight, /systemctl enable/u);
   assert.doesNotMatch(preflight, /--apply/u);
+});
+
+test("backup baseline recognizes the reviewed V25 wrapper/core split and preserves mode", () => {
+  const start = helper.indexOf("require_backup_baseline() {");
+  const end = helper.indexOf("require_public_access_boundary() {", start);
+  assert.ok(start >= 0 && end > start);
+  const baseline = helper.slice(start, end);
+
+  assert.match(baseline, /0:0:750:regular file/u);
+  assert.match(baseline, /bcf43633a61139153e3bac3b2c61f5118c742459/u);
+  assert.match(baseline, /sudo \/usr\/bin\/git hash-object "\$BACKUP_ENTRYPOINT"/u);
+  assert.match(baseline, /sudo \/usr\/bin\/sha256sum "\$BACKUP_CORE"/u);
+  assert.match(helper, /install -o root -g root -m 0750 "\$\{PRODUCER_STAGE\}\/rpi5-backup-v10-core" "\$BACKUP_CORE"/u);
+  assert.match(helper, /install -o root -g root -m 0750 "\$\{PRODUCER_STAGE\}\/rpi5-backup-serialized" "\$BACKUP_ENTRYPOINT"/u);
+  assert.doesNotMatch(helper, /-m 0755 "\$\{PRODUCER_STAGE\}\/rpi5-backup-(?:v10-core|serialized)"/u);
 });
 
 test("receipt binds target, producer, current release, Prometheus hash and backup category", () => {
