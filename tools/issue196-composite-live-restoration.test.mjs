@@ -22,7 +22,7 @@ test("helper pins the reviewed functional and producer boundaries", () => {
   assert.match(helper, /FUNCTIONAL_BASE_SHA="fb8b6067ae12eacfbfc21d2c104602f7fa257c1f"/u);
   assert.match(helper, /FUNCTIONAL_BASE_TREE="ec859e2b1d5c74be47986305d126dacf75093e0e"/u);
   assert.match(helper, /PRODUCER_REVIEWED_SHA="dff7d6346140f8be98c2edb09a6663d80688e0d7"/u);
-  assert.match(helper, /TRUSTED_BACKUP_SHA256="5ca85a777422f74b30c5db12831e389ffe0c986186044a1c1fc4b3c5feadbb76"/u);
+  assert.match(helper, /TRUSTED_BACKUP_SHA256="5ca85ae53bdf4fa3b99e21e1a30ddaa077d9e1791505b1e8389ee8587d011735"/u);
   assert.match(helper, /AUTHORIZE_ISSUE196_COMPOSITE_LIVE_RESTORATION/u);
   assert.match(helper, /I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ACTIVATION/u);
 });
