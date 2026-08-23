@@ -14,8 +14,8 @@ install_producer_source() {
   sudo /usr/bin/install -o root -g root -m 0644 "${PRODUCER_STAGE}/dashboard-evidence.py" "$PRODUCER_HELPER"
   sudo /usr/bin/install -o root -g root -m 0644 "${PRODUCER_STAGE}/rpi5-maintenance-locks.sh" "$LOCK_HELPER"
   sudo /usr/bin/install -o root -g root -m 0755 "${PRODUCER_STAGE}/rpi5-dashboard-evidence" "$PRODUCER_WRAPPER"
-  sudo /usr/bin/install -o root -g root -m 0755 "${PRODUCER_STAGE}/rpi5-backup-v10-core" "$BACKUP_CORE"
-  sudo /usr/bin/install -o root -g root -m 0755 "${PRODUCER_STAGE}/rpi5-backup-serialized" "$BACKUP_ENTRYPOINT"
+  sudo /usr/bin/install -o root -g root -m 0750 "${PRODUCER_STAGE}/rpi5-backup-v10-core" "$BACKUP_CORE"
+  sudo /usr/bin/install -o root -g root -m 0750 "${PRODUCER_STAGE}/rpi5-backup-serialized" "$BACKUP_ENTRYPOINT"
   sudo /usr/bin/install -o root -g root -m 0644 "${PRODUCER_STAGE}/rpi5-dashboard-evidence.service" "/etc/systemd/system/${EVIDENCE_SERVICE}"
   sudo /usr/bin/install -o root -g root -m 0644 "${PRODUCER_STAGE}/rpi5-dashboard-evidence.timer" "/etc/systemd/system/${EVIDENCE_TIMER}"
 }
