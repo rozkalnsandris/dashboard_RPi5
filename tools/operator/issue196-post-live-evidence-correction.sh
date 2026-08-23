@@ -108,7 +108,7 @@ else
   [[ "$OWNER_ACK" == "$OWNER_ACK_REQUIRED" ]] || fail "owner acknowledgement mismatch"
 fi
 
-for command_name in curl git node sha256sum readlink stat systemctl id python3; do
+for command_name in curl date git node sha256sum readlink stat systemctl id python3; do
   command -v "$command_name" >/dev/null 2>&1 || fail "required command missing: ${command_name}"
 done
 
