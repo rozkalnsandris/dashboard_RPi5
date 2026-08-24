@@ -5,6 +5,8 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
+import { assertPackagedTerminalNativeRuntime } from "./package-terminal-native-runtime.mjs";
+
 export const PRODUCTION_CANDIDATE_SCHEMA = "dashboard-rpi5.production-candidate.v1";
 export const PRODUCTION_CANDIDATE_HASH = "sha256";
 
@@ -37,6 +39,7 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
   "ops/systemd/dashboard-rpi5-docker-broker.service",
   "ops/systemd/dashboard-rpi5-terminal.socket",
   "ops/systemd/dashboard-rpi5-terminal@.service",
+  "tools/package-terminal-native-runtime.mjs",
   "tools/production-candidate-manifest.mjs",
   "tools/production-runtime-smoke.mjs",
   "tools/production-release-controller.mjs",
@@ -329,6 +332,7 @@ async function main() {
   let input;
   try {
     input = parseCli(process.argv.slice(2));
+    await assertPackagedTerminalNativeRuntime({ rootDir: input.rootDir });
     if (input.verifyPath === undefined) {
       const manifest = await createProductionCandidateManifest(input);
       process.stdout.write(`${JSON.stringify(manifest)}\n`);

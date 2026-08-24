@@ -17,6 +17,9 @@
     "manifestMarkerMode": "0600",
     "callerUmaskIndependent": true
   },
+  "executableFileModes": {
+    "apps/terminal-agent/dist/native/node-pty/build/Release/spawn-helper": "0755"
+  },
   "atomicPointerSwap": true,
   "exclusiveApplyLock": true,
   "staleLockAutoCleanup": false,

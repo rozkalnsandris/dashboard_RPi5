@@ -109,6 +109,8 @@ xterm.js + PTY over secure WebSocket after a dedicated security review. Owner-on
 
 Source readiness also requires an explicit screen-reader mode, keyboard/touch-reachable input focus, 48px controls, A55 keyboard-open acceptance and non-persistence of session material. See `docs/TERMINAL_ACCESSIBILITY_READINESS.md`.
 
+Native PTY readiness additionally requires the exact-pinned `node-pty` Linux runtime to be source-built before candidate creation, staged into the immutable release under a fixed allowlisted path, and smoke-tested from the packaged runtime on both x64 and ARM64. General production `node_modules`, live `npm install` and live native compilation are not activation repair paths.
+
 Production activation requires separate owner authorization.
 
 ### Phase 10 — Controlled write actions

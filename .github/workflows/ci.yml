@@ -89,11 +89,23 @@ jobs:
           node-version-file: .node-version
           cache: npm
 
+      - name: Install native build toolchain
+        if: needs.classify.outputs.runtime == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends make python3 build-essential
+
       - name: Install locked dependencies
         run: npm ci --ignore-scripts
 
       - name: Dependency audit
         run: npm audit --audit-level=high
+
+      - name: Selectively build node-pty from source
+        if: needs.classify.outputs.runtime == 'true'
+        env:
+          npm_config_build_from_source: "true"
+        run: npm rebuild node-pty --dangerously-allow-all-scripts --foreground-scripts
 
       - name: Typecheck
         run: npm run typecheck
@@ -106,6 +118,10 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Stage immutable terminal native runtime
+        if: needs.classify.outputs.runtime == 'true'
+        run: node tools/package-terminal-native-runtime.mjs --root .
 
       - name: Validate production candidate manifest
         if: needs.classify.outputs.runtime == 'true'
@@ -173,10 +189,19 @@ jobs:
       - name: Selectively build node-pty from source
         env:
           npm_config_build_from_source: "true"
-        run: npm rebuild node-pty --foreground-scripts
+        run: npm rebuild node-pty --dangerously-allow-all-scripts --foreground-scripts
 
-      - name: Verify native PTY binding
+      - name: Verify checkout native PTY binding
         run: npm run test:native --workspace @dashboard-rpi5/terminal-agent
+
+      - name: Build terminal agent
+        run: npm run build --workspace @dashboard-rpi5/terminal-agent
+
+      - name: Stage immutable terminal native runtime
+        run: node tools/package-terminal-native-runtime.mjs --root .
+
+      - name: Verify packaged native PTY runtime
+        run: npm run test:native:packaged --workspace @dashboard-rpi5/terminal-agent
 
   fast-lane-merge-gate:
     name: FAST-LANE Merge Gate
