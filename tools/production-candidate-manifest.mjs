@@ -49,6 +49,7 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
 const FULL_SHA = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const INSTALLED_MANIFEST_MARKER = ".dashboard-production-candidate.json";
+const TERMINAL_AGENT_ENTRYPOINT = "apps/terminal-agent/dist/session-stdio-entry.js";
 
 function comparePath(left, right) {
   if (left < right) return -1;
@@ -195,6 +196,32 @@ async function collectInstalledReleasePaths(rootDir, absoluteDirectory) {
   return files;
 }
 
+async function optionalEntryState(root, relativePath) {
+  const absolutePath = resolve(root, ...relativePath.split("/"));
+  const normalized = relative(root, absolutePath);
+  if (normalized === "" || normalized === ".." || normalized.startsWith(`..${sep}`) || isAbsolute(normalized)) {
+    throw new Error("terminal candidate entrypoint escaped repository root");
+  }
+  try {
+    return { path: absolutePath, stat: await lstat(absolutePath) };
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function assertProgrammaticTerminalRuntimeClosure(rootDir) {
+  const root = resolve(rootDir);
+  const entrypoint = await optionalEntryState(root, TERMINAL_AGENT_ENTRYPOINT);
+  if (entrypoint === null) {
+    return { status: "TERMINAL_ENTRYPOINT_ABSENT" };
+  }
+  if (entrypoint.stat.isSymbolicLink() || !entrypoint.stat.isFile() || entrypoint.stat.size <= 0) {
+    throw new Error("terminal agent production entrypoint must be a non-empty regular file");
+  }
+  return assertPackagedTerminalNativeRuntime({ rootDir: root });
+}
+
 export async function createProductionCandidateManifest({ rootDir, sourceSha }) {
   validateSourceSha(sourceSha);
   const root = resolve(rootDir);
@@ -249,6 +276,7 @@ export async function verifyProductionCandidateManifest({ rootDir, sourceSha, ma
   if (JSON.stringify(manifest) !== JSON.stringify(expected)) {
     throw new Error("candidate manifest does not match exact build contents");
   }
+  await assertProgrammaticTerminalRuntimeClosure(rootDir);
   return expected;
 }
 

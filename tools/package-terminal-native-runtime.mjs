@@ -16,25 +16,20 @@ export const TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT =
   "apps/terminal-agent/dist/native/node-pty";
 export const TERMINAL_NATIVE_BINDING_RELATIVE_PATH =
   `${TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT}/build/Release/pty.node`;
-export const TERMINAL_NATIVE_SPAWN_HELPER_RELATIVE_PATH =
-  `${TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT}/build/Release/spawn-helper`;
 
 const SOURCE_PACKAGE_RELATIVE_ROOT = "node_modules/node-pty";
 const MAX_RUNTIME_FILE_BYTES = 32 * 1024 * 1024;
 const PACKAGE_FILE_MODE = 0o644;
-const SPAWN_HELPER_MODE = 0o755;
 const SUPPORTED_ARCHES = new Set(["x64", "arm64"]);
 export const TERMINAL_NATIVE_RUNTIME_FILES = Object.freeze([
+  "LICENSE",
   "package.json",
   "lib/index.js",
-  "lib/interfaces.js",
-  "lib/types.js",
   "lib/utils.js",
+  "lib/unixTerminal.js",
   "lib/terminal.js",
   "lib/eventEmitter2.js",
-  "lib/unixTerminal.js",
   "build/Release/pty.node",
-  "build/Release/spawn-helper",
 ]);
 
 function assertSupportedRuntime(platform, arch, allowSkip) {
@@ -70,7 +65,7 @@ async function assertRealDirectory(path, label) {
   return stat;
 }
 
-async function assertRegularFile(path, label, { executable = false, forbidExecutable = false } = {}) {
+async function assertRegularRuntimeFile(path, label) {
   const stat = await lstat(path);
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw new Error(`${label} must be a regular file`);
@@ -78,11 +73,7 @@ async function assertRegularFile(path, label, { executable = false, forbidExecut
   if (stat.size <= 0 || stat.size > MAX_RUNTIME_FILE_BYTES) {
     throw new Error(`${label} size is invalid`);
   }
-  const executableBits = stat.mode & 0o111;
-  if (executable && executableBits === 0) {
-    throw new Error(`${label} must be executable`);
-  }
-  if (forbidExecutable && executableBits !== 0) {
+  if ((stat.mode & 0o111) !== 0) {
     throw new Error(`${label} must not be executable`);
   }
   return stat;
@@ -153,10 +144,7 @@ export async function assertPackagedTerminalNativeRuntime({
   for (const relativePath of TERMINAL_NATIVE_RUNTIME_FILES) {
     const absolute = resolve(runtimeRoot, ...relativePath.split("/"));
     assertWithin(runtimeRoot, absolute, "packaged terminal native runtime file");
-    await assertRegularFile(absolute, `packaged ${relativePath}`, {
-      executable: relativePath === "build/Release/spawn-helper",
-      forbidExecutable: relativePath !== "build/Release/spawn-helper",
-    });
+    await assertRegularRuntimeFile(absolute, `packaged ${relativePath}`);
   }
 
   return {
@@ -166,7 +154,6 @@ export async function assertPackagedTerminalNativeRuntime({
     arch,
     runtimeRoot: TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT,
     binding: TERMINAL_NATIVE_BINDING_RELATIVE_PATH,
-    spawnHelper: TERMINAL_NATIVE_SPAWN_HELPER_RELATIVE_PATH,
   };
 }
 
@@ -176,9 +163,13 @@ async function assertSourceRuntime(sourceRoot) {
   for (const relativePath of TERMINAL_NATIVE_RUNTIME_FILES) {
     const absolute = resolve(sourceRoot, ...relativePath.split("/"));
     assertWithin(sourceRoot, absolute, "source terminal native runtime file");
-    await assertRegularFile(absolute, `source ${relativePath}`, {
-      executable: relativePath === "build/Release/spawn-helper",
-    });
+    const stat = await lstat(absolute);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw new Error(`source ${relativePath} must be a regular file`);
+    }
+    if (stat.size <= 0 || stat.size > MAX_RUNTIME_FILE_BYTES) {
+      throw new Error(`source ${relativePath} size is invalid`);
+    }
   }
 }
 
@@ -189,10 +180,7 @@ async function copyRuntimeFile(sourceRoot, destinationRoot, relativePath) {
   assertWithin(destinationRoot, destination, "destination terminal native runtime file");
   await mkdir(dirname(destination), { recursive: true, mode: 0o755 });
   await copyFile(source, destination, constants.COPYFILE_EXCL);
-  await chmod(
-    destination,
-    relativePath === "build/Release/spawn-helper" ? SPAWN_HELPER_MODE : PACKAGE_FILE_MODE,
-  );
+  await chmod(destination, PACKAGE_FILE_MODE);
 }
 
 export async function stageTerminalNativeRuntime({
@@ -213,15 +201,13 @@ export async function stageTerminalNativeRuntime({
   assertWithin(root, destinationRoot, "destination terminal native runtime root");
 
   const bindingSource = resolve(sourceRoot, "build/Release/pty.node");
-  const helperSource = resolve(sourceRoot, "build/Release/spawn-helper");
   const bindingState = await pathState(bindingSource);
-  const helperState = await pathState(helperSource);
   const destinationState = await pathState(destinationRoot);
 
-  if (ifBuilt && bindingState === null && helperState === null && destinationState === null) {
+  if (ifBuilt && bindingState === null && destinationState === null) {
     return { status: "SKIPPED", reason: "native-build-absent", platform, arch };
   }
-  if (bindingState === null || helperState === null) {
+  if (bindingState === null) {
     throw new Error("explicit node-pty source build output is incomplete");
   }
   if (destinationState !== null) {

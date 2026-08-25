@@ -37,9 +37,6 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
 const RELEASE_DIRECTORY_MODE = 0o755;
 const RELEASE_REGULAR_FILE_MODE = 0o644;
-const RELEASE_EXECUTABLE_FILE_MODE = 0o755;
-const RELEASE_EXECUTABLE_FILE_PATH =
-  "apps/terminal-agent/dist/native/node-pty/build/Release/spawn-helper";
 const MANIFEST_MARKER_MODE = 0o600;
 const ROOT_UID = 0;
 const ROOT_GID = 0;
@@ -126,15 +123,6 @@ export function validateReleaseActivationContract(contractValue) {
     releaseMetadata.callerUmaskIndependent !== true
   ) {
     throw new Error("release activation metadata invariant mismatch");
-  }
-  const executableFileModes = assertObject(contract.executableFileModes, "release executable file modes");
-  const executableEntries = Object.entries(executableFileModes);
-  if (
-    executableEntries.length !== 1 ||
-    executableEntries[0]?.[0] !== RELEASE_EXECUTABLE_FILE_PATH ||
-    executableEntries[0]?.[1] !== "0755"
-  ) {
-    throw new Error("release activation executable file mode invariant mismatch");
   }
   if (
     contract.atomicPointerSwap !== true ||
@@ -235,19 +223,6 @@ async function assertInstalledReleaseRoots(activationRoot) {
   await ensureRealDirectory(resolve(root, "releases"), "releases root");
 }
 
-async function verifyInstalledExecutableMode(releaseDir, manifest) {
-  if (!manifest.files.some((entry) => entry.path === RELEASE_EXECUTABLE_FILE_PATH)) return;
-  const executablePath = resolve(releaseDir, ...RELEASE_EXECUTABLE_FILE_PATH.split("/"));
-  if (!isWithin(releaseDir, executablePath)) throw new Error("release executable path escaped release root");
-  const stat = await lstat(executablePath);
-  if (stat.isSymbolicLink() || !stat.isFile()) {
-    throw new Error("release terminal spawn-helper must be a regular file");
-  }
-  if ((stat.mode & 0o777) !== RELEASE_EXECUTABLE_FILE_MODE) {
-    throw new Error("release terminal spawn-helper mode mismatch");
-  }
-}
-
 async function readInstalledManifest(activationRoot, sourceSha) {
   assertSha(sourceSha);
   await assertInstalledReleaseRoots(activationRoot);
@@ -259,7 +234,6 @@ async function readInstalledManifest(activationRoot, sourceSha) {
   const markerPath = resolve(releaseDir, MANIFEST_MARKER);
   const manifest = await readJsonBounded(markerPath, "installed candidate manifest");
   await verifyInstalledProductionCandidateManifest({ rootDir: releaseDir, sourceSha, manifest });
-  await verifyInstalledExecutableMode(releaseDir, manifest);
   return manifest;
 }
 
@@ -351,13 +325,7 @@ async function ensureReleaseParentDirectories(releaseDir, entryPath, activationR
   }
 }
 
-function installedRegularFileMode(entryPath, contract) {
-  return contract.executableFileModes[entryPath] === "0755"
-    ? RELEASE_EXECUTABLE_FILE_MODE
-    : RELEASE_REGULAR_FILE_MODE;
-}
-
-async function copyVerifiedRelease({ activationRoot, candidateRoot, manifest, contract }) {
+async function copyVerifiedRelease({ activationRoot, candidateRoot, manifest }) {
   const root = resolve(activationRoot);
   await ensureRealDirectory(root, "activation root");
   const releasesRoot = resolve(root, "releases");
@@ -384,12 +352,11 @@ async function copyVerifiedRelease({ activationRoot, candidateRoot, manifest, co
     await verifyManifestFileAgainstEntry(sourcePath, entry);
     await ensureReleaseParentDirectories(releaseDir, entry.path, activationRoot);
     await copyFile(sourcePath, destinationPath, constants.COPYFILE_EXCL);
-    await normalizeInstalledReleasePath(destinationPath, installedRegularFileMode(entry.path, contract), activationRoot);
+    await normalizeInstalledReleasePath(destinationPath, RELEASE_REGULAR_FILE_MODE, activationRoot);
     await verifyManifestFileAgainstEntry(destinationPath, entry);
   }
 
   await verifyProductionCandidateManifest({ rootDir: releaseDir, sourceSha: manifest.sourceSha, manifest });
-  await verifyInstalledExecutableMode(releaseDir, manifest);
   const markerPath = resolve(releaseDir, MANIFEST_MARKER);
   await writeFile(markerPath, `${JSON.stringify(manifest)}\n`, { encoding: "utf8", flag: "wx", mode: MANIFEST_MARKER_MODE });
   await normalizeInstalledReleasePath(markerPath, MANIFEST_MARKER_MODE, activationRoot);
@@ -468,7 +435,7 @@ export async function applyReleaseActivation({ activationRoot, candidateRoot, ma
     assertExpectedCurrent(observed, expectedCurrent);
     const manifest = await loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha });
     const target = await inspectTargetRelease(activationRoot, sourceSha);
-    if (!target.exists) await copyVerifiedRelease({ activationRoot, candidateRoot: resolve(candidateRoot), manifest, contract });
+    if (!target.exists) await copyVerifiedRelease({ activationRoot, candidateRoot: resolve(candidateRoot), manifest });
     await assertCurrentUnchanged(activationRoot, observed);
     if (observed !== sourceSha) await swapCurrentPointer(activationRoot, sourceSha);
     const finalCurrent = await inspectCurrent(activationRoot);

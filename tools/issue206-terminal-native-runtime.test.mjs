@@ -18,17 +18,13 @@ import {
   PRODUCTION_CANDIDATE_DIRECTORY_ROOTS,
   PRODUCTION_CANDIDATE_FILE_ROOTS,
   createProductionCandidateManifest,
+  verifyProductionCandidateManifest,
 } from "./production-candidate-manifest.mjs";
-import {
-  applyReleaseActivation,
-  validateReleaseActivationContract,
-} from "./production-release-controller.mjs";
 import {
   assertPackagedTerminalNativeRuntime,
   stageTerminalNativeRuntime,
   TERMINAL_NATIVE_RUNTIME_FILES,
   TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT,
-  TERMINAL_NATIVE_SPAWN_HELPER_RELATIVE_PATH,
 } from "./package-terminal-native-runtime.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -64,8 +60,7 @@ async function writeSourceRuntime(root, options = {}) {
       );
       continue;
     }
-    const mode = relativePath === "build/Release/spawn-helper" ? (options.helperMode ?? 0o755) : 0o644;
-    await writeFileAt(sourceRoot, relativePath, `fixture:${relativePath}\n`, mode);
+    await writeFileAt(sourceRoot, relativePath, `fixture:${relativePath}\n`);
   }
   return sourceRoot;
 }
@@ -74,7 +69,19 @@ async function modeOf(path) {
   return (await stat(path)).mode & 0o777;
 }
 
-test("native runtime staging copies only the reviewed Linux package subset", async (t) => {
+async function writeCandidateSkeleton(root, { terminalEntrypoint = true } = {}) {
+  for (const directory of PRODUCTION_CANDIDATE_DIRECTORY_ROOTS) {
+    await writeFileAt(root, `${directory}/artifact.txt`, `artifact:${directory}\n`);
+  }
+  if (terminalEntrypoint) {
+    await writeFileAt(root, "apps/terminal-agent/dist/session-stdio-entry.js", "export {};\n");
+  }
+  for (const file of PRODUCTION_CANDIDATE_FILE_ROOTS) {
+    await writeFileAt(root, file, `file:${file}\n`);
+  }
+}
+
+test("native runtime staging copies exactly the reviewed Linux runtime and normalizes 0644", async (t) => {
   const root = await workspace(t, "dashboard-issue206-stage-");
   await writeSourceRuntime(root);
 
@@ -85,6 +92,7 @@ test("native runtime staging copies only the reviewed Linux package subset", asy
   });
   assert.equal(result.status, "PACKAGED");
   assert.equal(result.package, "node-pty@1.1.0");
+  assert.equal(result.binding, `${TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT}/build/Release/pty.node`);
 
   const verified = await assertPackagedTerminalNativeRuntime({
     rootDir: root,
@@ -92,29 +100,31 @@ test("native runtime staging copies only the reviewed Linux package subset", asy
     arch: "arm64",
   });
   assert.equal(verified.status, "PASS");
-  assert.equal(
-    await modeOf(resolve(root, TERMINAL_NATIVE_SPAWN_HELPER_RELATIVE_PATH)),
-    0o755,
-  );
-  assert.equal(
-    await modeOf(resolve(root, TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT, "build/Release/pty.node")),
-    0o644,
-  );
+  assert.deepEqual(TERMINAL_NATIVE_RUNTIME_FILES, [
+    "LICENSE",
+    "package.json",
+    "lib/index.js",
+    "lib/utils.js",
+    "lib/unixTerminal.js",
+    "lib/terminal.js",
+    "lib/eventEmitter2.js",
+    "build/Release/pty.node",
+  ]);
+  for (const relativePath of TERMINAL_NATIVE_RUNTIME_FILES) {
+    assert.equal(
+      await modeOf(resolve(root, TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT, ...relativePath.split("/"))),
+      0o644,
+      relativePath,
+    );
+  }
 });
 
-test("native runtime staging fails closed on package/version, symlink and helper-mode drift", async (t) => {
+test("native runtime staging fails closed on wrong version, symlink and unsupported platform", async (t) => {
   const wrongVersion = await workspace(t, "dashboard-issue206-version-");
   await writeSourceRuntime(wrongVersion, { version: "1.1.1" });
   await assert.rejects(
     stageTerminalNativeRuntime({ rootDir: wrongVersion, platform: "linux", arch: "x64" }),
     /package identity mismatch/u,
-  );
-
-  const nonExecutable = await workspace(t, "dashboard-issue206-helper-");
-  await writeSourceRuntime(nonExecutable, { helperMode: 0o644 });
-  await assert.rejects(
-    stageTerminalNativeRuntime({ rootDir: nonExecutable, platform: "linux", arch: "x64" }),
-    /spawn-helper must be executable/u,
   );
 
   const symlinkRoot = await workspace(t, "dashboard-issue206-symlink-");
@@ -127,9 +137,16 @@ test("native runtime staging fails closed on package/version, symlink and helper
     stageTerminalNativeRuntime({ rootDir: symlinkRoot, platform: "linux", arch: "x64" }),
     /regular file/u,
   );
+
+  const unsupported = await workspace(t, "dashboard-issue206-platform-");
+  await writeSourceRuntime(unsupported);
+  await assert.rejects(
+    stageTerminalNativeRuntime({ rootDir: unsupported, platform: "darwin", arch: "arm64" }),
+    /supports only linux x64\/arm64/u,
+  );
 });
 
-test("if-built mode is inert when no explicit node-pty build output exists", async (t) => {
+test("if-built mode is inert when explicit node-pty build output is absent", async (t) => {
   const root = await workspace(t, "dashboard-issue206-skip-");
   await mkdir(resolve(root, "apps/terminal-agent/dist"), { recursive: true });
   const result = await stageTerminalNativeRuntime({
@@ -146,75 +163,67 @@ test("if-built mode is inert when no explicit node-pty build output exists", asy
   });
 });
 
-test("packaged runtime validator rejects extra files and executable drift", async (t) => {
-  const root = await workspace(t, "dashboard-issue206-packaged-");
-  await writeSourceRuntime(root);
-  await stageTerminalNativeRuntime({ rootDir: root, platform: "linux", arch: "x64" });
-  await writeFileAt(resolve(root, TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT), "unexpected.js", "nope\n");
+test("packaged runtime validator rejects extra files and executable-bit drift", async (t) => {
+  const extraRoot = await workspace(t, "dashboard-issue206-extra-");
+  await writeSourceRuntime(extraRoot);
+  await stageTerminalNativeRuntime({ rootDir: extraRoot, platform: "linux", arch: "x64" });
+  await writeFileAt(resolve(extraRoot, TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT), "unexpected.js", "nope\n");
   await assert.rejects(
-    assertPackagedTerminalNativeRuntime({ rootDir: root, platform: "linux", arch: "x64" }),
+    assertPackagedTerminalNativeRuntime({ rootDir: extraRoot, platform: "linux", arch: "x64" }),
     /file allowlist mismatch/u,
   );
+
+  const executableRoot = await workspace(t, "dashboard-issue206-mode-");
+  await writeSourceRuntime(executableRoot);
+  await stageTerminalNativeRuntime({ rootDir: executableRoot, platform: "linux", arch: "x64" });
+  await chmod(resolve(executableRoot, TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT, "build/Release/pty.node"), 0o755);
+  await assert.rejects(
+    assertPackagedTerminalNativeRuntime({ rootDir: executableRoot, platform: "linux", arch: "x64" }),
+    /must not be executable/u,
+  );
 });
 
-async function makeReleaseCandidate(t) {
-  const root = await workspace(t, "dashboard-issue206-release-");
-  const candidateRoot = resolve(root, "candidate");
-  await mkdir(candidateRoot, { recursive: true });
-  for (const directory of PRODUCTION_CANDIDATE_DIRECTORY_ROOTS) {
-    await writeFileAt(candidateRoot, `${directory}/artifact.txt`, `artifact:${directory}\n`);
-  }
-  await writeFileAt(
-    candidateRoot,
-    TERMINAL_NATIVE_SPAWN_HELPER_RELATIVE_PATH,
-    "spawn-helper-fixture\n",
-    0o600,
+test("programmatic candidate verification requires exact packaged runtime when terminal entrypoint exists", async (t) => {
+  const missingRoot = await workspace(t, "dashboard-issue206-candidate-missing-");
+  await writeCandidateSkeleton(missingRoot);
+  const missingManifest = await createProductionCandidateManifest({ rootDir: missingRoot, sourceSha: SHA });
+  await assert.rejects(
+    verifyProductionCandidateManifest({ rootDir: missingRoot, sourceSha: SHA, manifest: missingManifest }),
+    /ENOENT|packaged terminal native runtime/u,
   );
-  for (const file of PRODUCTION_CANDIDATE_FILE_ROOTS) {
-    await writeFileAt(candidateRoot, file, `file:${file}\n`);
-  }
-  const manifest = await createProductionCandidateManifest({ rootDir: candidateRoot, sourceSha: SHA });
-  const manifestPath = resolve(root, "candidate-manifest.json");
-  await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, "utf8");
-  return { root, candidateRoot, manifestPath };
-}
 
-test("release controller grants executable mode only to packaged spawn-helper", async (t) => {
-  const contract = validateReleaseActivationContract(
-    JSON.parse(await readFile(resolve(ROOT, "ops/production/release-activation-contract.json"), "utf8")),
-  );
-  assert.deepEqual(contract.executableFileModes, {
-    [TERMINAL_NATIVE_SPAWN_HELPER_RELATIVE_PATH]: "0755",
-  });
-
-  const candidate = await makeReleaseCandidate(t);
-  const activationRoot = resolve(candidate.root, "activation");
-  const result = await applyReleaseActivation({
-    activationRoot,
-    candidateRoot: candidate.candidateRoot,
-    manifestPath: candidate.manifestPath,
+  const completeRoot = await workspace(t, "dashboard-issue206-candidate-complete-");
+  await writeCandidateSkeleton(completeRoot);
+  await writeSourceRuntime(completeRoot);
+  await stageTerminalNativeRuntime({ rootDir: completeRoot, platform: "linux", arch: process.arch });
+  const completeManifest = await createProductionCandidateManifest({ rootDir: completeRoot, sourceSha: SHA });
+  const verified = await verifyProductionCandidateManifest({
+    rootDir: completeRoot,
     sourceSha: SHA,
-    expectedCurrent: "none",
-    contract,
+    manifest: completeManifest,
   });
-  assert.equal(result.status, "APPLIED");
-  const releaseRoot = resolve(activationRoot, "releases", SHA);
-  assert.equal(
-    await modeOf(resolve(releaseRoot, TERMINAL_NATIVE_SPAWN_HELPER_RELATIVE_PATH)),
-    0o755,
-  );
-  assert.equal(await modeOf(resolve(releaseRoot, "package.json")), 0o644);
+  assert.equal(verified.candidateSha256, completeManifest.candidateSha256);
 });
 
-test("source contracts keep terminal native loading fixed and activation disabled", async () => {
+test("source contracts keep fixed packaged loading and production terminal disabled", async () => {
   const nativeSource = await readFile(resolve(ROOT, "apps/terminal-agent/src/native-pty.ts"), "utf8");
   assert.match(nativeSource, /TERMINAL_NATIVE_PACKAGED_MODULE = "\.\/native\/node-pty"/u);
   assert.match(nativeSource, /require\(TERMINAL_NATIVE_PACKAGED_MODULE\)/u);
   assert.doesNotMatch(nativeSource, /require\(["']node-pty["']\)/u);
   assert.doesNotMatch(nativeSource, /NODE_PATH|process\.env\.[A-Z_]*PTY/iu);
 
+  const packagerSource = await readFile(resolve(ROOT, "tools/package-terminal-native-runtime.mjs"), "utf8");
+  assert.doesNotMatch(packagerSource, /spawn-helper/u);
+  assert.match(packagerSource, /"LICENSE"/u);
+
   const manifestSource = await readFile(resolve(ROOT, "tools/production-candidate-manifest.mjs"), "utf8");
-  assert.match(manifestSource, /await assertPackagedTerminalNativeRuntime\(\{ rootDir: input\.rootDir \}\);/u);
+  assert.match(manifestSource, /await assertProgrammaticTerminalRuntimeClosure\(rootDir\);/u);
+
+  const releaseContract = JSON.parse(
+    await readFile(resolve(ROOT, "ops/production/release-activation-contract.json"), "utf8"),
+  );
+  assert.equal("executableFileModes" in releaseContract, false);
+  assert.equal(releaseContract.releaseMetadata.regularFileMode, "0644");
 
   const rootPackage = JSON.parse(await readFile(resolve(ROOT, "package.json"), "utf8"));
   assert.match(rootPackage.scripts.check, /package-terminal-native-runtime\.mjs --root \. --if-built/u);
