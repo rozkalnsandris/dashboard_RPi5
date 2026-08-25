@@ -14,6 +14,16 @@
     "port": 8787,
     "webRoot": "/opt/dashboard_RPi5/current/apps/web/dist",
     "agentSocket": "/run/dashboard-rpi5/agent.sock",
+    "environmentFiles": [
+      {
+        "path": "/etc/dashboard-rpi5/web.env",
+        "required": true
+      },
+      {
+        "path": "/etc/dashboard-rpi5/terminal.env",
+        "required": false
+      }
+    ],
     "terminalEnabledByDefault": false
   },
   "agent": {

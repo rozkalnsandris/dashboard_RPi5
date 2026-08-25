@@ -13,6 +13,14 @@ Canonical files:
 - `release-activation-contract.json` — exact immutable release/current-pointer, exclusive apply lock and owner acknowledgement boundary;
 - `host-readiness-contract.json` — fixed read-only RPi5 pre-bootstrap evidence contract.
 
+The web service environment contract is ordered and fail-closed:
+
+1. `/etc/dashboard-rpi5/web.env` is mandatory and keeps `DASHBOARD_TERMINAL_ENABLED=disabled` in the base production environment;
+2. `/etc/dashboard-rpi5/terminal.env` is an optional systemd overlay loaded after the base file, so its absence leaves the terminal disabled;
+3. the checked-in `terminal.env.example` deliberately enables the feature while leaving all required Cloudflare Access owner-auth values empty. The server rejects that incomplete enabled configuration at startup rather than admitting terminal sessions.
+
+Source wiring of the optional overlay does not authorize creating `/etc/dashboard-rpi5/terminal.env`, changing systemd state, granting `dashboard-rpi5-terminal-client` membership, configuring Cloudflare Access, or activating the terminal. Those remain separate explicit owner-gated production/trust-boundary changes. No production Access values belong in GitHub.
+
 Read-only candidate validation for an already-staged release:
 
 ```text

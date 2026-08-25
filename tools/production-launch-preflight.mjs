@@ -10,6 +10,7 @@ export const AGENT_UNIT_PATH = "ops/systemd/dashboard-rpi5-agent.service";
 export const TERMINAL_SOCKET_PATH = "ops/systemd/dashboard-rpi5-terminal.socket";
 export const TERMINAL_SERVICE_PATH = "ops/systemd/dashboard-rpi5-terminal@.service";
 export const WEB_ENV_EXAMPLE_PATH = "ops/production/web.env.example";
+export const TERMINAL_ENV_EXAMPLE_PATH = "ops/production/terminal.env.example";
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const SUPPORTED_ARCHES = new Set(["x64", "arm64"]);
@@ -24,6 +25,7 @@ const REQUIRED_RELEASE_FILES = [
   TERMINAL_SOCKET_PATH,
   TERMINAL_SERVICE_PATH,
   WEB_ENV_EXAMPLE_PATH,
+  TERMINAL_ENV_EXAMPLE_PATH,
 ];
 
 function fail(errors, message) {
@@ -44,6 +46,36 @@ function requireExcludes(errors, text, forbidden, label) {
 
 function readObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
+}
+
+function validateWebEnvironmentFiles(errors, value) {
+  if (!Array.isArray(value)) {
+    fail(errors, "web environmentFiles must be an ordered array");
+    return;
+  }
+
+  const expected = [
+    { path: "/etc/dashboard-rpi5/web.env", required: true },
+    { path: "/etc/dashboard-rpi5/terminal.env", required: false },
+  ];
+  if (value.length !== expected.length) {
+    fail(errors, "web environmentFiles must contain exactly base and terminal overlay entries");
+  }
+
+  for (let index = 0; index < expected.length; index += 1) {
+    const entry = readObject(value[index]);
+    if (entry === null) {
+      fail(errors, `web environmentFiles[${index}] must be an object`);
+      continue;
+    }
+    requireEqual(errors, entry.path, expected[index].path, `web environmentFiles[${index}] path`);
+    requireEqual(
+      errors,
+      entry.required,
+      expected[index].required,
+      `web environmentFiles[${index}] required flag`,
+    );
+  }
 }
 
 export function validateRuntime({ platform, arch, nodeVersion }) {
@@ -94,6 +126,7 @@ export function validateProductionContract(value) {
   requireEqual(errors, web.port, 8787, "web port");
   requireEqual(errors, web.webRoot, "/opt/dashboard_RPi5/current/apps/web/dist", "web root");
   requireEqual(errors, web.agentSocket, "/run/dashboard-rpi5/agent.sock", "agent socket");
+  validateWebEnvironmentFiles(errors, web.environmentFiles);
   requireEqual(errors, web.terminalEnabledByDefault, false, "terminal default gate");
 
   requireEqual(errors, agent.user, "dashboard-rpi5-agent", "agent user");
@@ -118,7 +151,7 @@ export function validateProductionContract(value) {
   return errors;
 }
 
-export function validateBlueprintTexts({ webUnit, agentUnit, terminalSocket, terminalService, webEnv }) {
+export function validateBlueprintTexts({ webUnit, agentUnit, terminalSocket, terminalService, webEnv, terminalEnv }) {
   const errors = [];
 
   requireIncludes(errors, webUnit, "User=dashboard-rpi5-web", "web unit");
@@ -127,7 +160,23 @@ export function validateBlueprintTexts({ webUnit, agentUnit, terminalSocket, ter
   requireExcludes(errors, webUnit, "SupplementaryGroups=dashboard-rpi5-terminal-client", "base web unit");
   requireIncludes(errors, webUnit, "WorkingDirectory=/opt/dashboard_RPi5/current", "web unit");
   requireIncludes(errors, webUnit, "ExecStart=/usr/bin/node /opt/dashboard_RPi5/current/apps/server/dist/index.js", "web unit");
-  requireIncludes(errors, webUnit, "EnvironmentFile=/etc/dashboard-rpi5/web.env", "web unit");
+  const webEnvironmentFileLines = webUnit
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("EnvironmentFile="));
+  const expectedWebEnvironmentFileLines = [
+    "EnvironmentFile=/etc/dashboard-rpi5/web.env",
+    "EnvironmentFile=-/etc/dashboard-rpi5/terminal.env",
+  ];
+  if (
+    webEnvironmentFileLines.length !== expectedWebEnvironmentFileLines.length ||
+    webEnvironmentFileLines.some((line, index) => line !== expectedWebEnvironmentFileLines[index])
+  ) {
+    fail(
+      errors,
+      "web unit EnvironmentFile contract must be mandatory web.env followed by optional terminal.env",
+    );
+  }
   requireExcludes(errors, webUnit, "0.0.0.0", "web unit");
 
   requireIncludes(errors, agentUnit, "User=dashboard-rpi5-agent", "agent unit");
@@ -168,17 +217,30 @@ export function validateBlueprintTexts({ webUnit, agentUnit, terminalSocket, ter
   requireIncludes(errors, webEnv, "DASHBOARD_TERMINAL_ENABLED=disabled", "base web environment");
   requireExcludes(errors, webEnv, "DASHBOARD_TERMINAL_ENABLED=enabled", "base web environment");
 
+  requireIncludes(errors, terminalEnv, "DASHBOARD_TERMINAL_ENABLED=enabled", "terminal activation example");
+  for (const name of [
+    "DASHBOARD_TERMINAL_ACCESS_TEAM",
+    "DASHBOARD_TERMINAL_ACCESS_AUD",
+    "DASHBOARD_TERMINAL_OWNER_EMAIL",
+  ]) {
+    const emptyLine = `${name}=`;
+    if (!terminalEnv.split(/\r?\n/u).some((line) => line.trim() === emptyLine)) {
+      fail(errors, `terminal activation example must leave ${name} empty`);
+    }
+  }
+
   return errors;
 }
 
 export async function validateRepositoryBlueprints(rootDir) {
-  const [contractText, webUnit, agentUnit, terminalSocket, terminalService, webEnv] = await Promise.all([
+  const [contractText, webUnit, agentUnit, terminalSocket, terminalService, webEnv, terminalEnv] = await Promise.all([
     readFile(resolve(rootDir, PRODUCTION_CONTRACT_PATH), "utf8"),
     readFile(resolve(rootDir, WEB_UNIT_PATH), "utf8"),
     readFile(resolve(rootDir, AGENT_UNIT_PATH), "utf8"),
     readFile(resolve(rootDir, TERMINAL_SOCKET_PATH), "utf8"),
     readFile(resolve(rootDir, TERMINAL_SERVICE_PATH), "utf8"),
     readFile(resolve(rootDir, WEB_ENV_EXAMPLE_PATH), "utf8"),
+    readFile(resolve(rootDir, TERMINAL_ENV_EXAMPLE_PATH), "utf8"),
   ]);
 
   let contract;
@@ -190,7 +252,7 @@ export async function validateRepositoryBlueprints(rootDir) {
 
   return [
     ...validateProductionContract(contract),
-    ...validateBlueprintTexts({ webUnit, agentUnit, terminalSocket, terminalService, webEnv }),
+    ...validateBlueprintTexts({ webUnit, agentUnit, terminalSocket, terminalService, webEnv, terminalEnv }),
   ];
 }
 

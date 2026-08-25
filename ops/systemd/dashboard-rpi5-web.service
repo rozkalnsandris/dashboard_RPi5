@@ -19,6 +19,7 @@ SupplementaryGroups=dashboard-rpi5-agent-client
 WorkingDirectory=/opt/dashboard_RPi5/current
 Environment=NODE_ENV=production
 EnvironmentFile=/etc/dashboard-rpi5/web.env
+EnvironmentFile=-/etc/dashboard-rpi5/terminal.env
 ExecStart=/usr/bin/node /opt/dashboard_RPi5/current/apps/server/dist/index.js
 Restart=on-failure
 RestartSec=5s
