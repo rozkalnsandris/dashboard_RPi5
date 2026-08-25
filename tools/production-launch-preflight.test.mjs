@@ -5,6 +5,7 @@ import process from "node:process";
 
 import {
   AGENT_UNIT_PATH,
+  TERMINAL_ENV_EXAMPLE_PATH,
   TERMINAL_SERVICE_PATH,
   TERMINAL_SOCKET_PATH,
   WEB_ENV_EXAMPLE_PATH,
@@ -19,14 +20,15 @@ import {
 const repoRoot = process.cwd();
 
 async function readBlueprints() {
-  const [webUnit, agentUnit, terminalSocket, terminalService, webEnv] = await Promise.all([
+  const [webUnit, agentUnit, terminalSocket, terminalService, webEnv, terminalEnv] = await Promise.all([
     readFile(WEB_UNIT_PATH, "utf8"),
     readFile(AGENT_UNIT_PATH, "utf8"),
     readFile(TERMINAL_SOCKET_PATH, "utf8"),
     readFile(TERMINAL_SERVICE_PATH, "utf8"),
     readFile(WEB_ENV_EXAMPLE_PATH, "utf8"),
+    readFile(TERMINAL_ENV_EXAMPLE_PATH, "utf8"),
   ]);
-  return { webUnit, agentUnit, terminalSocket, terminalService, webEnv };
+  return { webUnit, agentUnit, terminalSocket, terminalService, webEnv, terminalEnv };
 }
 
 test("canonical production launch blueprints pass the read-only preflight", async () => {
@@ -55,6 +57,27 @@ test("base web service cannot inherit terminal connector membership", async () =
     webUnit: `${texts.webUnit}\nSupplementaryGroups=dashboard-rpi5-terminal-client\n`,
   };
   assert.ok(validateBlueprintTexts(modified).some((error) => error.includes("base web unit")));
+});
+
+test("web service env layering is ordered and terminal overlay stays optional", async () => {
+  const texts = await readBlueprints();
+  const reordered = {
+    ...texts,
+    webUnit: texts.webUnit.replace(
+      "EnvironmentFile=/etc/dashboard-rpi5/web.env\nEnvironmentFile=-/etc/dashboard-rpi5/terminal.env",
+      "EnvironmentFile=-/etc/dashboard-rpi5/terminal.env\nEnvironmentFile=/etc/dashboard-rpi5/web.env",
+    ),
+  };
+  assert.ok(validateBlueprintTexts(reordered).some((error) => error.includes("EnvironmentFile contract")));
+
+  const requiredOverlay = {
+    ...texts,
+    webUnit: texts.webUnit.replace(
+      "EnvironmentFile=-/etc/dashboard-rpi5/terminal.env",
+      "EnvironmentFile=/etc/dashboard-rpi5/terminal.env",
+    ),
+  };
+  assert.ok(validateBlueprintTexts(requiredOverlay).some((error) => error.includes("EnvironmentFile contract")));
 });
 
 test("read agent cannot inherit terminal connector membership", async () => {
@@ -102,11 +125,35 @@ test("base environment must keep full terminal disabled", async () => {
   assert.ok(validateBlueprintTexts(modified).some((error) => error.includes("base web environment")));
 });
 
-test("production identities are distinct and socket roles are fixed", async () => {
+test("terminal activation example remains intentionally fail closed", async () => {
+  const texts = await readBlueprints();
+  const modified = {
+    ...texts,
+    terminalEnv: texts.terminalEnv.replace(
+      "DASHBOARD_TERMINAL_ACCESS_TEAM=",
+      "DASHBOARD_TERMINAL_ACCESS_TEAM=example-team",
+    ),
+  };
+  assert.ok(
+    validateBlueprintTexts(modified).some((error) =>
+      error.includes("terminal activation example must leave DASHBOARD_TERMINAL_ACCESS_TEAM empty"),
+    ),
+  );
+});
+
+test("production identities, socket roles and env paths are fixed", async () => {
   const contract = JSON.parse(await readFile("ops/production/launch-contract.json", "utf8"));
   assert.deepEqual(validateProductionContract(contract), []);
   contract.agent.user = contract.web.user;
   assert.ok(validateProductionContract(contract).some((error) => error.includes("users must be distinct")));
+
+  const envDriftContract = JSON.parse(await readFile("ops/production/launch-contract.json", "utf8"));
+  envDriftContract.web.environmentFiles[1].required = true;
+  assert.ok(
+    validateProductionContract(envDriftContract).some((error) =>
+      error.includes("web environmentFiles[1] required flag"),
+    ),
+  );
 });
 
 test("preflight source contains no host mutation or process execution primitive", async () => {
