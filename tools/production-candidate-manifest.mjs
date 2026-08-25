@@ -5,6 +5,8 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
+import { assertPackagedTerminalNativeRuntime } from "./package-terminal-native-runtime.mjs";
+
 export const PRODUCTION_CANDIDATE_SCHEMA = "dashboard-rpi5.production-candidate.v1";
 export const PRODUCTION_CANDIDATE_HASH = "sha256";
 
@@ -37,6 +39,7 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
   "ops/systemd/dashboard-rpi5-docker-broker.service",
   "ops/systemd/dashboard-rpi5-terminal.socket",
   "ops/systemd/dashboard-rpi5-terminal@.service",
+  "tools/package-terminal-native-runtime.mjs",
   "tools/production-candidate-manifest.mjs",
   "tools/production-runtime-smoke.mjs",
   "tools/production-release-controller.mjs",
@@ -46,6 +49,7 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
 const FULL_SHA = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const INSTALLED_MANIFEST_MARKER = ".dashboard-production-candidate.json";
+const TERMINAL_AGENT_ENTRYPOINT = "apps/terminal-agent/dist/session-stdio-entry.js";
 
 function comparePath(left, right) {
   if (left < right) return -1;
@@ -192,6 +196,32 @@ async function collectInstalledReleasePaths(rootDir, absoluteDirectory) {
   return files;
 }
 
+async function optionalEntryState(root, relativePath) {
+  const absolutePath = resolve(root, ...relativePath.split("/"));
+  const normalized = relative(root, absolutePath);
+  if (normalized === "" || normalized === ".." || normalized.startsWith(`..${sep}`) || isAbsolute(normalized)) {
+    throw new Error("terminal candidate entrypoint escaped repository root");
+  }
+  try {
+    return { path: absolutePath, stat: await lstat(absolutePath) };
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function assertProgrammaticTerminalRuntimeClosure(rootDir) {
+  const root = resolve(rootDir);
+  const entrypoint = await optionalEntryState(root, TERMINAL_AGENT_ENTRYPOINT);
+  if (entrypoint === null) {
+    return { status: "TERMINAL_ENTRYPOINT_ABSENT" };
+  }
+  if (entrypoint.stat.isSymbolicLink() || !entrypoint.stat.isFile() || entrypoint.stat.size <= 0) {
+    throw new Error("terminal agent production entrypoint must be a non-empty regular file");
+  }
+  return assertPackagedTerminalNativeRuntime({ rootDir: root });
+}
+
 export async function createProductionCandidateManifest({ rootDir, sourceSha }) {
   validateSourceSha(sourceSha);
   const root = resolve(rootDir);
@@ -246,6 +276,7 @@ export async function verifyProductionCandidateManifest({ rootDir, sourceSha, ma
   if (JSON.stringify(manifest) !== JSON.stringify(expected)) {
     throw new Error("candidate manifest does not match exact build contents");
   }
+  await assertProgrammaticTerminalRuntimeClosure(rootDir);
   return expected;
 }
 
@@ -329,6 +360,7 @@ async function main() {
   let input;
   try {
     input = parseCli(process.argv.slice(2));
+    await assertPackagedTerminalNativeRuntime({ rootDir: input.rootDir });
     if (input.verifyPath === undefined) {
       const manifest = await createProductionCandidateManifest(input);
       process.stdout.write(`${JSON.stringify(manifest)}\n`);

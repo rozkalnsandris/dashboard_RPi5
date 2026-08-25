@@ -16,6 +16,7 @@ export const TERMINAL_NATIVE_MAX_COLS = 300;
 export const TERMINAL_NATIVE_MIN_ROWS = 2;
 export const TERMINAL_NATIVE_MAX_ROWS = 200;
 export const TERMINAL_NATIVE_SUPPORTED_ARCHES = Object.freeze(["x64", "arm64"] as const);
+export const TERMINAL_NATIVE_PACKAGED_MODULE = "./native/node-pty" as const;
 
 export interface TerminalNativePtyProcess {
   readonly pid: number;
@@ -223,6 +224,6 @@ function defaultRuntime(): TerminalNativeRuntime {
     getEffectiveGid: () => process.getegid?.(),
     getGroups: () => process.getgroups?.(),
     getUserInfo: () => userInfo(),
-    loadNodePty: () => require("node-pty") as NodePtyModule,
+    loadNodePty: () => require(TERMINAL_NATIVE_PACKAGED_MODULE) as NodePtyModule,
   };
 }
