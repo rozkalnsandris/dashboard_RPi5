@@ -215,3 +215,19 @@ Read `docs/FAST_LANE_V2_2.md` as the active dashboard-specific startup contract.
 
 All earlier repository-specific security boundaries remain in force and override FAST when stricter.
 <!-- END FAST-LANE-V2.2-MANAGED -->
+
+<!-- BEGIN GITHUB-ONLY-LIVE-ALL-V1-MANAGED -->
+## 13. GITHUB-ONLY / LIVE-ALL v1
+
+Canonical shared contract: `rozkalnsandris/ops-workflows/docs/GITHUB_ONLY_LIVE_ALL.md` with machine invariants in `policy/github-only-live-all-v1.json`.
+
+- `GITHUB-ONLY` (including `git hub only`) means fresh GitHub state, GitHub/source-level work, and rollout preparation up to but not including the first live mutation.
+- Persist deferred rollout state as public-safe `[DEPLOY-QUEUE]` issues in `rozkalnsandris/ops-workflows`; chat or memory is never the queue.
+- Merge remains separately explicit. Neither `GITHUB-ONLY` nor `LIVE-ALL` authorizes merge.
+- A GitHub write whose deterministic side effect is a production/live mutation counts as live work and must not run under `GITHUB-ONLY`.
+- Queue `READY` requires the final exact deployable SHA plus exact target/entrypoint/preflight/verification/allowed mutations and no outstanding separate prerequisite owner gate.
+- `LIVE-ALL` snapshots only open `READY` items present at command start, freshly revalidates each SHA/target/baseline and may execute only ordinary predeclared deployment mutations allowed by this repository.
+- PTY/Quick Commands activation, Docker authority expansion, systemd/service/container/host/root mutations beyond the exact reviewed deployment, Cloudflare infrastructure changes, secrets/credentials, permissions/identity and other separately gated writes remain excluded unless the repository-local contract and a separate explicit owner authorization allow them.
+- After any selected live mutation starts, error/ambiguity requires public-safe evidence preservation and STOP of the remaining batch; no automatic retry/rollback/cleanup/alternate mutation path unless explicitly pre-authorized.
+- Issue #1 and all existing dashboard production/security rules remain authoritative and stricter where applicable.
+<!-- END GITHUB-ONLY-LIVE-ALL-V1-MANAGED -->
