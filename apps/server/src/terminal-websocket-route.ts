@@ -9,6 +9,7 @@ import type { TerminalSessionRegistry } from "./terminal-session-security.js";
 import type { TerminalWebSocketAdmission } from "./terminal-websocket-admission.js";
 import {
   attachTerminalWebSocketBridge,
+  type TerminalBridgeObservation,
   type TerminalBridgeWebSocket,
 } from "./terminal-websocket-bridge.js";
 import { selectTerminalWebSocketApplicationProtocol } from "./terminal-websocket-protocol.js";
@@ -80,10 +81,19 @@ export function registerTerminalWebSocketRoute(
           sessionToken,
           sessionRegistry,
           localConnector,
+          observe: reportTerminalBridgeObservation,
         });
       },
     });
   });
+}
+
+function reportTerminalBridgeObservation(observation: TerminalBridgeObservation): void {
+  try {
+    process.stderr.write(`dashboard_terminal_bridge ${JSON.stringify(observation)}\n`);
+  } catch {
+    // Observability must never alter terminal transport behavior.
+  }
 }
 
 function readSingleHeader(value: string | string[] | undefined): string | undefined {

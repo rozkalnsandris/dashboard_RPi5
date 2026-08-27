@@ -8,6 +8,8 @@ import {
   TERMINAL_BRIDGE_EXIT_SEND_TIMEOUT_MS,
   TERMINAL_BRIDGE_MAX_WEBSOCKET_BUFFER_BYTES,
   TERMINAL_BRIDGE_READY_TIMEOUT_MS,
+  type TerminalBridgeObservation,
+  type TerminalBridgeObserver,
   type TerminalBridgeWebSocket,
 } from "./terminal-websocket-bridge.js";
 import {
@@ -70,7 +72,7 @@ class FakeWebSocket extends EventEmitter implements TerminalBridgeWebSocket {
 
   close(code: number, reason: string): void {
     this.closes.push({ code, reason });
-    this.emit("close");
+    this.emit("close", code);
   }
 
   terminate(): void {
@@ -102,7 +104,7 @@ function claimedRegistry(): TerminalSessionRegistry {
   return registry;
 }
 
-function harness() {
+function harness(observe?: TerminalBridgeObserver) {
   const socket = new FakeWebSocket();
   const local = new FakeLocalSocket();
   const registry = claimedRegistry();
@@ -111,6 +113,7 @@ function harness() {
     sessionToken: TOKEN,
     sessionRegistry: registry,
     localConnector: () => local as unknown as Socket,
+    ...(observe === undefined ? {} : { observe }),
   });
   return { socket, local, registry };
 }
@@ -297,5 +300,58 @@ describe("terminal websocket Unix bridge", () => {
 
     expect(socket.closes).toEqual([{ code: 1011, reason: "TERMINAL_LOCAL_UNAVAILABLE" }]);
     expect(registry.activeCount()).toBe(0);
+  });
+
+  it("emits bounded lifecycle observations without session or terminal content", () => {
+    const observations: TerminalBridgeObservation[] = [];
+    const session = harness((observation) => observations.push(observation));
+
+    session.local.connectNow();
+    session.local.serverSend({ v: 1, type: "ready" });
+    session.socket.emit("close", 1006, Buffer.from("private close reason", "utf8"));
+
+    expect(observations).toEqual([
+      { event: "WS_OPEN" },
+      { event: "LOCAL_CONNECTED" },
+      { event: "READY" },
+      { event: "WS_CLOSE", closeCode: 1006 },
+    ]);
+    const serialized = JSON.stringify(observations);
+    expect(serialized).not.toContain(TOKEN);
+    expect(serialized).not.toContain("private close reason");
+  });
+
+  it("reports only fixed failure classification and ignores observer failures", () => {
+    const observations: TerminalBridgeObservation[] = [];
+    const socket = new FakeWebSocket();
+    const registry = claimedRegistry();
+    attachTerminalWebSocketBridge({
+      socket,
+      sessionToken: TOKEN,
+      sessionRegistry: registry,
+      localConnector: () => {
+        throw new Error("native detail must stay private");
+      },
+      observe: (observation) => observations.push(observation),
+    });
+
+    expect(observations).toEqual([
+      { event: "WS_OPEN" },
+      {
+        event: "FAIL",
+        closeCode: 1011,
+        failReason: "TERMINAL_LOCAL_UNAVAILABLE",
+      },
+      { event: "WS_CLOSE", closeCode: 1011 },
+    ]);
+    expect(JSON.stringify(observations)).not.toContain("native detail must stay private");
+
+    const tolerant = harness(() => {
+      throw new Error("observer unavailable");
+    });
+    tolerant.local.connectNow();
+    tolerant.local.serverSend({ v: 1, type: "ready" });
+    expect(tolerant.socket.sent).toEqual(['{"type":"ready"}']);
+    expect(tolerant.registry.activeCount()).toBe(1);
   });
 });

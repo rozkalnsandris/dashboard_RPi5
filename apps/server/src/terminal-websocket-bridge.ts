@@ -37,6 +37,37 @@ type TerminalBridgeState =
   | "closing"
   | "closed";
 
+type TerminalBridgeFailureCloseCode = 1008 | 1011 | 1013;
+
+export type TerminalBridgeFailureReason =
+  | "TERMINAL_LOCAL_UNAVAILABLE"
+  | "TERMINAL_OUTPUT_OVERLOAD"
+  | "TERMINAL_OUTPUT_BACKPRESSURE"
+  | "TERMINAL_WEBSOCKET_SEND_FAILED"
+  | "TERMINAL_LOCAL_PROTOCOL_ERROR"
+  | "TERMINAL_SESSION_EXPIRED"
+  | "TERMINAL_LOCAL_BACKPRESSURE"
+  | "TERMINAL_PTY_UNAVAILABLE"
+  | "TERMINAL_NOT_READY"
+  | "TERMINAL_PROTOCOL_ERROR"
+  | "TERMINAL_LOCAL_READY_TIMEOUT"
+  | "TERMINAL_LOCAL_CLOSED"
+  | "TERMINAL_LOCAL_CONNECT_TIMEOUT";
+
+export type TerminalBridgeObservation =
+  | { event: "WS_OPEN" }
+  | { event: "LOCAL_CONNECTED" }
+  | { event: "READY" }
+  | { event: "WS_CLOSE"; closeCode: number | null }
+  | { event: "WS_ERROR" }
+  | {
+      event: "FAIL";
+      closeCode: TerminalBridgeFailureCloseCode;
+      failReason: TerminalBridgeFailureReason;
+    };
+
+export type TerminalBridgeObserver = (observation: TerminalBridgeObservation) => void;
+
 export interface TerminalBridgeWebSocket {
   readonly bufferedAmount: number;
   send(data: string, callback?: (error?: Error) => void): void;
@@ -52,6 +83,7 @@ interface TerminalWebSocketBridgeOptions {
   sessionToken: string;
   sessionRegistry: TerminalSessionRegistry;
   localConnector: TerminalLocalConnector;
+  observe?: TerminalBridgeObserver;
   setTimer?: (callback: () => void, milliseconds: number) => NodeJS.Timeout;
   clearTimer?: (timer: NodeJS.Timeout) => void;
 }
@@ -62,6 +94,13 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
   const setTimer = options.setTimer ?? ((callback, milliseconds) => setTimeout(callback, milliseconds));
   const clearTimer = options.clearTimer ?? ((timer) => clearTimeout(timer));
   const decoder = new TerminalLocalServerLineDecoder();
+  const observe = (observation: TerminalBridgeObservation) => {
+    try {
+      options.observe?.(observation);
+    } catch {
+      // Diagnostic reporting must never alter terminal fail-closed behavior.
+    }
+  };
 
   let state: TerminalBridgeState = "connecting";
   let localSocket: Socket | undefined;
@@ -69,6 +108,8 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
   let readyTimer: NodeJS.Timeout | undefined;
   let exitSendTimer: NodeJS.Timeout | undefined;
   let revoked = false;
+
+  observe({ event: "WS_OPEN" });
 
   const revokeSession = () => {
     if (revoked) return;
@@ -105,8 +146,8 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
 
   const finish = (
     closeWebSocket: boolean,
-    code = 1011,
-    reason = "TERMINAL_LOCAL_UNAVAILABLE",
+    code: TerminalBridgeFailureCloseCode = 1011,
+    reason: TerminalBridgeFailureReason = "TERMINAL_LOCAL_UNAVAILABLE",
   ) => {
     if (state === "closed") return;
     state = "closed";
@@ -116,6 +157,7 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
     revokeSession();
     destroyLocal();
     if (!closeWebSocket) return;
+    observe({ event: "FAIL", closeCode: code, failReason: reason });
     try {
       socket.close(code, reason);
     } catch {
@@ -123,9 +165,9 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
     }
   };
 
-  const failPolicy = (reason: string) => finish(true, 1008, reason);
-  const failOverload = (reason: string) => finish(true, 1013, reason);
-  const failInternal = (reason: string) => finish(true, 1011, reason);
+  const failPolicy = (reason: TerminalBridgeFailureReason) => finish(true, 1008, reason);
+  const failOverload = (reason: TerminalBridgeFailureReason) => finish(true, 1013, reason);
+  const failInternal = (reason: TerminalBridgeFailureReason) => finish(true, 1011, reason);
 
   const browserFrameCanBeSent = (frame: string): boolean => {
     if (Buffer.byteLength(frame, "utf8") > TERMINAL_BRIDGE_MAX_WEBSOCKET_FRAME_BYTES) {
@@ -253,6 +295,7 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
           return;
         }
         state = "active";
+        observe({ event: "READY" });
         sendBrowserFrame(serializeTerminalReadyFrame());
         return;
       case "output":
@@ -328,8 +371,14 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
 
   // Attach browser handlers synchronously before beginning asynchronous local IPC work.
   socket.on("message", handleBrowserMessage);
-  socket.once("close", () => finish(false));
-  socket.once("error", () => finish(false));
+  socket.once("close", (code?: number) => {
+    observe({ event: "WS_CLOSE", closeCode: normalizeWebSocketCloseCode(code) });
+    finish(false);
+  });
+  socket.once("error", () => {
+    observe({ event: "WS_ERROR" });
+    finish(false);
+  });
 
   try {
     localSocket = options.localConnector();
@@ -342,6 +391,7 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
     if (state === "closed" || state === "closing") return;
     clearConnectTimer();
     state = "awaiting-ready";
+    observe({ event: "LOCAL_CONNECTED" });
     readyTimer = setTimer(
       () => failInternal("TERMINAL_LOCAL_READY_TIMEOUT"),
       TERMINAL_BRIDGE_READY_TIMEOUT_MS,
@@ -384,6 +434,12 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
     TERMINAL_LOCAL_CONNECT_TIMEOUT_MS,
   );
   connectTimer.unref();
+}
+
+function normalizeWebSocketCloseCode(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1000 && value <= 4999
+    ? value
+    : null;
 }
 
 function decodeWebSocketText(data: unknown): string | null {
