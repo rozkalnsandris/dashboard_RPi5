@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { Socket } from "node:net";
+import { createServer, Socket } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "./app.js";
@@ -93,6 +93,19 @@ async function waitForClose(socket: {
   });
 }
 
+async function waitForTextMessage(socket: {
+  once(event: "message", listener: (data: Buffer) => void): unknown;
+}): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timed out waiting for WebSocket message")), 1_000);
+    timer.unref();
+    socket.once("message", (data) => {
+      clearTimeout(timer);
+      resolve(data.toString("utf8"));
+    });
+  });
+}
+
 describe("terminal WebSocket route", () => {
   it("keeps ordinary HTTP requests out of the upgrade admission path", async () => {
     const runtime = enabledRuntime();
@@ -160,6 +173,64 @@ describe("terminal WebSocket route", () => {
     ).rejects.toThrow("Unexpected server response: 403");
     first.terminate();
     await app.close();
+  });
+
+  it("delivers the first local ready frame through the negotiated WebSocket", async () => {
+    const runtime = enabledRuntime();
+    const token = mintSessionDirect(runtime);
+    let localConnection: Socket | undefined;
+    let resolveOpenReceived: (() => void) | undefined;
+    const openReceived = new Promise<void>((resolve) => {
+      resolveOpenReceived = resolve;
+    });
+    const localServer = createServer((connection) => {
+      localConnection = connection;
+      let pending = "";
+      connection.setEncoding("utf8");
+      connection.on("data", (chunk) => {
+        pending += chunk;
+        if (!pending.includes("\n")) return;
+        resolveOpenReceived?.();
+        resolveOpenReceived = undefined;
+      });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      localServer.once("error", reject);
+      localServer.listen(0, "127.0.0.1", resolve);
+    });
+    const address = localServer.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("test local server did not expose a TCP port");
+    }
+
+    const app = Fastify();
+    registerTerminalWebSocketPlugin(app);
+    registerTerminalWebSocketRoute(
+      app,
+      runtime.websocketAdmission,
+      runtime.sessionRegistry,
+      () => new Socket().connect(address.port, "127.0.0.1"),
+    );
+    await app.ready();
+
+    try {
+      const socket = await app.injectWS(TERMINAL_WEBSOCKET_PATH, {
+        headers: websocketHeaders(token),
+      });
+      expect(socket.protocol).toBe(TERMINAL_WEBSOCKET_APPLICATION_PROTOCOL);
+
+      const readyMessage = waitForTextMessage(socket);
+      await openReceived;
+      localConnection?.write('{"v":1,"type":"ready"}\n');
+
+      await expect(readyMessage).resolves.toBe('{"type":"ready"}');
+      socket.terminate();
+      await vi.waitFor(() => expect(runtime.sessionRegistry.activeCount()).toBe(0));
+    } finally {
+      await app.close();
+      await new Promise<void>((resolve) => localServer.close(() => resolve()));
+    }
   });
 
   it("fails closed when the source-only local terminal socket is not activated", async () => {
