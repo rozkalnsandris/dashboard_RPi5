@@ -83,6 +83,25 @@ The bridge uses fixed close reasons only; it never reflects tokens, filesystem p
 - normal PTY exit: browser exit frame is queued, its send callback must succeed, then WebSocket 1000 is sent;
 - if the normal-exit frame send does not complete within 2 seconds, the WebSocket is terminated instead of waiting without bound.
 
+## Post-activation diagnostic hardening
+
+A later source hardening slice adds public-safe bridge lifecycle observations so a production acceptance failure can be located without enabling request logging or exposing terminal/session material.
+
+The only emitted event classes are:
+
+```text
+WS_OPEN
+LOCAL_CONNECTED
+READY
+FAIL + fixed closeCode + fixed failReason
+WS_CLOSE + numeric closeCode (or null when unavailable)
+WS_ERROR
+```
+
+The observation payload never contains the session capability, Cloudflare Access JWT/assertion/cookies, owner identity, browser IP/headers, Unix-socket path, PTY input/output, shell contents or native error text. Failure reasons come from the bridge's compile-time allowlist; the WebSocket close reason text is not logged. Observer exceptions are swallowed so diagnostics cannot change authorization, transport, revocation or fail-closed semantics.
+
+When this source is later deployed, the server writes each observation as one `dashboard_terminal_bridge` line to its existing stderr/journal stream. This source change alone does not start a terminal session, change systemd/identity/permissions, mutate Cloudflare, or authorize a production deployment.
+
 ## Important non-goals / still absent
 
 Phase 9I does **not**:
