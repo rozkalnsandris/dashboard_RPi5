@@ -165,8 +165,11 @@ export class CloudflareAccessOwnerAuthVerifier {
       return { verified: false, reason: "TOKEN_MALFORMED" };
     }
 
-    if (parsed.header.alg !== "RS256" || parsed.header.typ !== "JWT") {
+    if (parsed.header.alg !== "RS256") {
       return { verified: false, reason: "UNSUPPORTED_ALGORITHM" };
+    }
+    if (parsed.header.typ !== undefined && parsed.header.typ !== "JWT") {
+      return { verified: false, reason: "TOKEN_MALFORMED" };
     }
 
     const kid = readBoundedString(parsed.header.kid, MAX_KID_LENGTH);
