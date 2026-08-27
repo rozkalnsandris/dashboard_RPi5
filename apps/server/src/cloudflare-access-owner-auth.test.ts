@@ -55,6 +55,33 @@ describe("CloudflareAccessOwnerAuthVerifier", () => {
     );
   });
 
+  it("verifies a correctly signed owner assertion when optional JOSE typ is omitted", async () => {
+    const fetchImpl = vi.fn<AccessFetch>(async () => responseWithKeys([jwkA]));
+    const verifier = createVerifier(fetchImpl);
+    const token = signJwt(validClaims, keyPairA.privateKey, "key-a", null);
+
+    await expect(verifier.verifyAssertion(token)).resolves.toEqual({
+      verified: true,
+      identity: {
+        email: OWNER_EMAIL,
+        subject: "owner-subject",
+      },
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an incompatible present JOSE typ before fetching signing keys", async () => {
+    const fetchImpl = vi.fn<AccessFetch>(async () => responseWithKeys([jwkA]));
+    const verifier = createVerifier(fetchImpl);
+    const token = signJwt(validClaims, keyPairA.privateKey, "key-a", "NOT-JWT");
+
+    await expect(verifier.verifyAssertion(token)).resolves.toEqual({
+      verified: false,
+      reason: "TOKEN_MALFORMED",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("rejects a token whose signature does not match the advertised kid", async () => {
     const verifier = createVerifier(async () => responseWithKeys([jwkA]));
     const token = signJwt(validClaims, keyPairB.privateKey, "key-a");
@@ -262,8 +289,13 @@ function signJwt(
   claims: Record<string, unknown>,
   privateKey: KeyObject,
   kid: string,
+  typ: string | null = "JWT",
 ): string {
-  const header = encodeJson({ alg: "RS256", typ: "JWT", kid });
+  const header = encodeJson({
+    alg: "RS256",
+    ...(typ === null ? {} : { typ }),
+    kid,
+  });
   const payload = encodeJson(claims);
   const signingInput = `${header}.${payload}`;
   const signature = sign("RSA-SHA256", Buffer.from(signingInput, "ascii"), privateKey).toString(

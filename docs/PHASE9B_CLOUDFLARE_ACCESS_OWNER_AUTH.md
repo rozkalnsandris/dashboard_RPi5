@@ -33,7 +33,7 @@ A caller cannot supply an arbitrary JWK/certificate URL. This prevents a future 
 `CloudflareAccessOwnerAuthVerifier.verifyAssertion()` fails closed and performs the following steps:
 
 1. require a bounded compact JWT with exactly three canonical Base64URL segments;
-2. require `alg=RS256`, `typ=JWT` and a bounded `kid`;
+2. require `alg=RS256` and a bounded `kid`; the optional JOSE `typ` member may be absent, but if present it must be exactly `JWT`;
 3. obtain the matching RSA public key only from the derived Cloudflare Access certs/JWK endpoint;
 4. verify the RSA/SHA-256 signature over the original JWT signing input;
 5. require the exact configured Access issuer;
@@ -41,6 +41,8 @@ A caller cannot supply an arbitrary JWK/certificate URL. This prevents a future 
 7. require an Access application identity assertion with an email and subject;
 8. require the email to match the configured owner identity;
 9. require bounded numeric `iat`, `nbf` and `exp` claims and enforce activity/expiry with a small bounded clock skew.
+
+The JOSE `typ` member is metadata rather than cryptographic proof. Omitting it does not weaken the verifier because the algorithm, signing key, signature, issuer, application audience, application identity type, owner identity and token-time checks remain mandatory. An incompatible present `typ` still fails closed before any signing-key fetch.
 
 Untrusted identity claims are never accepted before signature verification.
 
@@ -103,6 +105,8 @@ The existing Phase 9A terminal security module therefore remains unreachable fro
 Deterministic unit tests generate local RSA key pairs and cover:
 
 - valid owner assertion + signing-key cache;
+- valid owner assertion with the optional JOSE `typ` omitted;
+- incompatible present JOSE `typ` rejection before key fetch;
 - wrong signature;
 - wrong issuer;
 - wrong audience;
