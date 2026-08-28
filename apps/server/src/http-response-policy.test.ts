@@ -7,13 +7,18 @@ import { describe, expect, it } from "vitest";
 
 import { buildApp } from "./app.js";
 import {
+  buildContentSecurityPolicy,
   CONTENT_SECURITY_POLICY,
   PERMISSIONS_POLICY,
   REFERRER_POLICY,
 } from "./http-response-policy.js";
 
 function expectSecurityHeaders(headers: OutgoingHttpHeaders) {
-  expect(headers["content-security-policy"]).toBe(CONTENT_SECURITY_POLICY);
+  const csp = headers["content-security-policy"];
+  expect(typeof csp).toBe("string");
+  if (typeof csp !== "string") throw new Error("CSP header is missing");
+  expect(csp).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/]{24}'/);
+  expect(csp).toContain("default-src 'none'");
   expect(headers["x-content-type-options"]).toBe("nosniff");
   expect(headers["referrer-policy"]).toBe(REFERRER_POLICY);
   expect(headers["permissions-policy"]).toBe(PERMISSIONS_POLICY);
@@ -43,6 +48,13 @@ describe("HTTP response security policy", () => {
       expect(missingApi.statusCode).toBe(404);
       expect(missingApi.headers["cache-control"]).toBe("no-store");
       expectSecurityHeaders(missingApi.headers);
+
+      expect(health.headers["content-security-policy"]).not.toBe(
+        invalidHistory.headers["content-security-policy"],
+      );
+      expect(invalidHistory.headers["content-security-policy"]).not.toBe(
+        missingApi.headers["content-security-policy"],
+      );
     } finally {
       await app.close();
     }
@@ -76,7 +88,7 @@ describe("HTTP response security policy", () => {
     }
   });
 
-  it("keeps script execution strict while documenting the xterm style exception", () => {
+  it("keeps script execution strict while supporting Cloudflare-injected nonce scripts", () => {
     expect(CONTENT_SECURITY_POLICY).toContain("script-src 'self'");
     expect(CONTENT_SECURITY_POLICY).not.toContain("unsafe-eval");
     expect(CONTENT_SECURITY_POLICY).toContain("style-src 'self' 'unsafe-inline'");
@@ -84,5 +96,12 @@ describe("HTTP response security policy", () => {
     expect(CONTENT_SECURITY_POLICY).toContain(
       "connect-src 'self' wss://dash.rozkalns.net",
     );
+
+    const csp = buildContentSecurityPolicy("A".repeat(24));
+    const scriptDirective = csp
+      .split("; ")
+      .find((directive) => directive.startsWith("script-src "));
+    expect(scriptDirective).toBe(`script-src 'self' 'nonce-${"A".repeat(24)}'`);
+    expect(scriptDirective).not.toContain("unsafe-inline");
   });
 });

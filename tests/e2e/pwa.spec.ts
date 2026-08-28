@@ -3,7 +3,9 @@ import { expect, test } from "@playwright/test";
 test("PWA manifest exposes standalone identity and required icon sizes", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute("href", "/manifest.webmanifest");
+  const manifestLink = page.locator('link[rel="manifest"]');
+  await expect(manifestLink).toHaveAttribute("href", "/manifest.webmanifest");
+  await expect(manifestLink).toHaveAttribute("crossorigin", "use-credentials");
   const viewport = await page.locator('meta[name="viewport"]').getAttribute("content");
   expect(viewport).toContain("viewport-fit=cover");
   expect(viewport).not.toContain("user-scalable=no");
