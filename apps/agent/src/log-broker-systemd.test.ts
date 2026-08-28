@@ -16,6 +16,12 @@ function supplementaryGroups(unit: string): string[] {
   return value === undefined || value === "" ? [] : value.split(/\s+/u);
 }
 
+function unitUmask(unit: string): number {
+  const value = /^UMask=(0[0-7]{3})$/m.exec(unit)?.[1];
+  if (value === undefined) throw new Error("broker unit must define a four-digit octal UMask");
+  return Number.parseInt(value, 8);
+}
+
 describe("host log broker systemd source-only boundary", () => {
   it("keeps host-log authority behind one dedicated local client group", () => {
     expect(brokerUnit).toContain("# SOURCE-ONLY BLUEPRINT.");
@@ -47,7 +53,7 @@ describe("host log broker systemd source-only boundary", () => {
     for (const directive of [
       "RuntimeDirectory=dashboard-rpi5-log-broker",
       "RuntimeDirectoryMode=0750",
-      "UMask=0007",
+      "UMask=0117",
       "NoNewPrivileges=yes",
       "CapabilityBoundingSet=",
       "AmbientCapabilities=",
@@ -80,6 +86,10 @@ describe("host log broker systemd source-only boundary", () => {
     expect(brokerUnit).not.toContain("DASHBOARD_DOCKER_BROKER_SOCKET");
     expect(brokerUnit).not.toContain("dashboard-rpi5-terminal");
     expect(brokerUnit).not.toMatch(/ListenStream=(?:\d|127\.|0\.0\.0\.0|\[)/);
+  });
+
+  it("creates the broker socket no broader than the final 0660 client mode", () => {
+    expect(0o777 & ~unitUmask(brokerUnit)).toBe(0o660);
   });
 
   it("rate-limits repeated startup failures instead of looping indefinitely", () => {
