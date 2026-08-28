@@ -24,6 +24,7 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
   "apps/web/package.json",
   "apps/server/package.json",
   "apps/agent/package.json",
+  "apps/agent/dist/log-broker-entry.js",
   "apps/terminal-agent/package.json",
   "packages/contracts/package.json",
   "ops/production/launch-contract.json",
@@ -36,6 +37,7 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
   "ops/production/host-readiness-contract.json",
   "ops/systemd/dashboard-rpi5-web.service",
   "ops/systemd/dashboard-rpi5-agent.service",
+  "ops/systemd/dashboard-rpi5-log-broker.service",
   "ops/systemd/dashboard-rpi5-docker-broker.service",
   "ops/systemd/dashboard-rpi5-terminal.socket",
   "ops/systemd/dashboard-rpi5-terminal@.service",
@@ -250,7 +252,14 @@ export async function createProductionCandidateManifest({ rootDir, sourceSha }) 
     files.push(...(await collectDirectory(root, resolve(root, relativeDirectory))));
   }
   for (const relativeFile of PRODUCTION_CANDIDATE_FILE_ROOTS) {
-    files.push(await collectRegularFile(root, resolve(root, relativeFile)));
+    const file = await collectRegularFile(root, resolve(root, relativeFile));
+    if (files.some((entry) => entry.path === file.path)) {
+      if (file.path !== LOG_BROKER_ENTRYPOINT) {
+        throw new Error(`duplicate candidate path: ${file.path}`);
+      }
+      continue;
+    }
+    files.push(file);
   }
 
   files.sort((left, right) => comparePath(left.path, right.path));
