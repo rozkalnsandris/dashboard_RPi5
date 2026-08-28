@@ -2,6 +2,7 @@ import type {
   LogEntry,
   LogRange,
   LogSourceId,
+  LogSourceKind,
 } from "@dashboard-rpi5/contracts/logs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -25,6 +26,12 @@ const ranges: { value: LogRange; label: string }[] = [
   { value: "1h", label: "1 hour" },
   { value: "6h", label: "6 hours" },
   { value: "24h", label: "24 hours" },
+];
+const sourceGroups: { kind: LogSourceKind; label: string }[] = [
+  { kind: "DOCKER", label: "Docker" },
+  { kind: "SYSTEMD", label: "Systemd" },
+  { kind: "JOURNAL", label: "Journal" },
+  { kind: "FILE", label: "Files" },
 ];
 
 function entryKey(entry: LogEntry): string {
@@ -164,7 +171,7 @@ export function LogsPage() {
         <div>
           <p className="eyebrow">Registered sources only</p>
           <h1 id="logs-title">Logs</h1>
-          <p>Bounded read-only Docker, journal and registered-file evidence. Paths, units and container selectors stay server-owned.</p>
+          <p>Bounded read-only Docker, systemd, journal and registered-file evidence. Paths, units and container selectors stay server-owned.</p>
         </div>
       </div>
 
@@ -181,9 +188,17 @@ export function LogsPage() {
               setStickToBottom(true);
             }}
           >
-            {sourcesQuery.data?.sources.map((source) => (
-              <option key={source.sourceId} value={source.sourceId}>{source.label}</option>
-            ))}
+            {sourceGroups.map((group) => {
+              const sources = sourcesQuery.data?.sources.filter((source) => source.kind === group.kind) ?? [];
+              if (sources.length === 0) return null;
+              return (
+                <optgroup key={group.kind} label={group.label}>
+                  {sources.map((source) => (
+                    <option key={source.sourceId} value={source.sourceId}>{source.label}</option>
+                  ))}
+                </optgroup>
+              );
+            })}
           </select>
         </label>
 

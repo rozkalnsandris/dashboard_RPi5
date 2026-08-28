@@ -1,6 +1,6 @@
 # Phase 5B — Unified registered logs
 
-Phase 5B replaces the fixture Logs page with a bounded, read-only log explorer while preserving the local-agent trust boundary.
+Phase 5B provides a bounded, read-only log explorer while preserving explicit local trust boundaries.
 
 ## Route boundary
 
@@ -14,93 +14,78 @@ Agent routes:
 - `GET /v1/logs/sources`
 - `GET /v1/logs?sourceId=<registered>&range=<15m|1h|6h|24h>`
 
-There is no generic agent, Docker, systemd or filesystem proxy. Extra query fields are rejected.
+There is no generic agent, Docker, systemd, journal or filesystem proxy. Extra query fields are rejected.
 
-## Registered source IDs
+## Production source catalog
 
-The full source-owned registry keeps the reviewed parsers and trusted mappings:
+The reviewed source catalog is fixed in source code. The browser receives only descriptor IDs, labels, kinds and range semantics; it never receives or supplies mapped paths, unit names, journal matches or Docker Engine selectors.
 
 | Browser source ID | Backend | Trusted mapping |
 |---|---|---|
-| `docker:homeassistant` | Docker Engine logs API | container `homeassistant` |
-| `docker:prometheus` | Docker Engine logs API | container `prometheus` |
-| `systemd:docker` | journal | `docker.service` |
-| `systemd:ssh` | journal | `ssh.service` |
-| `systemd:cron` | journal | `cron.service` |
-| `systemd:dashboard-rpi5-agent` | journal | `dashboard-rpi5-agent.service` |
-| `systemd:rpi5-update` | journal | `rpi5-update.service` |
-| `journal:rpi5-deploy` | journal | fixed root/syslog origin |
-| `file:rpi5-backup` | bounded file tail | `/var/log/rpi5-backup.log` |
+| `docker:homeassistant` | Docker broker | container `homeassistant` |
+| `docker:prometheus` | Docker broker | container `prometheus` |
+| `systemd:docker` | log broker / journal | `docker.service` |
+| `systemd:ssh` | log broker / journal | `ssh.service` |
+| `systemd:cron` | log broker / journal | `cron.service` |
+| `systemd:dashboard-rpi5-agent` | log broker / journal | `dashboard-rpi5-agent.service` |
+| `systemd:rpi5-update` | log broker / journal | `rpi5-update.service` |
+| `systemd:cloudflared` | log broker / journal | `cloudflared.service` |
+| `systemd:rpi5-monitor` | log broker / journal | `rpi5-monitor.service` |
+| `systemd:rpi5-post-reboot` | log broker / journal | `rpi5-post-reboot.service` |
+| `systemd:rpi5-tmp-headroom` | log broker / journal | `rpi5-tmp-headroom.service` |
+| `systemd:rpi5-dashboard-evidence` | log broker / journal | `rpi5-dashboard-evidence.service` |
+| `systemd:hermes-tech-web` | log broker / journal | `hermes-tech-web.service` |
+| `journal:rpi5-deploy` | log broker / journal | fixed root/syslog `rpi5-deploy` origin |
+| `file:rpi5-backup` | log broker / bounded file tail | `/var/log/rpi5-backup.log` |
 
-The browser receives descriptor IDs, labels, source kinds and range semantics. It does not receive mapped file paths or command invocation.
+No discovered container, unit, journal match or filesystem path is accepted dynamically.
 
-### Production-advertised subset
+## Trust paths
 
-The source registry and the production-advertised source list are intentionally distinct.
+Docker logs retain the existing isolated authority:
 
-Issue #196 live evidence proved the production `dashboard-rpi5-agent` identity has no broad journal-read authority and cannot read the root-only `0600` backup log. Those are security invariants, not reasons to grant `adm`, `systemd-journal` or relaxed backup-log permissions.
+```text
+registered Docker sourceId
+  -> web/API
+  -> main agent
+  -> bounded Docker broker
+  -> fixed Docker Engine logs GET
+```
 
-Therefore `/v1/logs/sources` and the browser-facing `/api/logs/sources` advertise only sources backed by the current reviewed least-privilege production authority:
+Systemd, journal and the registered backup file use a separate source-only bounded capability:
 
-- `docker:homeassistant`
-- `docker:prometheus`
+```text
+registered host-log sourceId + fixed range
+  -> web/API
+  -> main agent
+  -> dashboard-rpi5-log-broker Unix socket
+  -> fixed journalctl unit/origin OR fixed backup-log tail
+```
 
-Both are read through the dedicated bounded Docker broker capability. Journal and root-only file registrations remain source-owned and fail closed when directly requested, but they are not presented as selectable live sources while they are guaranteed to be unavailable under the current service identity.
+The main `dashboard-rpi5-agent` remains non-root and must not join `docker`, `adm` or `systemd-journal`. The log broker has no mutation route, no generic command/path/unit/journal selector, no network authority, and is intended only for the reviewed journal records plus the one root-owned backup log.
 
-Re-advertising a dormant journal or root-only file source requires a separately reviewed narrow backend/trust-boundary decision. It must not be achieved by silently adding `docker`, `adm`, `systemd-journal`, `video`, sudo or root authority to the main agent.
+## Bounds and failure semantics
 
-## Docker logs
+The existing parser bounds remain authoritative:
 
-Docker sources use the Docker Engine container logs endpoint through the existing fixed local broker capability. They never read Docker `json-file` backing files directly.
-
-The request shape is server-owned:
-
-- stdout + stderr;
-- timestamps enabled;
-- server-derived `since` from a fixed range preset;
-- fixed `tail=400`;
-- no `follow` stream at the Engine boundary in this phase;
-- 512 KiB response ceiling and bounded deadline.
-
-Both Docker multiplexed raw-stream framing and plain TTY-style output are normalized. Docker log content is plain untrusted text; the dashboard does not infer severity from arbitrary message text.
-
-## Journal logs
-
-Dormant systemd registrations use fixed `/usr/bin/journalctl` with a reviewed unit registration when exercised in tests or a future separately authorized narrow runtime design. The fixed invocation uses:
-
-- no pager;
-- JSON output;
-- selected structured fields;
-- one registered `--unit=` value;
-- one fixed `--since=` preset;
-- maximum 400 lines;
-- bounded output and deadline;
-- no shell.
-
-Journal priority is normalized to the dashboard level vocabulary. Unknown/missing priority stays `UNKNOWN`.
-
-These registrations are not production-advertised under the current least-privilege agent identity.
-
-## Registered file logs
-
-The reviewed file registration maps `file:rpi5-backup` to `/var/log/rpi5-backup.log` in source code. The browser cannot provide or alter a path.
-
-The parser reads only the bounded tail of that exact file:
-
-- maximum 256 KiB read window;
 - maximum 400 normalized entries;
-- first partial line is discarded when the byte window starts mid-file;
-- no file mutation, rotation or deletion.
+- maximum 8,192 characters per normalized message;
+- maximum 512 KiB source evidence;
+- bounded journal command deadline;
+- maximum 256 KiB registered file tail;
+- fixed `15m`, `1h`, `6h`, `24h` time presets;
+- no shell invocation;
+- malformed, oversized, timed-out, missing or permission-denied evidence becomes `SOURCE_UNAVAILABLE`.
 
-A generic file does not guarantee trustworthy per-line timestamps. A strict leading UTC ISO timestamp may be recognized; otherwise `timestamp=null`. Because untimestamped file lines cannot be honestly filtered by a requested time range, file snapshots report `rangeApplied=false`. The UI explicitly labels this as tail-only evidence.
+The log broker adds its own bounded Unix API envelope: fixed GET-only routes, low concurrency, bounded response bytes and a hard request deadline. Docker Engine authority remains exclusively in the Docker broker.
 
-The production backup log remains root-owned `0600`; this source is therefore dormant and not production-advertised.
+File evidence stays tail-only because arbitrary file lines do not provide trustworthy timestamps; `rangeApplied=false` is preserved for `file:rpi5-backup`.
 
 ## Browser behavior
 
-The Logs page provides:
+The Logs page groups selectable sources as `Docker`, `Systemd`, `Journal` and `Files` while preserving:
 
-- registered source selection;
+- registered source selection only;
 - `15m`, `1h`, `6h`, `24h` range presets;
 - 2-second visible-only refresh while Live is enabled;
 - Pause to freeze the current validated snapshot;
@@ -109,30 +94,17 @@ The Logs page provides:
 - copy of visible normalized lines;
 - jump to newest;
 - no forced follow after the operator scrolls away from the bottom;
-- a bounded new-lines indicator;
+- bounded new-lines indicator;
 - explicit unavailable/degraded/empty/truncated/tail-only states.
 
-Each snapshot is capped at 400 entries, so the page never grows an unbounded log DOM. Messages are rendered as normal React text. There is no `innerHTML` path.
+Each snapshot remains capped at 400 entries and messages are rendered as React text; there is no `innerHTML` path.
 
 ## Activation remains separately gated
 
-Merging Phase 5B source does **not** authorize production activation.
+Issue #223 source introduces a `dashboard-rpi5-log-broker` blueprint and a dedicated `dashboard-rpi5-log-client` relationship. Merging this source does **not** install, create, enable, start or restart either service and does not change production groups or permissions.
 
-Before live activation on the Raspberry Pi, verify the actual service identity can read each advertised source using least privilege. Any of the following remains a separate explicit owner gate:
+Live activation must be separately owner-authorized and must verify the exact deployed SHA, exact service identities/groups/socket ownership, fixed journal/file readability, broker bounds, main-agent non-membership in `adm`/`systemd-journal`/`docker`, and all existing dashboard health checks. Cloudflare changes are not part of this capability.
 
-- Docker socket group/ACL/trust expansion;
-- journal group/ACL expansion;
-- backup-log file permission/ACL expansion;
-- installation/enabling/restarting of the dashboard agent or server;
-- any systemd unit mutation;
-- Cloudflare/DNS/Tunnel/Access changes.
+Until that production gate is executed, the already deployed release remains the production authority; source presence alone is not live evidence.
 
-Do not add broad `docker`, `adm`, `systemd-journal`, sudo or root access automatically merely to make a source readable. If the current service identity cannot read a source, keep it unadvertised/fail-closed until a separately reviewed narrow capability exists.
-
-## Failure semantics
-
-Malformed, oversized, timed-out, missing or permission-denied source evidence becomes `SOURCE_UNAVAILABLE`. The UI must not turn a missing source into an empty successful log stream.
-
-No logs are persisted by the dashboard in this phase. Browser/server caching of operational log payloads is not introduced.
-
-**Production deploy: YES for the issue #196 production-advertisement correction after merge; activation remains separately owner-gated.**
+**Production deploy: expected YES after merge, with log-broker activation separately owner-gated.**

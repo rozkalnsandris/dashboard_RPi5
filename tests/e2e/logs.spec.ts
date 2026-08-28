@@ -1,10 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const sourcesPayload = {
-  observedAt: "2026-08-15T16:00:00.000Z",
+  observedAt: "2026-08-28T10:00:00.000Z",
   sources: [
     { sourceId: "systemd:docker", label: "Docker Engine", kind: "SYSTEMD", rangeMode: "TIME" },
     { sourceId: "file:rpi5-backup", label: "RPi5 backup", kind: "FILE", rangeMode: "TAIL" },
+    { sourceId: "docker:homeassistant", label: "Home Assistant", kind: "DOCKER", rangeMode: "TIME" },
+    { sourceId: "journal:rpi5-deploy", label: "RPi5 deploy", kind: "JOURNAL", rangeMode: "TIME" },
   ],
 };
 
@@ -17,14 +19,14 @@ function logsPayload(message = "Docker daemon ready") {
     entries: [
       {
         sequence: 0,
-        timestamp: "2026-08-15T15:59:00.000Z",
+        timestamp: "2026-08-28T09:59:00.000Z",
         level: "INFO",
         stream: "JOURNAL",
         message,
       },
       {
         sequence: 1,
-        timestamp: "2026-08-15T15:59:30.000Z",
+        timestamp: "2026-08-28T09:59:30.000Z",
         level: "WARN",
         stream: "JOURNAL",
         message: "Retry budget approaching threshold",
@@ -55,12 +57,26 @@ async function mockLogs(page: Page) {
   return requestedUrls;
 }
 
-test("Logs renders bounded registered-source evidence without horizontal page overflow", async ({ page }) => {
+test("Logs groups bounded registered-source evidence without horizontal page overflow", async ({ page }, testInfo) => {
   const requestedUrls = await mockLogs(page);
   await page.goto("/logs");
 
   await expect(page.getByRole("heading", { name: "Logs" })).toBeVisible();
-  await expect(page.getByLabel("Source")).toHaveValue("systemd:docker");
+  const sourceSelect = page.getByLabel("Source");
+  await expect(sourceSelect).toHaveValue("systemd:docker");
+  expect(await sourceSelect.locator("optgroup").evaluateAll((groups) => groups.map((group) => group.getAttribute("label")))).toEqual([
+    "Docker",
+    "Systemd",
+    "Journal",
+    "Files",
+  ]);
+  await sourceSelect.focus();
+  await expect(sourceSelect).toBeFocused();
+  if (testInfo.project.name === "a55-class") {
+    const box = await sourceSelect.boundingBox();
+    expect(box?.width ?? 9999).toBeLessThanOrEqual(412);
+  }
+
   await expect(page.getByText("2 visible / 2 bounded lines")).toBeVisible();
   await expect(page.getByText("<script>window.__logXss = true</script>", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as Window & { __logXss?: boolean }).__logXss)).toBeUndefined();

@@ -6,24 +6,24 @@ This document describes the current trust boundaries. Historical phase documents
 
 ### Browser contract
 
-The browser supplies a stable `sourceId`, never a raw filesystem path, Docker Engine path, container socket target, or shell expression.
+The browser supplies a stable registered `sourceId` and a fixed range preset, never a raw filesystem path, Docker Engine path, unit name, journal match, container socket target, executable or shell expression.
 
 Examples:
 
 ```text
 docker:homeassistant
-docker:prometheus
 systemd:cloudflared
 systemd:dashboard-rpi5-agent
+journal:rpi5-deploy
 file:rpi5-backup
 ```
 
-The server maps these IDs to registered/allowlisted sources.
+The server maps IDs to fixed reviewed sources.
 
-### Current Docker log trust path
+### Docker log trust path
 
 ```text
-registered sourceId
+registered Docker sourceId
   -> web/API
   -> main agent
   -> typed bounded Docker broker log capability
@@ -32,29 +32,42 @@ registered sourceId
 
 Only the dedicated Docker broker owns Docker Engine socket authority. The main agent has no persistent `docker` or `video` group membership, does not accept caller-supplied Engine paths/filters/socket targets, and does not expose a generic Docker proxy.
 
-Journal and registered file logs remain purpose-built reads through the main-agent boundary where applicable.
+### Host log trust path
+
+```text
+registered systemd/journal/file sourceId + fixed range
+  -> web/API
+  -> main agent
+  -> typed bounded dashboard-rpi5-log-broker capability
+  -> fixed journalctl unit/origin OR fixed backup-log tail
+```
+
+The main agent must not gain `adm`, `systemd-journal`, sudo or root authority to make logs readable. The dedicated host-log broker is intentionally isolated from Docker Engine and terminal/PTTY authority. Its Unix API is GET-only, source/range allowlisted, concurrency/output/time bounded, and exposes no generic path, unit, journal selector, command execution or mutation capability. Root-owned backup-log access is limited in application code to the single registered `/var/log/rpi5-backup.log` path.
+
+The source-only broker/systemd blueprint does not itself activate this trust boundary in production. Installing identities/groups/units, enabling/restarting services or changing production permissions remains a separate explicit owner authorization.
 
 ### Implementation rules
 
 - broker-only Docker Engine authority;
-- fixed registered source IDs;
-- bounded line count / bytes / duration;
-- prefer structured journal output over parsing ANSI terminal output;
+- separate narrow host-log broker for journal/root-file authority;
+- fixed registered source IDs and exact backend mappings;
+- bounded line count / bytes / duration / concurrency;
+- structured journal output rather than ANSI terminal parsing;
 - escape output and never render log content through `innerHTML`;
 - redaction may be defense-in-depth but is not the primary secret boundary;
-- unknown or unregistered sources fail closed.
+- unknown, malformed or unavailable sources fail closed as `SOURCE_UNAVAILABLE`.
 
 ### UI
 
-- source picker;
+- grouped registered source picker (`Docker`, `Systemd`, `Journal`, `Files`);
 - range selector;
 - search;
 - live follow;
 - pause;
 - wrap/no-wrap;
-- copy selected lines;
+- copy visible lines;
 - jump to newest;
-- bounded DOM/virtualized rendering for long sessions.
+- bounded DOM rendering.
 
 ## Quick Commands
 
@@ -123,8 +136,8 @@ Required controls remain:
 
 ## Production state
 
-Terminal source exists for separately gated future activation, but production terminal/PTTY remains absent/fail-closed. Source presence is not activation evidence. Any terminal activation, host permission change, systemd activation, or other trust-boundary mutation requires a separate explicit owner authorization.
+Source presence is not activation evidence. Any host-log broker activation, terminal activation, host permission change, systemd activation, or other trust-boundary mutation requires a separate explicit owner authorization.
 
 ## Why the terminal is isolated
 
-Browser terminals raise the security requirements of the whole scripting context. Keeping PTY execution in a separate contained normal-user terminal agent prevents free-form shell capability from inheriting Docker Engine authority or the main agent's host/journal evidence privileges.
+Browser terminals raise the security requirements of the whole scripting context. Keeping PTY execution in a separate contained normal-user terminal agent prevents free-form shell capability from inheriting Docker Engine authority or host-log evidence privileges.
