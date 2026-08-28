@@ -114,7 +114,6 @@ test("issue196 second-pass preflight is bounded and read-only", () => {
 
 test("issue226 recovery preflight binds fresh host evidence to PLAN only", () => {
   for (const token of [
-    "/opt/dashboard_RPi5/current",
     "/run/dashboard-rpi5-log-broker/broker.sock",
     "/var/log/rpi5-backup.log",
     "10-quick-commands.conf",
@@ -129,6 +128,8 @@ test("issue226 recovery preflight binds fresh host evidence to PLAN only", () =>
   ]) {
     assert.ok(issue226Preflight.includes(token), `missing issue226 preflight token: ${token}`);
   }
+  assert.match(issue226Preflight, /PRODUCTION_ROOT='\/opt\/dashboard_RPi5'/u);
+  assert.match(issue226Preflight, /CURRENT_LINK="\$\{PRODUCTION_ROOT\}\/current"/u);
   assert.match(issue226Preflight, /--max-time "\$timeout_seconds"/u);
   assert.match(
     issue226Preflight,
