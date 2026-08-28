@@ -8,7 +8,9 @@ interface StartLogBrokerOptions { socketPath?: string; reader?: PrivilegedLogRea
 export async function startLogBroker(options: StartLogBrokerOptions = {}) {
   const socketPath = options.socketPath ?? process.env[LOG_BROKER_SOCKET_ENV] ?? DEFAULT_LOG_BROKER_SOCKET_PATH;
   await prepareSocketPath(socketPath);
-  const server = createLogBrokerServer({ reader: options.reader });
+  const server = createLogBrokerServer(
+    options.reader === undefined ? {} : { reader: options.reader },
+  );
   try {
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => { server.off("listening", onListening); reject(error); };
