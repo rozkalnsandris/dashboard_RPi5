@@ -14,6 +14,9 @@ import {
 } from "./logs-read.js";
 import { getProductionLogSourceDescriptor } from "./production-log-sources.js";
 
+export const SYSTEMCTL_PATH = "/usr/bin/systemctl";
+const SYSTEMCTL_MAX_BUFFER_BYTES = 16 * 1024;
+
 const SYSTEMD_UNIT_BY_SOURCE = Object.freeze<Readonly<Partial<Record<LogSourceId, string>>>>({
   "systemd:docker": "docker.service",
   "systemd:ssh": "ssh.service",
@@ -58,7 +61,8 @@ const defaultDependencies: LogBrokerReaderDependencies = {
       });
     });
   },
-  readRegistered: (sourceId, range, signal) => readLogSnapshot(sourceId, range, undefined, signal),
+  readRegistered: (sourceId, range, signal) =>
+    readLogSnapshot(sourceId, range, undefined, signal),
 };
 
 export function logBrokerSystemdUnitForSource(sourceId: LogSourceId): string | null {
@@ -81,6 +85,28 @@ export function buildLogBrokerJournalctlArgs(
   ];
 }
 
+async function assertSystemdUnitAvailable(
+  unit: string,
+  dependencies: LogBrokerReaderDependencies,
+  signal?: AbortSignal,
+): Promise<void> {
+  const { stdout } = await dependencies.execFile(
+    SYSTEMCTL_PATH,
+    ["show", "--property=LoadState", "--value", unit],
+    {
+      timeout: LOG_SOURCE_TIMEOUT_MS,
+      maxBuffer: SYSTEMCTL_MAX_BUFFER_BYTES,
+      encoding: "utf8",
+      shell: false,
+      ...(signal === undefined ? {} : { signal }),
+    },
+  );
+  const loadState = stdout.trim();
+  if (loadState.length === 0 || loadState === "not-found" || loadState === "error") {
+    throw new LogSourceUnavailableError();
+  }
+}
+
 export async function readBrokerLogSnapshot(
   sourceId: LogSourceId,
   range: LogRange,
@@ -99,6 +125,10 @@ export async function readBrokerLogSnapshot(
     if (descriptor.kind !== "SYSTEMD") {
       return await dependencies.readRegistered(sourceId, range, signal);
     }
+
+    const unit = logBrokerSystemdUnitForSource(sourceId);
+    if (unit === null) throw new LogSourceUnavailableError();
+    await assertSystemdUnitAvailable(unit, dependencies, signal);
 
     const observedAt = dependencies.now();
     if (!Number.isFinite(observedAt.getTime())) throw new LogSourceUnavailableError();
