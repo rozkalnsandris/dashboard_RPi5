@@ -277,12 +277,35 @@ async function runSmoke({ rootDir, manifestPath, sourceSha }) {
   await mkdir(candidateRoot, { recursive: true });
   await mkdir(runtimeRoot, { recursive: true });
 
+  let logBrokerRuntime;
   let agentRuntime;
   let webRuntime;
   try {
     await materializeCandidate({ rootDir: root, candidateRoot, manifest });
     await assertNoNodeModulesResolutionPath(candidateRoot);
     const currentRoot = await createProductionCurrentLink(tempRoot, sourceSha);
+
+    const logBrokerSocket = resolve(runtimeRoot, "log-broker.sock");
+    logBrokerRuntime = spawnRuntime(
+      resolve(currentRoot, "apps/agent/dist/log-broker-entry.js"),
+      currentRoot,
+      {
+        DASHBOARD_LOG_BROKER_SOCKET: logBrokerSocket,
+      },
+    );
+
+    const logBrokerHealth = await waitFor(logBrokerRuntime, "log broker runtime smoke failed", async () => {
+      const response = await request({ socketPath: logBrokerSocket, path: "/v1/health" });
+      const body = JSON.parse(response.body);
+      if (
+        response.statusCode !== 200 ||
+        body.status !== "ok" ||
+        body.service !== "dashboard-rpi5-log-broker"
+      ) {
+        throw new Error(`unexpected log broker health: ${response.statusCode} ${response.body}`);
+      }
+      return response;
+    });
 
     const agentSocket = resolve(runtimeRoot, "agent.sock");
     agentRuntime = spawnRuntime(
@@ -291,6 +314,7 @@ async function runSmoke({ rootDir, manifestPath, sourceSha }) {
       {
         DASHBOARD_RPI5_AGENT_SOCKET: agentSocket,
         DASHBOARD_RPI5_QUICK_COMMANDS: "disabled",
+        DASHBOARD_LOG_BROKER_SOCKET: logBrokerSocket,
       },
     );
 
@@ -367,6 +391,9 @@ async function runSmoke({ rootDir, manifestPath, sourceSha }) {
       sourceSha,
       candidateSha256: manifest.candidateSha256,
       nodeModulesResolutionPath: "absent",
+      logBroker: {
+        healthStatus: logBrokerHealth.statusCode,
+      },
       agent: {
         healthStatus: agentHealth.statusCode,
         quickCommandsStatus: quickCommands.statusCode,
@@ -383,6 +410,7 @@ async function runSmoke({ rootDir, manifestPath, sourceSha }) {
   } finally {
     await stopRuntime(webRuntime);
     await stopRuntime(agentRuntime);
+    await stopRuntime(logBrokerRuntime);
     await rm(tempRoot, { recursive: true, force: true });
   }
 }

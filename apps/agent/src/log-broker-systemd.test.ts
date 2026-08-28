@@ -82,6 +82,13 @@ describe("host log broker systemd source-only boundary", () => {
     expect(brokerUnit).not.toMatch(/ListenStream=(?:\d|127\.|0\.0\.0\.0|\[)/);
   });
 
+  it("rate-limits repeated startup failures instead of looping indefinitely", () => {
+    expect(brokerUnit).toContain("Restart=on-failure");
+    expect(brokerUnit).toContain("RestartSec=5s");
+    expect(brokerUnit).toContain("StartLimitIntervalSec=60s");
+    expect(brokerUnit).toContain("StartLimitBurst=5");
+  });
+
   it("keeps activation explicitly outside source merge authority", () => {
     expect(brokerUnit).toContain("Do not install, enable, start, restart");
     expect(agentUnit).toContain("# SOURCE-ONLY BLUEPRINT.");

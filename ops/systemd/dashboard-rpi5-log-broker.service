@@ -10,6 +10,8 @@
 [Unit]
 Description=dashboard_RPi5 bounded host log read broker
 After=local-fs.target systemd-journald.service
+StartLimitIntervalSec=60s
+StartLimitBurst=5
 
 [Service]
 Type=exec
