@@ -42,9 +42,15 @@ describe("Docker broker systemd source-only boundary", () => {
     expect(agentUnit).toContain("User=dashboard-rpi5-agent");
     expect(agentUnit).toContain("Group=dashboard-rpi5-agent-client");
     const agentSupplementaryGroups = supplementaryGroups(agentUnit);
-    expect(agentSupplementaryGroups).toEqual(["dashboard-rpi5-docker-client"]);
+    expect(agentSupplementaryGroups).toEqual([
+      "dashboard-rpi5-docker-client",
+      "dashboard-rpi5-log-client",
+    ]);
     expect(agentSupplementaryGroups).not.toContain("docker");
     expect(agentSupplementaryGroups).not.toContain("video");
+    expect(agentSupplementaryGroups).not.toContain("adm");
+    expect(agentSupplementaryGroups).not.toContain("systemd-journal");
+    expect(agentSupplementaryGroups).not.toContain("sudo");
     expect(agentUnit).not.toContain("DASHBOARD_DOCKER_SOCKET_PATH");
     expect(agentUnit).toContain(
       "Environment=DASHBOARD_DOCKER_BROKER_SOCKET=/run/dashboard-rpi5-docker-broker/broker.sock",
