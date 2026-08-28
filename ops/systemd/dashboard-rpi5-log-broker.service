@@ -1,0 +1,48 @@
+# SOURCE-ONLY BLUEPRINT.
+# Do not install, enable, start, restart, or otherwise activate this unit
+# without a separate explicit owner-authorized production/trust-boundary gate.
+#
+# This broker is intentionally separate from the main agent. It runs as root
+# only so the existing root-owned 0600 backup log can remain unchanged while
+# journal and file reads stay behind a fixed bounded Unix-socket API. The
+# filesystem is read-only and network address families are unavailable.
+
+[Unit]
+Description=dashboard_RPi5 bounded privileged log broker
+After=local-fs.target systemd-journald.service
+
+[Service]
+Type=exec
+User=root
+Group=dashboard-rpi5-log-client
+WorkingDirectory=/opt/dashboard_RPi5/current
+Environment=DASHBOARD_RPI5_LOG_BROKER_SOCKET=/run/dashboard-rpi5-log-broker/broker.sock
+ExecStart=/usr/bin/node /opt/dashboard_RPi5/current/apps/agent/dist/log-broker-entry.js
+Restart=on-failure
+RestartSec=5s
+
+RuntimeDirectory=dashboard-rpi5-log-broker
+RuntimeDirectoryMode=0750
+UMask=0007
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

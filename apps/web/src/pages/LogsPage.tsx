@@ -1,7 +1,9 @@
 import type {
   LogEntry,
   LogRange,
+  LogSourceDescriptor,
   LogSourceId,
+  LogSourceKind,
 } from "@dashboard-rpi5/contracts/logs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -26,6 +28,23 @@ const ranges: { value: LogRange; label: string }[] = [
   { value: "6h", label: "6 hours" },
   { value: "24h", label: "24 hours" },
 ];
+const sourceKindOrder: readonly LogSourceKind[] = ["DOCKER", "SYSTEMD", "JOURNAL", "FILE"];
+const sourceKindLabels: Readonly<Record<LogSourceKind, string>> = {
+  DOCKER: "Docker",
+  SYSTEMD: "Systemd",
+  JOURNAL: "Journal",
+  FILE: "Files",
+};
+
+function groupSources(sources: readonly LogSourceDescriptor[]) {
+  return sourceKindOrder
+    .map((kind) => ({
+      kind,
+      label: sourceKindLabels[kind],
+      sources: sources.filter((source) => source.kind === kind),
+    }))
+    .filter((group) => group.sources.length > 0);
+}
 
 function entryKey(entry: LogEntry): string {
   return `${entry.timestamp ?? "none"}\u0000${entry.stream}\u0000${entry.message}`;
@@ -35,11 +54,7 @@ function formatLineTime(timestamp: string | null): string {
   if (timestamp === null) return "--:--:--";
   const date = new Date(timestamp);
   if (!Number.isFinite(date.getTime())) return "--:--:--";
-  return date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function formatCopyLine(entry: LogEntry): string {
@@ -68,11 +83,9 @@ export function LogsPage() {
     refetchOnReconnect: live,
   });
 
-  const resolvedSourceId =
-    sourceId ?? sourcesQuery.data?.sources[0]?.sourceId ?? null;
-  const selectedSource = sourcesQuery.data?.sources.find(
-    (source) => source.sourceId === resolvedSourceId,
-  );
+  const resolvedSourceId = sourceId ?? sourcesQuery.data?.sources[0]?.sourceId ?? null;
+  const selectedSource = sourcesQuery.data?.sources.find((source) => source.sourceId === resolvedSourceId);
+  const sourceGroups = useMemo(() => groupSources(sourcesQuery.data?.sources ?? []), [sourcesQuery.data?.sources]);
   const logsQueryKey = ["logs", resolvedSourceId, range] as const;
 
   const logsQuery = useQuery({
@@ -93,22 +106,16 @@ export function LogsPage() {
     const normalized = queryText.trim().toLowerCase();
     const entries = logsQuery.data?.entries ?? [];
     if (normalized.length === 0) return entries;
-    return entries.filter((entry) =>
-      `${entry.level} ${entry.stream} ${entry.message}`.toLowerCase().includes(normalized),
-    );
+    return entries.filter((entry) => `${entry.level} ${entry.stream} ${entry.message}`.toLowerCase().includes(normalized));
   }, [logsQuery.data?.entries, queryText]);
 
   useEffect(() => {
     const entries = logsQuery.data?.entries;
     if (entries === undefined) return;
-
     const nextKeys = new Set(entries.map(entryKey));
     let added = 0;
-    for (const key of nextKeys) {
-      if (!previousKeysRef.current.has(key)) added += 1;
-    }
+    for (const key of nextKeys) if (!previousKeysRef.current.has(key)) added += 1;
     previousKeysRef.current = nextKeys;
-
     if (stickToBottom) {
       setNewLineCount(0);
       const frame = requestAnimationFrame(() => {
@@ -124,10 +131,7 @@ export function LogsPage() {
   const toggleLive = () => {
     if (live) {
       setLive(false);
-      void queryClient.cancelQueries(
-        { queryKey: logsQueryKey, exact: true },
-        { silent: true },
-      );
+      void queryClient.cancelQueries({ queryKey: logsQueryKey, exact: true }, { silent: true });
       return;
     }
     setLive(true);
@@ -154,9 +158,7 @@ export function LogsPage() {
     (sourcesQuery.isError && sourcesQuery.data === undefined) ||
     (logsQuery.isError && logsQuery.data === undefined);
   const degraded = logsQuery.isRefetchError && logsQuery.data !== undefined;
-  const isLoading =
-    sourcesQuery.isPending ||
-    (resolvedSourceId !== null && logsQuery.isPending);
+  const isLoading = sourcesQuery.isPending || (resolvedSourceId !== null && logsQuery.isPending);
 
   return (
     <section className="page-stack log-page-shell logs-live-page" aria-labelledby="logs-title">
@@ -164,7 +166,7 @@ export function LogsPage() {
         <div>
           <p className="eyebrow">Registered sources only</p>
           <h1 id="logs-title">Logs</h1>
-          <p>Bounded read-only Docker, journal and registered-file evidence. Paths, units and container selectors stay server-owned.</p>
+          <p>Bounded read-only Docker, systemd, journal and registered-file evidence. Paths, units and container selectors stay server-owned.</p>
         </div>
       </div>
 
@@ -181,8 +183,12 @@ export function LogsPage() {
               setStickToBottom(true);
             }}
           >
-            {sourcesQuery.data?.sources.map((source) => (
-              <option key={source.sourceId} value={source.sourceId}>{source.label}</option>
+            {sourceGroups.map((group) => (
+              <optgroup key={group.kind} label={group.label}>
+                {group.sources.map((source) => (
+                  <option key={source.sourceId} value={source.sourceId}>{source.label}</option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>
@@ -211,20 +217,12 @@ export function LogsPage() {
           <span>Search visible snapshot</span>
           <span className="input-shell">
             <Search size={16} aria-hidden="true" />
-            <input
-              value={queryText}
-              onChange={(event) => setQueryText(event.target.value)}
-              placeholder="Search logs"
-              inputMode="search"
-            />
+            <input value={queryText} onChange={(event) => setQueryText(event.target.value)} placeholder="Search logs" inputMode="search" />
           </span>
         </label>
 
         <div className="log-toolbar-actions" aria-label="Viewer controls">
-          <Button
-            className={`toolbar-button${wrap ? " toolbar-button--active" : ""}`}
-            onPress={() => setWrap((value) => !value)}
-          >
+          <Button className={`toolbar-button${wrap ? " toolbar-button--active" : ""}`} onPress={() => setWrap((value) => !value)}>
             <WrapText size={16} aria-hidden="true" />
             {wrap ? "Wrap on" : "Wrap off"}
           </Button>

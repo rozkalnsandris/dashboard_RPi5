@@ -1,22 +1,41 @@
 import type { LogSourceId, LogSourcesSnapshot } from "@dashboard-rpi5/contracts/logs";
 
 import { listRegisteredLogSources } from "./logs-read.js";
+import {
+  isPrivilegedLogSourceId,
+  listPrivilegedLogSourceDescriptors,
+  privilegedLogSourcesEnabled,
+  PRIVILEGED_LOG_SOURCE_IDS,
+} from "./privileged-log-sources.js";
 
-export const PRODUCTION_LOG_SOURCE_IDS = Object.freeze<readonly LogSourceId[]>([
+export const DOCKER_PRODUCTION_LOG_SOURCE_IDS = Object.freeze<readonly LogSourceId[]>([
   "docker:homeassistant",
   "docker:prometheus",
 ]);
 
-const productionLogSourceIds = new Set<LogSourceId>(PRODUCTION_LOG_SOURCE_IDS);
+export const PRODUCTION_LOG_SOURCE_IDS = Object.freeze<readonly LogSourceId[]>([
+  ...DOCKER_PRODUCTION_LOG_SOURCE_IDS,
+  ...PRIVILEGED_LOG_SOURCE_IDS,
+]);
 
-export function isProductionLogSourceId(sourceId: LogSourceId): boolean {
-  return productionLogSourceIds.has(sourceId);
+const dockerProductionIds = new Set<LogSourceId>(DOCKER_PRODUCTION_LOG_SOURCE_IDS);
+
+export function isProductionLogSourceId(
+  sourceId: LogSourceId,
+  privilegedEnabled: boolean = privilegedLogSourcesEnabled(),
+): boolean {
+  if (dockerProductionIds.has(sourceId)) return true;
+  return privilegedEnabled && isPrivilegedLogSourceId(sourceId);
 }
 
-export function listProductionLogSources(now: Date = new Date()): LogSourcesSnapshot {
+export function listProductionLogSources(
+  now: Date = new Date(),
+  privilegedEnabled: boolean = privilegedLogSourcesEnabled(),
+): LogSourcesSnapshot {
   const snapshot = listRegisteredLogSources(now);
+  const dockerSources = snapshot.sources.filter((source) => dockerProductionIds.has(source.sourceId));
   return {
     observedAt: snapshot.observedAt,
-    sources: snapshot.sources.filter((source) => isProductionLogSourceId(source.sourceId)),
+    sources: privilegedEnabled ? [...dockerSources, ...listPrivilegedLogSourceDescriptors()] : dockerSources,
   };
 }
