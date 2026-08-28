@@ -70,7 +70,7 @@ export type TerminalBridgeObserver = (observation: TerminalBridgeObservation) =>
 
 export interface TerminalBridgeWebSocket {
   readonly bufferedAmount: number;
-  send(data: string, callback?: (error?: Error) => void): void;
+  send(data: string, callback?: (error?: Error | null) => void): void;
   close(code: number, reason: string): void;
   terminate(): void;
   on(event: "message", listener: (data: unknown, isBinary: boolean) => void): unknown;
@@ -186,7 +186,9 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
     if (!browserFrameCanBeSent(frame)) return false;
     try {
       socket.send(frame, (error) => {
-        if (error !== undefined) failInternal("TERMINAL_WEBSOCKET_SEND_FAILED");
+        if (error !== undefined && error !== null) {
+          failInternal("TERMINAL_WEBSOCKET_SEND_FAILED");
+        }
       });
       return true;
     } catch {
@@ -220,7 +222,7 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
         if (state !== "closing") return;
         clearExitSendTimer();
         state = "closed";
-        if (error !== undefined) {
+        if (error !== undefined && error !== null) {
           terminateWebSocket();
           return;
         }
