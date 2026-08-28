@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   "base-uri 'none'",
@@ -35,8 +37,22 @@ function isOperationalApiRequest(requestUrl: string): boolean {
   );
 }
 
+export function buildContentSecurityPolicy(nonce: string): string {
+  return CONTENT_SECURITY_POLICY.replace(
+    "script-src 'self'",
+    `script-src 'self' 'nonce-${nonce}'`,
+  );
+}
+
+function createContentSecurityPolicyNonce(): string {
+  return randomBytes(18).toString("base64");
+}
+
 export function applyHttpResponsePolicy(requestUrl: string, reply: HeaderWriter): void {
-  reply.header("Content-Security-Policy", CONTENT_SECURITY_POLICY);
+  reply.header(
+    "Content-Security-Policy",
+    buildContentSecurityPolicy(createContentSecurityPolicyNonce()),
+  );
   reply.header("X-Content-Type-Options", "nosniff");
   reply.header("Referrer-Policy", REFERRER_POLICY);
   reply.header("Permissions-Policy", PERMISSIONS_POLICY);

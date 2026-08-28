@@ -20,6 +20,8 @@ This phase is source-only. It does not deploy or activate anything on `dash.rozk
 - separate raster 512×512 `maskable` PNG;
 - an optional 512×512 SVG icon for Chromium-class vector support.
 
+The document link uses `crossorigin="use-credentials"` so an installed browser/PWA fetch keeps credentials attached when the protected dashboard is fronted by Cloudflare Access. The manifest itself remains same-origin and the CSP keeps `manifest-src 'self'`; the application does not widen manifest trust to the Access login hostname.
+
 The raster fallbacks are deliberate: Chromium supports SVG manifest icons, but current Google guidance recommends a raster fallback for browsers that do not support SVG manifest icons consistently.
 
 The important `R5` mark stays in the center of the maskable asset so platform masks may remove outer decoration without removing the identity mark.
@@ -66,7 +68,7 @@ The viewport contract remains zoomable and keeps `viewport-fit=cover` plus `inte
 
 Browser coverage verifies:
 
-- manifest link and identity;
+- manifest link, credential mode and identity;
 - raster 192/512 and maskable PNG entries;
 - all declared icon resources are served;
 - zoom is not disabled;
