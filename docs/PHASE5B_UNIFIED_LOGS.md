@@ -81,6 +81,12 @@ The log broker adds its own bounded Unix API envelope: fixed GET-only routes, lo
 
 File evidence stays tail-only because arbitrary file lines do not provide trustworthy timestamps; `rangeApplied=false` is preserved for `file:rpi5-backup`.
 
+## Startup readiness and socket permissions
+
+The production log-broker unit uses `UMask=0117`, so its pathname AF_UNIX socket is created at no broader than the final `0660` client mode (`0777 & ~0117 = 0660`). The broker still applies an explicit post-listen `chmod(0660)` as defense in depth.
+
+The unit remains `Type=exec`, so systemd `active` state alone is not application readiness. Live acceptance must use bounded polling and require the service to remain active, the socket to exist with exact `root:dashboard-rpi5-log-client:0660` ownership/mode, `/v1/health` to return the expected healthy broker identity, and the broker PID/restart counter to remain stable across the acceptance window.
+
 ## Browser behavior
 
 The Logs page groups selectable sources as `Docker`, `Systemd`, `Journal` and `Files` while preserving:
