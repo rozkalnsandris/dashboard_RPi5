@@ -49,6 +49,7 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
 const FULL_SHA = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const INSTALLED_MANIFEST_MARKER = ".dashboard-production-candidate.json";
+const LOG_BROKER_ENTRYPOINT = "apps/agent/dist/log-broker-entry.js";
 const TERMINAL_AGENT_ENTRYPOINT = "apps/terminal-agent/dist/session-stdio-entry.js";
 
 function comparePath(left, right) {
@@ -200,13 +201,26 @@ async function optionalEntryState(root, relativePath) {
   const absolutePath = resolve(root, ...relativePath.split("/"));
   const normalized = relative(root, absolutePath);
   if (normalized === "" || normalized === ".." || normalized.startsWith(`..${sep}`) || isAbsolute(normalized)) {
-    throw new Error("terminal candidate entrypoint escaped repository root");
+    throw new Error("candidate entrypoint escaped repository root");
   }
   try {
     return { path: absolutePath, stat: await lstat(absolutePath) };
   } catch (error) {
     if (error?.code === "ENOENT") return null;
     throw error;
+  }
+}
+
+async function assertRequiredLogBrokerEntrypoint(rootDir) {
+  const root = resolve(rootDir);
+  const entrypoint = await optionalEntryState(root, LOG_BROKER_ENTRYPOINT);
+  if (
+    entrypoint === null ||
+    entrypoint.stat.isSymbolicLink() ||
+    !entrypoint.stat.isFile() ||
+    entrypoint.stat.size <= 0
+  ) {
+    throw new Error("log broker production entrypoint must be a non-empty regular file");
   }
 }
 
@@ -229,6 +243,7 @@ export async function createProductionCandidateManifest({ rootDir, sourceSha }) 
   if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
     throw new Error("candidate repository root must be a real directory");
   }
+  await assertRequiredLogBrokerEntrypoint(root);
 
   const files = [];
   for (const relativeDirectory of PRODUCTION_CANDIDATE_DIRECTORY_ROOTS) {

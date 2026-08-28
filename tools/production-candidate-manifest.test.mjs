@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
@@ -25,6 +25,11 @@ async function createFixture() {
     await writeFixtureFile(root, `${directory}/index.js`, `console.log(${JSON.stringify(directory)});\n`);
     await writeFixtureFile(root, `${directory}/nested/data.txt`, `${directory}\n`);
   }
+  await writeFixtureFile(
+    root,
+    "apps/agent/dist/log-broker-entry.js",
+    "console.log('log-broker');\n",
+  );
   for (const file of PRODUCTION_CANDIDATE_FILE_ROOTS) {
     await writeFixtureFile(root, file, `${file}\n`);
   }
@@ -44,12 +49,26 @@ test("candidate manifest is deterministic and exact-SHA bound", async () => {
     assert.equal(first.files.length, first.fileCount);
     assert.ok(first.fileCount > PRODUCTION_CANDIDATE_FILE_ROOTS.length);
     assert.match(first.candidateSha256, /^[0-9a-f]{64}$/u);
+    assert.ok(first.files.some((file) => file.path === "apps/agent/dist/log-broker-entry.js"));
     assert.deepEqual(
       first.files.map((file) => file.path),
       [...first.files.map((file) => file.path)].sort(),
     );
     assert.equal("generatedAt" in first, false);
     assert.equal("hostname" in first, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("candidate manifest fails closed when the production log broker entrypoint is missing", async () => {
+  const root = await createFixture();
+  try {
+    await unlink(resolve(root, "apps/agent/dist/log-broker-entry.js"));
+    await assert.rejects(
+      createProductionCandidateManifest({ rootDir: root, sourceSha: SHA }),
+      /log broker production entrypoint must be a non-empty regular file/u,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
