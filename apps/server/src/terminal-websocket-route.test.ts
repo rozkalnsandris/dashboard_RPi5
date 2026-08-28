@@ -215,7 +215,7 @@ describe("terminal WebSocket route", () => {
     await app.close();
   });
 
-  it("delivers the first local ready frame through a real negotiated WebSocket", async () => {
+  it("carries ready, resize, and PTY output through a real negotiated WebSocket", async () => {
     const runtime = enabledRuntime();
     const token = mintSessionDirect(runtime);
     let localConnection: Socket | undefined;
@@ -224,15 +224,25 @@ describe("terminal WebSocket route", () => {
     const openReceived = new Promise<void>((resolve) => {
       resolveOpenReceived = resolve;
     });
+    const localFrames: string[] = [];
     const localServer = createServer((connection) => {
       localConnection = connection;
       let pending = "";
       connection.setEncoding("utf8");
       connection.on("data", (chunk) => {
         pending += chunk;
-        if (!pending.includes("\n")) return;
-        resolveOpenReceived?.();
-        resolveOpenReceived = undefined;
+        while (true) {
+          const newline = pending.indexOf("\n");
+          if (newline < 0) return;
+          const frame = pending.slice(0, newline);
+          pending = pending.slice(newline + 1);
+          if (frame.length === 0) continue;
+          localFrames.push(frame);
+          if (localFrames.length === 1) {
+            resolveOpenReceived?.();
+            resolveOpenReceived = undefined;
+          }
+        }
       });
     });
 
@@ -289,9 +299,21 @@ describe("terminal WebSocket route", () => {
 
       const readyMessage = waitForBrowserTextMessage(browserSocket);
       await openReceived;
+      expect(localFrames[0]).toBe('{"v":1,"type":"open","cols":80,"rows":24}');
       localConnection?.write('{"v":1,"type":"ready"}\n');
-
       await expect(readyMessage).resolves.toBe('{"type":"ready"}');
+
+      browserSocket.send('{"type":"resize","cols":39,"rows":20}');
+      await vi.waitFor(() => {
+        expect(localFrames).toContain('{"v":1,"type":"resize","cols":39,"rows":20}');
+      });
+
+      const outputMessage = waitForBrowserTextMessage(browserSocket);
+      localConnection?.write('{"v":1,"type":"output","data":"TERMINAL_OUTPUT_OK"}\n');
+      await expect(outputMessage).resolves.toBe(
+        '{"type":"output","data":"TERMINAL_OUTPUT_OK"}',
+      );
+
       browserSocket.close(1000, "TEST_COMPLETE");
       await vi.waitFor(() => expect(runtime.sessionRegistry.activeCount()).toBe(0));
     } finally {
