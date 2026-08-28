@@ -3,8 +3,9 @@
 # without a separate explicit owner-authorized production gate.
 #
 # The agent owns the bounded host-read boundary. Its primary group lets the web
-# identity consume the agent Unix API. For Docker current-state it receives only
-# the dedicated broker-client group; it must never inherit docker or video.
+# identity consume the agent Unix API. Docker and host-log reads are delegated
+# to dedicated broker-client groups; it must never inherit docker, video, adm,
+# systemd-journal, sudo or root authority.
 
 [Unit]
 Description=dashboard_RPi5 local read agent
@@ -14,10 +15,11 @@ After=local-fs.target
 Type=exec
 User=dashboard-rpi5-agent
 Group=dashboard-rpi5-agent-client
-SupplementaryGroups=dashboard-rpi5-docker-client
+SupplementaryGroups=dashboard-rpi5-docker-client dashboard-rpi5-log-client
 WorkingDirectory=/opt/dashboard_RPi5/current
 Environment=DASHBOARD_RPI5_AGENT_SOCKET=/run/dashboard-rpi5/agent.sock
 Environment=DASHBOARD_DOCKER_BROKER_SOCKET=/run/dashboard-rpi5-docker-broker/broker.sock
+Environment=DASHBOARD_LOG_BROKER_SOCKET=/run/dashboard-rpi5-log-broker/broker.sock
 # Owner-gated capability: keep OFF in the canonical blueprint. Enabling this
 # requires a separate explicit owner-authorized production configuration change.
 Environment=DASHBOARD_RPI5_QUICK_COMMANDS=disabled

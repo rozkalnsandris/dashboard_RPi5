@@ -2,6 +2,8 @@ import type { LogRange, LogSnapshot, LogSourceId } from "@dashboard-rpi5/contrac
 
 import { createDockerBrokerTransport } from "./docker-broker-client.js";
 import type { DockerBrokerLogSource } from "./docker-broker-protocol.js";
+import { createLogBrokerTransport } from "./log-broker-client.js";
+import { isLogBrokerSourceId } from "./log-broker-protocol.js";
 import {
   LogSourceUnavailableError,
   readLogSnapshot,
@@ -16,7 +18,8 @@ const DOCKER_SOURCE_MAP: Readonly<
   "docker:prometheus": { brokerSource: "prometheus", containerName: "prometheus" },
 };
 
-const broker = createDockerBrokerTransport();
+const dockerBroker = createDockerBrokerTransport();
+const logBroker = createLogBrokerTransport();
 
 export async function readLiveLogSnapshot(
   sourceId: LogSourceId,
@@ -26,25 +29,31 @@ export async function readLiveLogSnapshot(
   if (!isProductionLogSourceId(sourceId)) throw new LogSourceUnavailableError();
 
   const mapping = DOCKER_SOURCE_MAP[sourceId];
-  if (mapping === undefined) throw new LogSourceUnavailableError();
-
-  const dependencies: LogReadDependencies = {
-    now: () => new Date(),
-    execFile: async () => {
-      throw new LogSourceUnavailableError();
-    },
-    readFileTail: async () => {
-      throw new LogSourceUnavailableError();
-    },
-    readDockerLogs: async (containerName, _sinceSeconds, innerSignal) => {
-      if (containerName !== mapping.containerName) throw new LogSourceUnavailableError();
-      try {
-        return await broker.readLogs(mapping.brokerSource, range, innerSignal);
-      } catch {
+  if (mapping !== undefined) {
+    const dependencies: LogReadDependencies = {
+      now: () => new Date(),
+      execFile: async () => {
         throw new LogSourceUnavailableError();
-      }
-    },
-  };
+      },
+      readFileTail: async () => {
+        throw new LogSourceUnavailableError();
+      },
+      readDockerLogs: async (containerName, _sinceSeconds, innerSignal) => {
+        if (containerName !== mapping.containerName) throw new LogSourceUnavailableError();
+        try {
+          return await dockerBroker.readLogs(mapping.brokerSource, range, innerSignal);
+        } catch {
+          throw new LogSourceUnavailableError();
+        }
+      },
+    };
+    return readLogSnapshot(sourceId, range, dependencies, signal);
+  }
 
-  return readLogSnapshot(sourceId, range, dependencies, signal);
+  if (!isLogBrokerSourceId(sourceId)) throw new LogSourceUnavailableError();
+  try {
+    return await logBroker.readSnapshot(sourceId, range, signal);
+  } catch {
+    throw new LogSourceUnavailableError();
+  }
 }
