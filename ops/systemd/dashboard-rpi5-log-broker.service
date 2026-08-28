@@ -25,7 +25,8 @@ RestartSec=5s
 
 RuntimeDirectory=dashboard-rpi5-log-broker
 RuntimeDirectoryMode=0750
-UMask=0007
+# AF_UNIX path mode is 0777 & ~UMask, so create it at the final 0660 client mode.
+UMask=0117
 
 NoNewPrivileges=yes
 CapabilityBoundingSet=
