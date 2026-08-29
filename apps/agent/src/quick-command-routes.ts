@@ -16,7 +16,48 @@ import {
   runQuickCommand,
 } from "./quick-commands.js";
 
-export function registerQuickCommandRoutes(app: FastifyInstance) {
+export const QUICK_COMMAND_MAX_CONCURRENT_RUNS = 1;
+export const QUICK_COMMAND_TIMEOUT_MS = 5_000;
+
+type QuickCommandRunner = typeof runQuickCommand;
+
+export class QuickCommandConcurrencyLimitError extends Error {
+  constructor() {
+    super("Quick command concurrency limit reached");
+    this.name = "QuickCommandConcurrencyLimitError";
+  }
+}
+
+export function createQuickCommandExecutor(runner: QuickCommandRunner = runQuickCommand) {
+  let activeRuns = 0;
+
+  return async (commandId: Parameters<QuickCommandRunner>[0]) => {
+    if (activeRuns >= QUICK_COMMAND_MAX_CONCURRENT_RUNS) {
+      throw new QuickCommandConcurrencyLimitError();
+    }
+
+    activeRuns += 1;
+    try {
+      return await runWithTimeout(
+        (signal) => runner(commandId, signal),
+        QUICK_COMMAND_TIMEOUT_MS,
+      );
+    } finally {
+      activeRuns -= 1;
+    }
+  };
+}
+
+interface RegisterQuickCommandRoutesOptions {
+  runner?: QuickCommandRunner;
+}
+
+export function registerQuickCommandRoutes(
+  app: FastifyInstance,
+  options: RegisterQuickCommandRoutesOptions = {},
+) {
+  const executeQuickCommand = createQuickCommandExecutor(options.runner);
+
   app.get(
     "/v1/quick-commands",
     {
@@ -59,12 +100,13 @@ export function registerQuickCommandRoutes(app: FastifyInstance) {
 
       const { commandId } = request.body as QuickCommandRunRequest;
       try {
-        return await runWithTimeout((signal) => runQuickCommand(commandId, signal), 5_000);
+        return await executeQuickCommand(commandId);
       } catch (error: unknown) {
         if (error instanceof OperationTimeoutError) {
           return reply.code(504).send({ error: "OPERATION_TIMEOUT" });
         }
         if (
+          error instanceof QuickCommandConcurrencyLimitError ||
           error instanceof QuickCommandSourceUnavailableError ||
           error instanceof QuickCommandOutputLimitError
         ) {
