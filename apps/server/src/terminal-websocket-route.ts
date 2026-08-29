@@ -1,6 +1,7 @@
 import fastifyWebsocket from "@fastify/websocket";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
+import { attachTerminalWebSocketHeartbeat } from "./terminal-websocket-heartbeat.js";
 import {
   createTerminalLocalSocket,
   type TerminalLocalConnector,
@@ -76,6 +77,7 @@ export function registerTerminalWebSocketRoute(
           return;
         }
 
+        attachTerminalWebSocketHeartbeat(socket);
         attachTerminalWebSocketBridge({
           socket: socket as unknown as TerminalBridgeWebSocket,
           sessionToken,
