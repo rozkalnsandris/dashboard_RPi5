@@ -65,9 +65,8 @@ import { createGithubRpi5MainReader } from "./github-rpi5-main-client.js";
 import { createHostHistoryReader, type HostHistoryReader } from "./host-history.js";
 import { applyHttpResponsePolicy } from "./http-response-policy.js";
 import { createPublicEndpointsReader, type PublicEndpointsReader } from "./public-endpoints.js";
-import {
-  type TerminalSessionAdmission,
-} from "./terminal-session-admission.js";
+import { type TerminalLocalConnector } from "./terminal-local-client.js";
+import { type TerminalSessionAdmission } from "./terminal-session-admission.js";
 import { registerTerminalSessionRoute } from "./terminal-session-route.js";
 import {
   createDefaultTerminalRuntime,
@@ -90,6 +89,7 @@ interface BuildAppOptions {
   logsReader?: LogsReader;
   terminalSessionAdmission?: TerminalSessionAdmission;
   terminalRuntime?: TerminalRuntime;
+  terminalLocalConnector?: TerminalLocalConnector;
 }
 
 function buildDefaultHistoryReader(): HostHistoryReader {
@@ -423,6 +423,7 @@ export function buildApp(options: BuildAppOptions = {}) {
     app,
     terminalRuntime.websocketAdmission,
     terminalRuntime.sessionRegistry,
+    options.terminalLocalConnector,
   );
 
   if (options.staticRoot !== undefined) {

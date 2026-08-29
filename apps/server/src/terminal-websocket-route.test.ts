@@ -146,6 +146,12 @@ async function waitForBrowserTextMessage(socket: WebSocket): Promise<string> {
   });
 }
 
+function unavailableLocalConnector(): Socket {
+  const socket = new Socket();
+  queueMicrotask(() => socket.destroy(new Error("test terminal socket unavailable")));
+  return socket;
+}
+
 describe("terminal WebSocket route", () => {
   it("keeps ordinary HTTP requests out of the upgrade admission path", async () => {
     const runtime = enabledRuntime();
@@ -326,7 +332,10 @@ describe("terminal WebSocket route", () => {
 
   it("fails closed when the source-only local terminal socket is not activated", async () => {
     const runtime = enabledRuntime();
-    const app = buildApp({ terminalRuntime: runtime });
+    const app = buildApp({
+      terminalRuntime: runtime,
+      terminalLocalConnector: unavailableLocalConnector,
+    });
     const token = await mintSession(app);
     await app.ready();
     const socket = await app.injectWS(TERMINAL_WEBSOCKET_PATH, {
