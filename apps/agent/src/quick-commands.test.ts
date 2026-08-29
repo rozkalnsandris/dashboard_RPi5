@@ -106,7 +106,7 @@ describe("Quick Commands", () => {
     });
     let calls = 0;
 
-    const runner = vi.fn(async (commandId: QuickCommandId, _signal: AbortSignal) => {
+    const runner = vi.fn(async (commandId: QuickCommandId) => {
       calls += 1;
       if (calls === 1) {
         markFirstStarted();
