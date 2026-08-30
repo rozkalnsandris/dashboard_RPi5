@@ -260,7 +260,6 @@ describe("Docker Engine reader authority", () => {
     expect(requests).toEqual([
       { method: "GET", url: "/version" },
       { method: "GET", url: "/v1.55/_ping" },
-      { method: "GET", url: "/v1.55/version" },
       { method: "GET", url: "/v1.55/containers/json?all=true" },
       { method: "GET", url: `/v1.55/containers/${ID}/json` },
       { method: "GET", url: `/v1.55/containers/${ID}/stats?stream=false` },
@@ -268,7 +267,7 @@ describe("Docker Engine reader authority", () => {
     await expect(reader.inspectContainer("../etc/passwd")).rejects.toBeInstanceOf(
       DockerEngineUnavailableError,
     );
-    expect(requests).toHaveLength(6);
+    expect(requests).toHaveLength(5);
   });
 
   it("fails closed on oversized and timed-out Engine evidence", async () => {
