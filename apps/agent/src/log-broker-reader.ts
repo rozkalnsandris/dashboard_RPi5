@@ -49,7 +49,7 @@ export interface LogBrokerReaderDependencies {
     range: LogRange,
     signal?: AbortSignal,
   ): Promise<LogSnapshot>;
-  readBackupFileTail(maxBytes: number, signal?: AbortSignal): Promise<DescriptorSafeFileTailResult>;
+  readBackupFileTail?(maxBytes: number, signal?: AbortSignal): Promise<DescriptorSafeFileTailResult>;
 }
 
 const defaultDependencies: LogBrokerReaderDependencies = {
@@ -130,7 +130,8 @@ export async function readBrokerLogSnapshot(
     if (descriptor.kind === "FILE") {
       const observedAt = dependencies.now();
       if (!Number.isFinite(observedAt.getTime())) throw new LogSourceUnavailableError();
-      const tail = await dependencies.readBackupFileTail(LOG_FILE_TAIL_BYTES, signal);
+      const readBackupFileTail = dependencies.readBackupFileTail ?? readProductionBackupLogTail;
+      const tail = await readBackupFileTail(LOG_FILE_TAIL_BYTES, signal);
       const parsed = parseFileTail(tail.text, tail.truncated);
       signal?.throwIfAborted();
       return {
