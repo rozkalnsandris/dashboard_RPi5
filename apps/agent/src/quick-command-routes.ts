@@ -8,7 +8,7 @@ import {
 } from "@dashboard-rpi5/contracts/quick-commands";
 import type { FastifyInstance } from "fastify";
 
-import { OperationTimeoutError, runWithTimeout } from "./operation-registry.js";
+import { OperationTimeoutError } from "./operation-registry.js";
 import {
   listQuickCommands,
   QuickCommandOutputLimitError,
@@ -28,24 +28,81 @@ export class QuickCommandConcurrencyLimitError extends Error {
   }
 }
 
-export function createQuickCommandExecutor(runner: QuickCommandRunner = runQuickCommand) {
-  let activeRuns = 0;
+interface QuickCommandExecutorOptions {
+  timeoutMs?: number;
+}
 
-  return async (commandId: Parameters<QuickCommandRunner>[0]) => {
-    if (activeRuns >= QUICK_COMMAND_MAX_CONCURRENT_RUNS) {
+export function createQuickCommandExecutor(
+  runner: QuickCommandRunner = runQuickCommand,
+  options: QuickCommandExecutorOptions = {},
+) {
+  const timeoutMs = options.timeoutMs ?? QUICK_COMMAND_TIMEOUT_MS;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > QUICK_COMMAND_TIMEOUT_MS) {
+    throw new RangeError("Quick Command timeout is outside the allowed range");
+  }
+
+  let activeLifecycle:
+    | {
+        controller: AbortController;
+        completion: Promise<void>;
+      }
+    | undefined;
+
+  const execute = async (commandId: Parameters<QuickCommandRunner>[0]) => {
+    if (activeLifecycle !== undefined) {
       throw new QuickCommandConcurrencyLimitError();
     }
 
-    activeRuns += 1;
+    const controller = new AbortController();
+    const runnerPromise = Promise.resolve().then(() => runner(commandId, controller.signal));
+
+    let lifecycleCompletion!: Promise<void>;
+    lifecycleCompletion = runnerPromise
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(() => {
+        if (activeLifecycle?.completion === lifecycleCompletion) {
+          activeLifecycle = undefined;
+        }
+      });
+
+    activeLifecycle = {
+      controller,
+      completion: lifecycleCompletion,
+    };
+
+    let timedOut = false;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        reject(new OperationTimeoutError());
+      }, timeoutMs);
+    });
+
     try {
-      return await runWithTimeout(
-        (signal) => runner(commandId, signal),
-        QUICK_COMMAND_TIMEOUT_MS,
-      );
+      return await Promise.race([runnerPromise, timeoutPromise]);
     } finally {
-      activeRuns -= 1;
+      if (timeoutHandle !== undefined) {
+        clearTimeout(timeoutHandle);
+      }
+      if (!timedOut) {
+        await lifecycleCompletion;
+      }
     }
   };
+
+  const shutdown = async () => {
+    const current = activeLifecycle;
+    if (current === undefined) return;
+    current.controller.abort();
+    await current.completion;
+  };
+
+  return Object.assign(execute, { shutdown });
 }
 
 interface RegisterQuickCommandRoutesOptions {
@@ -57,6 +114,10 @@ export function registerQuickCommandRoutes(
   options: RegisterQuickCommandRoutesOptions = {},
 ) {
   const executeQuickCommand = createQuickCommandExecutor(options.runner);
+
+  app.addHook("onClose", async () => {
+    await executeQuickCommand.shutdown();
+  });
 
   app.get(
     "/v1/quick-commands",
