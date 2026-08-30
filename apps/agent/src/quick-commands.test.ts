@@ -166,48 +166,39 @@ describe("Quick Commands", () => {
   });
 
   it("does not release capacity when request timeout fires before lifecycle completion", async () => {
-    vi.useFakeTimers();
-    try {
-      let calls = 0;
-      let firstSignal: AbortSignal | undefined;
-      let releaseFirst!: () => void;
+    let calls = 0;
+    let firstSignal: AbortSignal | undefined;
+    let releaseFirst!: () => void;
 
-      const runner = vi.fn(
-        (commandId: QuickCommandId, signal: AbortSignal): Promise<QuickCommandResult> => {
-          calls += 1;
-          if (calls === 1) {
-            firstSignal = signal;
-            return new Promise<QuickCommandResult>((resolve) => {
-              releaseFirst = () => resolve(successResult(commandId));
-            });
-          }
-          return Promise.resolve(successResult(commandId));
-        },
-      );
-      const executeQuickCommand = createQuickCommandExecutor(runner, { timeoutMs: 25 });
+    const runner = vi.fn(
+      (commandId: QuickCommandId, signal: AbortSignal): Promise<QuickCommandResult> => {
+        calls += 1;
+        if (calls === 1) {
+          firstSignal = signal;
+          return new Promise<QuickCommandResult>((resolve) => {
+            releaseFirst = () => resolve(successResult(commandId));
+          });
+        }
+        return Promise.resolve(successResult(commandId));
+      },
+    );
+    const executeQuickCommand = createQuickCommandExecutor(runner, { timeoutMs: 25 });
 
-      const timedOut = executeQuickCommand("host.uptime");
-      const timeoutExpectation = expect(timedOut).rejects.toBeInstanceOf(OperationTimeoutError);
-      await vi.advanceTimersByTimeAsync(25);
-      await timeoutExpectation;
-      expect(firstSignal?.aborted).toBe(true);
+    await expect(executeQuickCommand("host.uptime")).rejects.toBeInstanceOf(OperationTimeoutError);
+    expect(firstSignal?.aborted).toBe(true);
 
-      await expect(executeQuickCommand("host.kernel")).rejects.toBeInstanceOf(
-        QuickCommandConcurrencyLimitError,
-      );
-      expect(runner).toHaveBeenCalledTimes(1);
+    await expect(executeQuickCommand("host.kernel")).rejects.toBeInstanceOf(
+      QuickCommandConcurrencyLimitError,
+    );
+    expect(runner).toHaveBeenCalledTimes(1);
 
-      releaseFirst();
-      await Promise.resolve();
-      await Promise.resolve();
+    releaseFirst();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
-      await expect(executeQuickCommand("host.kernel")).resolves.toEqual(
-        successResult("host.kernel"),
-      );
-      expect(runner).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
-    }
+    await expect(executeQuickCommand("host.kernel")).resolves.toEqual(
+      successResult("host.kernel"),
+    );
+    expect(runner).toHaveBeenCalledTimes(2);
   });
 
   it("keeps capacity while a real child ignores SIGTERM and releases only after close", async () => {
