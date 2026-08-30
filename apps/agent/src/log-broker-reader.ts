@@ -1,13 +1,16 @@
 import type { LogRange, LogSnapshot, LogSourceId } from "@dashboard-rpi5/contracts/logs";
 import { execFile as nodeExecFile } from "node:child_process";
 
+import { readProductionBackupLogTail, type DescriptorSafeFileTailResult } from "./log-broker-file.js";
 import { isLogBrokerSourceId } from "./log-broker-protocol.js";
 import {
   JOURNALCTL_PATH,
+  LOG_FILE_TAIL_BYTES,
   LOG_MAX_ENTRIES,
   LOG_MAX_SOURCE_BYTES,
   LOG_SOURCE_TIMEOUT_MS,
   LogSourceUnavailableError,
+  parseFileTail,
   parseJournalJsonLines,
   readLogSnapshot,
   type LogReadDependencies,
@@ -46,6 +49,7 @@ export interface LogBrokerReaderDependencies {
     range: LogRange,
     signal?: AbortSignal,
   ): Promise<LogSnapshot>;
+  readBackupFileTail?(maxBytes: number, signal?: AbortSignal): Promise<DescriptorSafeFileTailResult>;
 }
 
 const defaultDependencies: LogBrokerReaderDependencies = {
@@ -63,6 +67,7 @@ const defaultDependencies: LogBrokerReaderDependencies = {
   },
   readRegistered: (sourceId, range, signal) =>
     readLogSnapshot(sourceId, range, undefined, signal),
+  readBackupFileTail: readProductionBackupLogTail,
 };
 
 export function logBrokerSystemdUnitForSource(sourceId: LogSourceId): string | null {
@@ -120,6 +125,23 @@ export async function readBrokerLogSnapshot(
     const descriptor = getProductionLogSourceDescriptor(sourceId);
     if (descriptor === undefined || descriptor.kind === "DOCKER") {
       throw new LogSourceUnavailableError();
+    }
+
+    if (descriptor.kind === "FILE") {
+      const observedAt = dependencies.now();
+      if (!Number.isFinite(observedAt.getTime())) throw new LogSourceUnavailableError();
+      const readBackupFileTail = dependencies.readBackupFileTail ?? readProductionBackupLogTail;
+      const tail = await readBackupFileTail(LOG_FILE_TAIL_BYTES, signal);
+      const parsed = parseFileTail(tail.text, tail.truncated);
+      signal?.throwIfAborted();
+      return {
+        observedAt: observedAt.toISOString(),
+        source: descriptor,
+        range,
+        rangeApplied: false,
+        entries: parsed.entries,
+        truncated: parsed.truncated,
+      };
     }
 
     if (descriptor.kind !== "SYSTEMD") {

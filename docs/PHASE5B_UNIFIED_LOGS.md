@@ -36,7 +36,7 @@ The reviewed source catalog is fixed in source code. The browser receives only d
 | `systemd:rpi5-dashboard-evidence` | log broker / journal | `rpi5-dashboard-evidence.service` |
 | `systemd:hermes-tech-web` | log broker / journal | `hermes-tech-web.service` |
 | `journal:rpi5-deploy` | log broker / journal | fixed root/syslog `rpi5-deploy` origin |
-| `file:rpi5-backup` | log broker / bounded file tail | `/var/log/rpi5-backup.log` |
+| `file:rpi5-backup` | log broker / descriptor-safe bounded file tail | `/var/log/rpi5-backup.log` |
 
 No discovered container, unit, journal match or filesystem path is accepted dynamically.
 
@@ -63,6 +63,10 @@ registered host-log sourceId + fixed range
 ```
 
 The main `dashboard-rpi5-agent` remains non-root and must not join `docker`, `adm` or `systemd-journal`. The log broker has no mutation route, no generic command/path/unit/journal selector, no network authority, and is intended only for the reviewed journal records plus the one root-owned backup log.
+
+For `file:rpi5-backup`, the privileged broker owns the fixed path `/var/log/rpi5-backup.log`. It opens that final component with `O_RDONLY | O_NOFOLLOW`, validates the opened descriptor as an exact `root:root 0600` regular file, computes the tail offset from descriptor size, and reads at most 256 KiB from that same descriptor. A final-component symlink, non-regular object, ownership/mode drift, short read, abort or I/O error fails closed. The reader never chmods/chowns the log and never reopens the pathname after validation.
+
+`O_NOFOLLOW` protects the final component. The existing trusted-system-path assumption for the parent `/var/log` chain remains explicit; #239 does not add `openat2` or widen the broker's filesystem authority. A future change to that parent-chain trust model requires a separate reviewed hardening design.
 
 ## Bounds and failure semantics
 

@@ -44,6 +44,10 @@ registered systemd/journal/file sourceId + fixed range
 
 The main agent must not gain `adm`, `systemd-journal`, sudo or root authority to make logs readable. The dedicated host-log broker is intentionally isolated from Docker Engine and terminal/PTTY authority. Its Unix API is GET-only, source/range allowlisted, concurrency/output/time bounded, and exposes no generic path, unit, journal selector, command execution or mutation capability. Root-owned backup-log access is limited in application code to the single registered `/var/log/rpi5-backup.log` path.
 
+For `file:rpi5-backup`, the privileged broker opens that fixed path read-only with final-component no-symlink semantics, validates the opened descriptor as an exact `root:root 0600` regular file, computes the bounded tail offset from descriptor metadata, and reads the tail from the same descriptor. It does not `stat(path)` and later reopen the pathname. A final-component symlink, special filesystem object, unsafe ownership/mode, short read caused by concurrent truncation, open/read error or abort fails closed as `SOURCE_UNAVAILABLE`; the broker never chmods/chowns the source and never accepts a browser-supplied path.
+
+Linux `O_NOFOLLOW` protects the final path component. The reviewed production design therefore retains the existing trusted-system-path assumption for the parent chain `/var/log`; #239 does not add an `openat2` helper or broaden filesystem authority. If that parent-chain assumption changes, a separately reviewed descriptor-walk/`openat2` design is required rather than silently weakening the check.
+
 The source-only broker/systemd blueprint does not itself activate this trust boundary in production. Installing identities/groups/units, enabling/restarting services or changing production permissions remains a separate explicit owner authorization.
 
 ### Implementation rules
@@ -51,6 +55,8 @@ The source-only broker/systemd blueprint does not itself activate this trust bou
 - broker-only Docker Engine authority;
 - separate narrow host-log broker for journal/root-file authority;
 - fixed registered source IDs and exact backend mappings;
+- fixed file logs use one no-symlink opened descriptor for metadata validation and bounded reading;
+- production backup-log metadata is exact `root:root 0600`; metadata drift fails closed without repair;
 - bounded line count / bytes / duration / concurrency;
 - structured journal output rather than ANSI terminal parsing;
 - escape output and never render log content through `innerHTML`;
