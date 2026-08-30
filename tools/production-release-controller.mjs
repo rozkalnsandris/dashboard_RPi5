@@ -294,17 +294,18 @@ async function openAnchoredDirectory(absoluteDirectory, label) {
   }
 }
 
-async function openAnchoredRegularFile(absolutePath, label, extraFlags = 0) {
+async function openAnchoredRegularFile(absolutePath, label) {
   const resolved = resolve(absolutePath);
-  const parentHandle = await openAnchoredDirectory(dirname(resolved), `${label} parent`);
+  const parentPath = dirname(resolved);
+  const parentHandle = await openAnchoredDirectory(parentPath, `${label} parent`);
   let fileHandle;
   try {
-    const name = resolved.slice(dirname(resolved).length + (dirname(resolved) === "/" ? 0 : 1));
+    const name = parentPath === "/" ? resolved.slice(1) : resolved.slice(parentPath.length + 1);
     if (name === "" || name.includes(sep)) throw new Error(`${label} filename is invalid`);
     try {
       fileHandle = await open(
         descriptorChildPath(parentHandle, name),
-        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK | extraFlags,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
       );
     } catch (error) {
       throw new Error(`${label} must be a real non-symlink regular file`, { cause: error });
@@ -459,7 +460,7 @@ function isProductionActivationRoot(activationRoot) {
 
 async function assertTrustedProductionControllerEntrypoint() {
   if (typeof process.geteuid !== "function" || process.geteuid() !== ROOT_UID) {
-    throw new Error("production release apply requires root through the trusted controller boundary");
+    throw new Error("production release operation requires root through the trusted controller boundary");
   }
   const modulePath = await realpath(MODULE_FILE);
   const releasesRoot = resolve(PRODUCTION_ROOT, "releases");
@@ -475,7 +476,7 @@ async function assertTrustedProductionControllerEntrypoint() {
     segments[1] !== "tools" ||
     segments[2] !== "production-release-controller.mjs"
   ) {
-    throw new Error("production apply must execute the controller from the current root-owned immutable release");
+    throw new Error("production operation must execute the controller from the current root-owned immutable release");
   }
   const releaseSha = segments[0];
   const releaseDir = resolve(releasesRoot, releaseSha);
@@ -505,16 +506,6 @@ async function assertTrustedProductionControllerEntrypoint() {
   return releaseSha;
 }
 
-function assertProductionPlanRunsUnprivileged(activationRoot) {
-  if (
-    isProductionActivationRoot(activationRoot) &&
-    typeof process.geteuid === "function" &&
-    process.geteuid() === ROOT_UID
-  ) {
-    throw new Error("production candidate planning must run without root privileges");
-  }
-}
-
 async function loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha }) {
   assertSha(sourceSha);
   const manifest = await readJsonBounded(resolve(manifestPath), "candidate manifest");
@@ -523,62 +514,6 @@ async function loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha }
     sourceSha,
     manifest,
   });
-}
-
-export async function planReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, contract }) {
-  validateReleaseActivationContract(contract);
-  assertProductionPlanRunsUnprivileged(activationRoot);
-  const verified = await loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha });
-  const observedCurrent = await inspectCurrent(activationRoot);
-  if (observedCurrent !== null) await readInstalledManifest(activationRoot, observedCurrent);
-  const target = await inspectTargetRelease(activationRoot, sourceSha);
-  const operations = [];
-  if (!target.exists) operations.push("copy_manifest_allowlisted_release", "write_verified_manifest_marker");
-  if (observedCurrent !== sourceSha) operations.push("atomic_current_symlink_swap");
-  return {
-    status: "PLAN",
-    action: "activate",
-    sourceSha,
-    candidateSha256: verified.candidateSha256,
-    observedCurrent: expectedCurrentLabel(observedCurrent),
-    targetRelease: target.exists ? "verified-existing" : "absent",
-    operations,
-  };
-}
-
-async function preparePrivilegedActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, expectedCandidateSha256, contract }) {
-  validateReleaseActivationContract(contract);
-  assertSha(sourceSha);
-  const candidateRootResolved = resolve(candidateRoot);
-  const manifest = await readCandidateManifestBounded(manifestPath, sourceSha);
-  assertExpectedCandidateSha256(manifest.candidateSha256, expectedCandidateSha256);
-  const observedCurrent = await inspectCurrent(activationRoot);
-  if (observedCurrent !== null) await readInstalledManifest(activationRoot, observedCurrent);
-  const target = await inspectTargetRelease(activationRoot, sourceSha);
-  if (target.exists && target.manifest?.candidateSha256 !== manifest.candidateSha256) {
-    throw new Error("existing target release does not match reviewed candidate manifest");
-  }
-  return { candidateRoot: candidateRootResolved, manifest, observedCurrent, target };
-}
-
-async function normalizeInstalledReleasePath(path, mode, activationRoot) {
-  if (resolve(activationRoot) === PRODUCTION_ROOT) {
-    if (typeof process.geteuid !== "function" || process.geteuid() !== ROOT_UID) {
-      throw new Error("production release metadata normalization requires root");
-    }
-    await chown(path, ROOT_UID, ROOT_GID);
-  }
-  await chmod(path, mode);
-}
-
-async function ensureReleaseParentDirectories(releaseDir, entryPath, activationRoot) {
-  const segments = entryPath.split("/").slice(0, -1);
-  let current = releaseDir;
-  for (const segment of segments) {
-    current = resolve(current, segment);
-    await ensureRealDirectory(current, `release directory ${segment}`, true);
-    await normalizeInstalledReleasePath(current, RELEASE_DIRECTORY_MODE, activationRoot);
-  }
 }
 
 export async function openVerifiedCandidateSource({ candidateRoot, entry: rawEntry }) {
@@ -611,6 +546,132 @@ export async function openVerifiedCandidateSource({ candidateRoot, entry: rawEnt
     throw error;
   } finally {
     await directoryHandle.close();
+  }
+}
+
+async function hashVerifiedCandidateSourceHandle(sourceHandle, rawEntry) {
+  const entry = validateManifestEntry(rawEntry);
+  const sourceBefore = await sourceHandle.stat();
+  if (!sourceBefore.isFile()) throw new Error(`candidate source must remain a regular file: ${entry.path}`);
+  if (sourceBefore.size !== entry.bytes) throw new Error(`candidate source size mismatch: ${entry.path}`);
+  const hash = createHash(PRODUCTION_CANDIDATE_HASH);
+  const buffer = Buffer.allocUnsafe(SECURE_COPY_BUFFER_BYTES);
+  let total = 0;
+  let position = 0;
+  while (true) {
+    const maximumRead = Math.min(buffer.length, entry.bytes - total + 1);
+    if (maximumRead <= 0) throw new Error(`candidate source size mismatch: ${entry.path}`);
+    const { bytesRead } = await sourceHandle.read(buffer, 0, maximumRead, position);
+    if (bytesRead === 0) break;
+    if (total + bytesRead > entry.bytes) throw new Error(`candidate source size mismatch: ${entry.path}`);
+    hash.update(buffer.subarray(0, bytesRead));
+    total += bytesRead;
+    position += bytesRead;
+  }
+  if (total !== entry.bytes) throw new Error(`candidate source size mismatch: ${entry.path}`);
+  if (hash.digest("hex") !== entry.sha256) throw new Error(`candidate source digest mismatch: ${entry.path}`);
+  const sourceAfter = await sourceHandle.stat();
+  if (!sourceAfter.isFile() || sourceAfter.size !== entry.bytes) {
+    throw new Error(`candidate source changed during verification: ${entry.path}`);
+  }
+}
+
+async function verifyCandidateManifestSources({ candidateRoot, manifest }) {
+  for (const entry of manifest.files) {
+    const sourceHandle = await openVerifiedCandidateSource({ candidateRoot, entry });
+    try {
+      await hashVerifiedCandidateSourceHandle(sourceHandle, entry);
+    } finally {
+      await sourceHandle.close();
+    }
+  }
+}
+
+async function preparePrivilegedActivation({
+  activationRoot,
+  candidateRoot,
+  manifestPath,
+  sourceSha,
+  expectedCandidateSha256,
+  contract,
+}) {
+  validateReleaseActivationContract(contract);
+  assertSha(sourceSha);
+  const candidateRootResolved = resolve(candidateRoot);
+  const manifest = await readCandidateManifestBounded(manifestPath, sourceSha);
+  if (expectedCandidateSha256 !== undefined) {
+    assertExpectedCandidateSha256(manifest.candidateSha256, expectedCandidateSha256);
+  }
+  await verifyCandidateManifestSources({ candidateRoot: candidateRootResolved, manifest });
+  const observedCurrent = await inspectCurrent(activationRoot);
+  if (observedCurrent !== null) await readInstalledManifest(activationRoot, observedCurrent);
+  const target = await inspectTargetRelease(activationRoot, sourceSha);
+  if (target.exists && target.manifest?.candidateSha256 !== manifest.candidateSha256) {
+    throw new Error("existing target release does not match reviewed candidate manifest");
+  }
+  return { candidateRoot: candidateRootResolved, manifest, observedCurrent, target };
+}
+
+export async function planReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, contract }) {
+  validateReleaseActivationContract(contract);
+  if (isProductionActivationRoot(activationRoot)) {
+    await assertTrustedProductionControllerEntrypoint();
+    const prepared = await preparePrivilegedActivation({
+      activationRoot,
+      candidateRoot,
+      manifestPath,
+      sourceSha,
+      contract,
+    });
+    const operations = [];
+    if (!prepared.target.exists) operations.push("copy_manifest_allowlisted_release", "write_verified_manifest_marker");
+    if (prepared.observedCurrent !== sourceSha) operations.push("atomic_current_symlink_swap");
+    return {
+      status: "PLAN",
+      action: "activate",
+      sourceSha,
+      candidateSha256: prepared.manifest.candidateSha256,
+      observedCurrent: expectedCurrentLabel(prepared.observedCurrent),
+      targetRelease: prepared.target.exists ? "verified-existing" : "absent",
+      operations,
+    };
+  }
+
+  const verified = await loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha });
+  const observedCurrent = await inspectCurrent(activationRoot);
+  if (observedCurrent !== null) await readInstalledManifest(activationRoot, observedCurrent);
+  const target = await inspectTargetRelease(activationRoot, sourceSha);
+  const operations = [];
+  if (!target.exists) operations.push("copy_manifest_allowlisted_release", "write_verified_manifest_marker");
+  if (observedCurrent !== sourceSha) operations.push("atomic_current_symlink_swap");
+  return {
+    status: "PLAN",
+    action: "activate",
+    sourceSha,
+    candidateSha256: verified.candidateSha256,
+    observedCurrent: expectedCurrentLabel(observedCurrent),
+    targetRelease: target.exists ? "verified-existing" : "absent",
+    operations,
+  };
+}
+
+async function normalizeInstalledReleasePath(path, mode, activationRoot) {
+  if (resolve(activationRoot) === PRODUCTION_ROOT) {
+    if (typeof process.geteuid !== "function" || process.geteuid() !== ROOT_UID) {
+      throw new Error("production release metadata normalization requires root");
+    }
+    await chown(path, ROOT_UID, ROOT_GID);
+  }
+  await chmod(path, mode);
+}
+
+async function ensureReleaseParentDirectories(releaseDir, entryPath, activationRoot) {
+  const segments = entryPath.split("/").slice(0, -1);
+  let current = releaseDir;
+  for (const segment of segments) {
+    current = resolve(current, segment);
+    await ensureRealDirectory(current, `release directory ${segment}`, true);
+    await normalizeInstalledReleasePath(current, RELEASE_DIRECTORY_MODE, activationRoot);
   }
 }
 
@@ -843,6 +904,7 @@ export async function applyReleaseActivation({
 
 export async function planReleaseRollback({ activationRoot, rollbackSha, contract }) {
   validateReleaseActivationContract(contract);
+  if (isProductionActivationRoot(activationRoot)) await assertTrustedProductionControllerEntrypoint();
   assertSha(rollbackSha, "rollback SHA");
   const observedCurrent = await inspectCurrent(activationRoot);
   if (observedCurrent === null) throw new Error("rollback requires an existing current release");

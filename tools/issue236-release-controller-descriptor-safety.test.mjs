@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
@@ -144,8 +144,8 @@ test("issue236 source locks privileged execution and removes pathname copy seman
     assert.match(docs, /candidate checkout/iu);
     assert.match(docs, /root-owned/iu);
     assert.match(docs, /--expected-candidate/iu);
+    assert.match(docs, /forbidden/iu);
   }
-  assert.doesNotMatch(productionReadme, /sudo\s+\/usr\/bin\/node\s+\.\/tools\/production-release-controller\.mjs/iu);
 });
 
 test("descriptor-safe copy does not depend on source permissions or mutate the source", async (t) => {
