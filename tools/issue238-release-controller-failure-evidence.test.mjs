@@ -155,8 +155,8 @@ test("controller wires mutation evidence into activation and rollback without cl
     controllerSource,
     /copyVerifiedRelease\(\{ activationRoot, candidateRoot, manifest, mutationState \}\)/u,
   );
-  assert.match(controllerSource, /mutationState\.markStarted\(\);\n  const releaseDir/u);
-  assert.match(controllerSource, /await symlink\(target, temporary\);\n  mutationState\.markStarted\(\);\n  await rename/u);
+  assert.match(controllerSource, /mutationState\.markStarted\(\);\n {2}const releaseDir/u);
+  assert.match(controllerSource, /await symlink\(target, temporary\);\n {2}mutationState\.markStarted\(\);\n {2}await rename/u);
   assert.match(
     controllerSource,
     /swapCurrentPointer\(activationRoot, sourceSha, mutationState\)/u,
