@@ -6,9 +6,22 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 
 import {
+  TERMINAL_NATIVE_PACKAGE_VERSION,
+  TERMINAL_NATIVE_RUNTIME_FILES,
+  TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT,
+} from "./package-terminal-native-runtime.mjs";
+import {
+  PRODUCTION_CANDIDATE_DIRECTORY_ROOTS,
+  PRODUCTION_CANDIDATE_FILE_ROOTS,
+  createProductionCandidateManifest,
+} from "./production-candidate-manifest.mjs";
+import {
   copyVerifiedCandidateSourceHandle,
   openVerifiedCandidateSource,
+  verifyDescriptorSafeProductionCandidateManifest,
 } from "./production-release-controller.mjs";
+
+const SOURCE_SHA = "a".repeat(40);
 
 function makeEntry(path, bytes) {
   return {
@@ -18,10 +31,64 @@ function makeEntry(path, bytes) {
   };
 }
 
+function manifestFromFiles(sourceSha, files) {
+  const normalizedFiles = files.map((entry) => ({
+    path: entry.path,
+    bytes: entry.bytes,
+    sha256: entry.sha256,
+  }));
+  const totalBytes = normalizedFiles.reduce((total, entry) => total + entry.bytes, 0);
+  const core = {
+    schema: "dashboard-rpi5.production-candidate.v1",
+    sourceSha,
+    releasePath: `/opt/dashboard_RPi5/releases/${sourceSha}`,
+    nodeMajor: 24,
+    hashAlgorithm: "sha256",
+    fileCount: normalizedFiles.length,
+    totalBytes,
+    files: normalizedFiles,
+  };
+  return {
+    ...core,
+    candidateSha256: createHash("sha256").update(JSON.stringify(core), "utf8").digest("hex"),
+  };
+}
+
 async function makeWorkspace(t) {
   const workspace = await mkdtemp(resolve(tmpdir(), "dashboard-issue236-"));
   t.after(async () => rm(workspace, { recursive: true, force: true }));
   return workspace;
+}
+
+async function makeCanonicalCandidateFixture(t) {
+  const workspace = await makeWorkspace(t);
+  const candidateRoot = resolve(workspace, "candidate");
+  await mkdir(candidateRoot, { recursive: true });
+  for (const relativeDirectory of PRODUCTION_CANDIDATE_DIRECTORY_ROOTS) {
+    await mkdir(resolve(candidateRoot, ...relativeDirectory.split("/")), { recursive: true });
+  }
+  for (const relativeFile of PRODUCTION_CANDIDATE_FILE_ROOTS) {
+    const path = resolve(candidateRoot, ...relativeFile.split("/"));
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, `fixture:${relativeFile}\n`, "utf8");
+  }
+  return candidateRoot;
+}
+
+async function addValidTerminalRuntime(candidateRoot) {
+  const terminalEntrypoint = resolve(candidateRoot, "apps/terminal-agent/dist/session-stdio-entry.js");
+  await mkdir(dirname(terminalEntrypoint), { recursive: true });
+  await writeFile(terminalEntrypoint, "terminal-entrypoint\n", "utf8");
+
+  for (const relativeFile of TERMINAL_NATIVE_RUNTIME_FILES) {
+    const path = resolve(candidateRoot, ...TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT.split("/"), ...relativeFile.split("/"));
+    await mkdir(dirname(path), { recursive: true });
+    const content =
+      relativeFile === "package.json"
+        ? `${JSON.stringify({ name: "node-pty", version: TERMINAL_NATIVE_PACKAGE_VERSION, main: "./lib/index.js" })}\n`
+        : `runtime:${relativeFile}\n`;
+    await writeFile(path, content, "utf8");
+  }
 }
 
 async function closeHandle(handle) {
@@ -124,6 +191,44 @@ test("non-regular candidate source is rejected", async (t) => {
   await assert.rejects(openVerifiedCandidateSource({ candidateRoot, entry }), /regular file/u);
 });
 
+test("descriptor-safe canonical verification rejects a self-consistent narrowed manifest and unlisted fixed-root files", async (t) => {
+  const candidateRoot = await makeCanonicalCandidateFixture(t);
+  const manifest = await createProductionCandidateManifest({ rootDir: candidateRoot, sourceSha: SOURCE_SHA });
+  const narrowed = manifestFromFiles(
+    SOURCE_SHA,
+    manifest.files.filter((entry) => entry.path !== "ops/systemd/dashboard-rpi5-web.service"),
+  );
+
+  await assert.rejects(
+    verifyDescriptorSafeProductionCandidateManifest({ candidateRoot, sourceSha: SOURCE_SHA, manifest: narrowed }),
+    /candidate manifest does not match exact build contents/u,
+  );
+
+  const extraPath = resolve(candidateRoot, "apps/web/dist/unlisted-extra.js");
+  await writeFile(extraPath, "unlisted\n", "utf8");
+  await assert.rejects(
+    verifyDescriptorSafeProductionCandidateManifest({ candidateRoot, sourceSha: SOURCE_SHA, manifest }),
+    /candidate manifest does not match exact build contents/u,
+  );
+});
+
+test("descriptor-safe canonical verification preserves packaged terminal runtime mode closure", async (t) => {
+  const candidateRoot = await makeCanonicalCandidateFixture(t);
+  await addValidTerminalRuntime(candidateRoot);
+  const manifest = await createProductionCandidateManifest({ rootDir: candidateRoot, sourceSha: SOURCE_SHA });
+  const executableRuntimeFile = resolve(
+    candidateRoot,
+    ...TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT.split("/"),
+    "lib/index.js",
+  );
+  await chmod(executableRuntimeFile, 0o755);
+
+  await assert.rejects(
+    verifyDescriptorSafeProductionCandidateManifest({ candidateRoot, sourceSha: SOURCE_SHA, manifest }),
+    /must not be executable/u,
+  );
+});
+
 test("issue236 source locks privileged execution and removes pathname copy semantics", async () => {
   const controller = await readFile(resolve("tools/production-release-controller.mjs"), "utf8");
   const productionReadme = await readFile(resolve("ops/production/README.md"), "utf8");
@@ -136,6 +241,8 @@ test("issue236 source locks privileged execution and removes pathname copy seman
   assert.match(controller, /assertTrustedProductionControllerEntrypoint/u);
   assert.match(controller, /production apply controller must come from the current release/u);
   assert.match(controller, /requiresExpectedCandidateSha256/u);
+  assert.match(controller, /verifyDescriptorSafeProductionCandidateManifest/u);
+  assert.match(controller, /PRODUCTION_CANDIDATE_DIRECTORY_ROOTS/u);
   assert.match(controller, /resolve\(MODULE_ROOT, "ops\/production\/release-activation-contract\.json"\)/u);
   assert.doesNotMatch(controller, /copyFile\(sourcePath,\s*destinationPath/u);
   assert.doesNotMatch(controller, /node:child_process|\bfetch\s*\(|systemctl|useradd|groupadd|usermod|docker\.sock|cloudflare\.com\/client\/v4/iu);

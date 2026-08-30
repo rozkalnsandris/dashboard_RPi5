@@ -7,6 +7,7 @@ import {
   mkdir,
   open,
   readFile,
+  readdir,
   readlink,
   realpath,
   rename,
@@ -19,12 +20,19 @@ import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
+  PRODUCTION_CANDIDATE_DIRECTORY_ROOTS,
+  PRODUCTION_CANDIDATE_FILE_ROOTS,
   PRODUCTION_CANDIDATE_HASH,
   PRODUCTION_CANDIDATE_SCHEMA,
   validateCandidateManifestShape,
   verifyInstalledProductionCandidateManifest,
   verifyProductionCandidateManifest,
 } from "./production-candidate-manifest.mjs";
+import {
+  TERMINAL_NATIVE_PACKAGE_VERSION,
+  TERMINAL_NATIVE_RUNTIME_FILES,
+  TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT,
+} from "./package-terminal-native-runtime.mjs";
 
 export const RELEASE_ACTIVATION_SCHEMA = "dashboard-rpi5.release-activation.v1";
 export const RELEASE_ACTIVATION_ACK = "I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ACTIVATION";
@@ -46,6 +54,12 @@ const SECURE_COPY_BUFFER_BYTES = 64 * 1024;
 const PROC_SELF_FD = "/proc/self/fd";
 const MODULE_FILE = fileURLToPath(import.meta.url);
 const MODULE_ROOT = resolve(dirname(MODULE_FILE), "..");
+const LOG_BROKER_ENTRYPOINT = "apps/agent/dist/log-broker-entry.js";
+const TERMINAL_AGENT_ENTRYPOINT = "apps/terminal-agent/dist/session-stdio-entry.js";
+const TERMINAL_RUNTIME_PACKAGE_JSON = `${TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT}/package.json`;
+const MAX_TERMINAL_RUNTIME_FILE_BYTES = 32 * 1024 * 1024;
+const MAX_TERMINAL_PACKAGE_JSON_BYTES = 64 * 1024;
+const SUPPORTED_TERMINAL_ARCHES = new Set(["x64", "arm64"]);
 
 function assertObject(value, label) {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -250,6 +264,10 @@ function descriptorChildPath(handle, child) {
   return `${PROC_SELF_FD}/${handle.fd}/${child}`;
 }
 
+function descriptorDirectoryPath(handle) {
+  return `${PROC_SELF_FD}/${handle.fd}`;
+}
+
 async function closeIgnoringError(handle) {
   if (handle === undefined) return;
   try {
@@ -292,6 +310,83 @@ async function openAnchoredDirectory(absoluteDirectory, label) {
     await closeIgnoringError(handle);
     throw error;
   }
+}
+
+async function openRelativeDirectoryFromHandle(rootHandle, relativeDirectory, label) {
+  const segments = relativeDirectory.split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw new Error(`${label} path is invalid`);
+  }
+  let currentHandle;
+  try {
+    let parentHandle = rootHandle;
+    for (const segment of segments) {
+      const next = await openDirectoryChild(parentHandle, segment, label);
+      if (currentHandle !== undefined) await currentHandle.close();
+      currentHandle = next;
+      parentHandle = currentHandle;
+    }
+    return currentHandle;
+  } catch (error) {
+    await closeIgnoringError(currentHandle);
+    throw error;
+  }
+}
+
+function normalizePinnedDirectoryEntry(entry, label) {
+  if (entry.isSymbolicLink()) throw new Error(`${label} symlink is forbidden: ${entry.name}`);
+  if (entry.isDirectory()) return { name: entry.name, kind: "directory" };
+  if (entry.isFile()) return { name: entry.name, kind: "file" };
+  throw new Error(`${label} special file is forbidden: ${entry.name}`);
+}
+
+async function readPinnedDirectoryEntries(directoryHandle, label) {
+  const entries = await readdir(descriptorDirectoryPath(directoryHandle), { withFileTypes: true });
+  const normalized = entries.map((entry) => normalizePinnedDirectoryEntry(entry, label));
+  normalized.sort((left, right) => comparePath(left.name, right.name));
+  return normalized;
+}
+
+async function assertPinnedRegularFileChild(directoryHandle, name, label) {
+  let handle;
+  try {
+    handle = await open(
+      descriptorChildPath(directoryHandle, name),
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+    const stat = await handle.stat();
+    if (!stat.isFile()) throw new Error(`${label} must be a real non-symlink regular file`);
+  } catch (error) {
+    if (error instanceof Error && error.message === `${label} must be a real non-symlink regular file`) throw error;
+    throw new Error(`${label} must be a real non-symlink regular file`, { cause: error });
+  } finally {
+    await closeIgnoringError(handle);
+  }
+}
+
+async function collectPinnedDirectoryFilePaths(directoryHandle, relativeDirectory) {
+  const label = `candidate directory ${relativeDirectory}`;
+  const before = await readPinnedDirectoryEntries(directoryHandle, label);
+  const files = [];
+  for (const entry of before) {
+    const relativePath = `${relativeDirectory}/${entry.name}`;
+    if (entry.kind === "directory") {
+      const childHandle = await openDirectoryChild(directoryHandle, entry.name, `candidate directory ${relativePath}`);
+      try {
+        files.push(...(await collectPinnedDirectoryFilePaths(childHandle, relativePath)));
+      } finally {
+        await childHandle.close();
+      }
+      continue;
+    }
+    await assertPinnedRegularFileChild(directoryHandle, entry.name, `candidate source ${relativePath}`);
+    files.push(relativePath);
+  }
+  const after = await readPinnedDirectoryEntries(directoryHandle, label);
+  if (JSON.stringify(before) !== JSON.stringify(after)) {
+    throw new Error(`candidate directory changed during canonical verification: ${relativeDirectory}`);
+  }
+  return files;
 }
 
 async function openAnchoredRegularFile(absolutePath, label) {
@@ -516,22 +611,24 @@ async function loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha }
   });
 }
 
-export async function openVerifiedCandidateSource({ candidateRoot, entry: rawEntry }) {
+async function openVerifiedCandidateSourceFromRootHandle(rootHandle, rawEntry) {
   const entry = validateManifestEntry(rawEntry);
-  const candidateRootResolved = resolve(candidateRoot);
-  let directoryHandle = await openAnchoredDirectory(candidateRootResolved, "candidate root");
+  let directoryHandle;
   let sourceHandle;
   try {
+    let parentHandle = rootHandle;
     const segments = entry.path.split("/");
     for (const segment of segments.slice(0, -1)) {
-      const next = await openDirectoryChild(directoryHandle, segment, `candidate directory ${segment}`);
-      await directoryHandle.close();
+      const next = await openDirectoryChild(parentHandle, segment, `candidate directory ${segment}`);
+      if (directoryHandle !== undefined) await directoryHandle.close();
       directoryHandle = next;
+      parentHandle = directoryHandle;
     }
     const filename = segments.at(-1);
+    const containingDirectory = directoryHandle ?? rootHandle;
     try {
       sourceHandle = await open(
-        descriptorChildPath(directoryHandle, filename),
+        descriptorChildPath(containingDirectory, filename),
         constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
       );
     } catch (error) {
@@ -545,7 +642,16 @@ export async function openVerifiedCandidateSource({ candidateRoot, entry: rawEnt
     await closeIgnoringError(sourceHandle);
     throw error;
   } finally {
-    await directoryHandle.close();
+    await closeIgnoringError(directoryHandle);
+  }
+}
+
+export async function openVerifiedCandidateSource({ candidateRoot, entry: rawEntry }) {
+  const rootHandle = await openAnchoredDirectory(resolve(candidateRoot), "candidate root");
+  try {
+    return await openVerifiedCandidateSourceFromRootHandle(rootHandle, rawEntry);
+  } finally {
+    await rootHandle.close();
   }
 }
 
@@ -576,14 +682,146 @@ async function hashVerifiedCandidateSourceHandle(sourceHandle, rawEntry) {
   }
 }
 
-async function verifyCandidateManifestSources({ candidateRoot, manifest }) {
+async function verifyCandidateManifestSources({ candidateRoot, manifest, rootHandle }) {
   for (const entry of manifest.files) {
-    const sourceHandle = await openVerifiedCandidateSource({ candidateRoot, entry });
+    const sourceHandle =
+      rootHandle === undefined
+        ? await openVerifiedCandidateSource({ candidateRoot, entry })
+        : await openVerifiedCandidateSourceFromRootHandle(rootHandle, entry);
     try {
       await hashVerifiedCandidateSourceHandle(sourceHandle, entry);
     } finally {
       await sourceHandle.close();
     }
+  }
+}
+
+function normalizedCanonicalManifest(sourceSha, files) {
+  const canonicalFiles = files.map((entry) => ({
+    path: entry.path,
+    bytes: entry.bytes,
+    sha256: entry.sha256,
+  }));
+  const totalBytes = canonicalFiles.reduce((total, entry) => total + entry.bytes, 0);
+  const core = {
+    schema: PRODUCTION_CANDIDATE_SCHEMA,
+    sourceSha,
+    releasePath: `/opt/dashboard_RPi5/releases/${sourceSha}`,
+    nodeMajor: 24,
+    hashAlgorithm: PRODUCTION_CANDIDATE_HASH,
+    fileCount: canonicalFiles.length,
+    totalBytes,
+    files: canonicalFiles,
+  };
+  return {
+    ...core,
+    candidateSha256: createHash(PRODUCTION_CANDIDATE_HASH).update(JSON.stringify(core), "utf8").digest("hex"),
+  };
+}
+
+async function collectDescriptorSafeCanonicalPaths(rootHandle) {
+  const paths = new Set(PRODUCTION_CANDIDATE_FILE_ROOTS);
+  for (const relativeDirectory of PRODUCTION_CANDIDATE_DIRECTORY_ROOTS) {
+    const directoryHandle = await openRelativeDirectoryFromHandle(
+      rootHandle,
+      relativeDirectory,
+      `candidate directory root ${relativeDirectory}`,
+    );
+    try {
+      for (const path of await collectPinnedDirectoryFilePaths(directoryHandle, relativeDirectory)) paths.add(path);
+    } finally {
+      await directoryHandle.close();
+    }
+  }
+  return [...paths].sort(comparePath);
+}
+
+async function assertDescriptorSafeTerminalRuntimeClosure({ candidateRoot, manifest, rootHandle }) {
+  const byPath = new Map(manifest.files.map((entry) => [entry.path, entry]));
+  const terminalEntrypoint = byPath.get(TERMINAL_AGENT_ENTRYPOINT);
+  if (terminalEntrypoint === undefined) return;
+  if (terminalEntrypoint.bytes <= 0) throw new Error("terminal agent production entrypoint must be a non-empty regular file");
+  if (process.platform !== "linux" || !SUPPORTED_TERMINAL_ARCHES.has(process.arch)) {
+    throw new Error(`terminal native runtime packaging supports only linux x64/arm64, got ${process.platform}/${process.arch}`);
+  }
+
+  const runtimePrefix = `${TERMINAL_NATIVE_RUNTIME_RELATIVE_ROOT}/`;
+  const actualFiles = manifest.files
+    .filter((entry) => entry.path.startsWith(runtimePrefix))
+    .map((entry) => entry.path.slice(runtimePrefix.length))
+    .sort(comparePath);
+  const expectedFiles = [...TERMINAL_NATIVE_RUNTIME_FILES].sort(comparePath);
+  if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) {
+    throw new Error("packaged terminal native runtime file allowlist mismatch");
+  }
+
+  let packageJson;
+  for (const relativePath of TERMINAL_NATIVE_RUNTIME_FILES) {
+    const path = `${runtimePrefix}${relativePath}`;
+    const entry = byPath.get(path);
+    if (entry === undefined) throw new Error("packaged terminal native runtime file allowlist mismatch");
+    if (entry.bytes <= 0 || entry.bytes > MAX_TERMINAL_RUNTIME_FILE_BYTES) {
+      throw new Error(`packaged ${relativePath} size is invalid`);
+    }
+    const sourceHandle =
+      rootHandle === undefined
+        ? await openVerifiedCandidateSource({ candidateRoot, entry })
+        : await openVerifiedCandidateSourceFromRootHandle(rootHandle, entry);
+    try {
+      const stat = await sourceHandle.stat();
+      if ((stat.mode & 0o111) !== 0) throw new Error(`packaged ${relativePath} must not be executable`);
+      await hashVerifiedCandidateSourceHandle(sourceHandle, entry);
+      if (path === TERMINAL_RUNTIME_PACKAGE_JSON) {
+        if (entry.bytes > MAX_TERMINAL_PACKAGE_JSON_BYTES) {
+          throw new Error("packaged package.json must be a bounded regular file");
+        }
+        const bytes = await readHandleBounded(sourceHandle, MAX_TERMINAL_PACKAGE_JSON_BYTES, "packaged package.json");
+        packageJson = JSON.parse(bytes.toString("utf8"));
+      }
+    } finally {
+      await sourceHandle.close();
+    }
+  }
+
+  if (
+    packageJson?.name !== "node-pty" ||
+    packageJson?.version !== TERMINAL_NATIVE_PACKAGE_VERSION ||
+    packageJson?.main !== "./lib/index.js"
+  ) {
+    throw new Error("packaged node-pty package identity mismatch");
+  }
+}
+
+export async function verifyDescriptorSafeProductionCandidateManifest({ candidateRoot, sourceSha, manifest }) {
+  const validated = validateManifestForPrivilegedConsumption(manifest, sourceSha);
+  const rootHandle = await openAnchoredDirectory(resolve(candidateRoot), "candidate root");
+  try {
+    const expectedPaths = await collectDescriptorSafeCanonicalPaths(rootHandle);
+    const manifestPaths = validated.files.map((entry) => entry.path);
+    if (JSON.stringify(manifestPaths) !== JSON.stringify(expectedPaths)) {
+      throw new Error("candidate manifest does not match exact build contents");
+    }
+    const logBrokerEntrypoint = validated.files.find((entry) => entry.path === LOG_BROKER_ENTRYPOINT);
+    if (logBrokerEntrypoint === undefined || logBrokerEntrypoint.bytes <= 0) {
+      throw new Error("log broker production entrypoint must be a non-empty regular file");
+    }
+    const canonicalManifest = normalizedCanonicalManifest(sourceSha, validated.files);
+    if (JSON.stringify(manifest) !== JSON.stringify(canonicalManifest)) {
+      throw new Error("candidate manifest does not match exact build contents");
+    }
+    await assertDescriptorSafeTerminalRuntimeClosure({
+      candidateRoot,
+      manifest: canonicalManifest,
+      rootHandle,
+    });
+    await verifyCandidateManifestSources({
+      candidateRoot,
+      manifest: canonicalManifest,
+      rootHandle,
+    });
+    return canonicalManifest;
+  } finally {
+    await rootHandle.close();
   }
 }
 
@@ -602,7 +840,11 @@ async function preparePrivilegedActivation({
   if (expectedCandidateSha256 !== undefined) {
     assertExpectedCandidateSha256(manifest.candidateSha256, expectedCandidateSha256);
   }
-  await verifyCandidateManifestSources({ candidateRoot: candidateRootResolved, manifest });
+  await verifyDescriptorSafeProductionCandidateManifest({
+    candidateRoot: candidateRootResolved,
+    sourceSha,
+    manifest,
+  });
   const observedCurrent = await inspectCurrent(activationRoot);
   if (observedCurrent !== null) await readInstalledManifest(activationRoot, observedCurrent);
   const target = await inspectTargetRelease(activationRoot, sourceSha);
