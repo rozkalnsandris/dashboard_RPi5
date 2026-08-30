@@ -15,6 +15,8 @@ interface FilesystemStat {
   bsize: bigint;
   blocks: bigint;
   bavail: bigint;
+  // Optional only for backwards-compatible injected tests. Runtime statfs always supplies bfree.
+  bfree?: bigint;
 }
 
 interface ExecFileOptions {
@@ -64,6 +66,7 @@ const defaultDependencies: HostReadDependencies = {
     return {
       bsize: result.bsize,
       blocks: result.blocks,
+      bfree: result.bfree,
       bavail: result.bavail,
     };
   },
@@ -217,13 +220,22 @@ function safeBigIntToNumber(value: bigint): number {
 export function calculateFilesystemUsage(
   stat: FilesystemStat,
 ): HostSummary["filesystem"] {
-  if (stat.bsize <= 0n || stat.blocks <= 0n || stat.bavail < 0n || stat.bavail > stat.blocks) {
+  const bfree = stat.bfree ?? stat.bavail;
+  if (
+    stat.bsize <= 0n ||
+    stat.blocks <= 0n ||
+    bfree < 0n ||
+    bfree > stat.blocks ||
+    stat.bavail < 0n ||
+    stat.bavail > bfree
+  ) {
     throw new HostEvidenceParseError();
   }
 
   const totalBytes = safeBigIntToNumber(stat.bsize * stat.blocks);
+  const freeBytes = safeBigIntToNumber(stat.bsize * bfree);
   const availableBytes = safeBigIntToNumber(stat.bsize * stat.bavail);
-  const usedBytes = totalBytes - availableBytes;
+  const usedBytes = totalBytes - freeBytes;
 
   return {
     path: "/",
