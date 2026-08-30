@@ -31,7 +31,7 @@ The production root and `releases` root must be real directories. The controller
 
 ## Candidate requirement
 
-A release may be planned or applied only from a candidate whose manifest was generated from the exact reviewed source SHA and whose full allowlisted contents still match that manifest.
+A release may be planned or applied only from a candidate whose manifest was generated from the exact reviewed source SHA and whose allowlisted bytes match that manifest.
 
 Generate a pure JSON manifest after the production build:
 
@@ -53,12 +53,16 @@ node tools/production-candidate-manifest.mjs \
 
 Do not capture a manifest through `npm run ... > file.json`; npm lifecycle banners can make redirected stdout non-JSON. The direct Node entrypoint above is the canonical capture path.
 
-## Plan is the default
+The operator-owned **candidate checkout is not a trusted root execution location**. Candidate bytes are evidence inputs only; they are never privileged executable authority.
+
+## Plan is the default and runs unprivileged
 
 Without `--apply`, the controller performs validation and prints a bounded JSON plan. It does not create `/opt/dashboard_RPi5`, acquire an apply lock, copy a release, or modify `current`.
 
+Run candidate planning from the checkout without `sudo`/root:
+
 ```text
-npm run release:production -- \
+node tools/production-release-controller.mjs \
   --candidate-root . \
   --manifest /tmp/dashboard-rpi5-candidate-<sha>.json \
   --sha <sha>
@@ -67,57 +71,123 @@ npm run release:production -- \
 The plan reports:
 
 - exact source SHA;
-- candidate manifest digest;
+- candidate manifest digest as `candidateSha256`;
 - observed current release (`none` on first activation);
 - whether the target release already exists and is verified;
 - bounded operation names only.
 
-The reported current value becomes the required `--expected-current` input for any later apply. This is an optimistic-concurrency gate, not a convenience field.
+Both reviewed plan values are apply gates:
+
+```text
+observedCurrent  -> --expected-current
+candidateSha256 -> --expected-candidate
+```
+
+`--expected-current` prevents pointer drift between plan and apply. `--expected-candidate` prevents a different valid manifest/candidate from being substituted after the owner reviewed the plan.
+
+A production candidate plan is intentionally rejected when invoked as root. Root authority is unnecessary for candidate validation and would turn candidate path traversal into privileged read authority.
+
+## Privileged controller execution boundary
+
+**STOP. Do not run production apply during source preparation or merge.**
+
+A production apply or rollback must execute the controller from the currently active, fully verified, root-owned immutable release:
+
+```text
+/opt/dashboard_RPi5/releases/<current-reviewed-sha>/tools/production-release-controller.mjs
+```
+
+The production gate verifies before apply:
+
+- EUID is root;
+- the controller's real path is exactly under `releases/<40-hex-sha>/tools/production-release-controller.mjs`;
+- that release directory is a real `root:root 0755` directory;
+- the controller is a real `root:root 0644` file;
+- the controller's release is exactly the current release;
+- the current release still passes its stored manifest verification.
+
+The controller also loads `ops/production/release-activation-contract.json` relative to its own trusted immutable release, not relative to the caller's working directory.
+
+A candidate checkout must therefore never be used as the privileged entrypoint. In particular, this form is forbidden for future production apply:
+
+```text
+sudo /usr/bin/node ./tools/production-release-controller.mjs ...
+```
+
+## Descriptor-safe candidate consumption
+
+The privileged installer does not use a `lstat(path) -> later open/copy(path)` sequence for candidate files.
+
+On the Linux/RPi5 production path it instead:
+
+1. opens `/` and traverses every candidate-root and manifest-entry directory component through `/proc/self/fd/<directory-fd>/<child>`;
+2. opens each directory with `O_DIRECTORY | O_NOFOLLOW` and keeps the next directory pinned by descriptor before closing its parent descriptor;
+3. opens the final candidate file with `O_RDONLY | O_NOFOLLOW | O_NONBLOCK`;
+4. validates the opened object with descriptor-backed `stat` and requires an exact-size regular file;
+5. creates the destination with exclusive create semantics and mode `0600`;
+6. reads, hashes and copies bytes from the **same opened source descriptor**;
+7. requires exact byte count and SHA-256 before considering the copy verified;
+8. leaves a failed/incomplete destination private at `0600` rather than promoting unverified bytes;
+9. only after descriptor verification succeeds normalizes the installed file to the reviewed `root:root 0644` metadata;
+10. reverifies the destination and then the complete root-owned release tree before writing the private manifest marker or moving `current`.
+
+Renaming or replacing the candidate pathname after the source file has been opened cannot redirect the active copy to a different inode. A symlink in the final source or any traversed candidate directory component fails closed.
+
+The full candidate manifest used by privileged apply is also opened through the descriptor-safe no-symlink path and is bound to the `--expected-candidate` SHA-256 from the reviewed unprivileged plan.
 
 ## Apply — future explicit owner authorization only
-
-**STOP. Do not run this during source preparation or merge.**
 
 A future owner-authorized activation must provide all of:
 
 1. the exact reviewed SHA;
-2. the exact manifest;
-3. `--apply`;
-4. `--expected-current <sha|none>` from the reviewed plan;
-5. the exact acknowledgement string:
-   `I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ACTIVATION`.
+2. the exact candidate manifest;
+3. the exact current trusted release/controller path;
+4. `--apply`;
+5. `--expected-current <sha|none>` from the reviewed plan;
+6. `--expected-candidate <candidateSha256>` from the reviewed plan;
+7. the exact acknowledgement string `I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ACTIVATION`.
 
 Example shape only:
 
 ```text
-npm run release:production -- \
-  --candidate-root . \
+sudo /usr/bin/node \
+  /opt/dashboard_RPi5/releases/<current-reviewed-sha>/tools/production-release-controller.mjs \
+  --candidate-root <operator-candidate-root> \
   --manifest /tmp/dashboard-rpi5-candidate-<sha>.json \
   --sha <sha> \
   --expected-current <sha-or-none> \
+  --expected-candidate <candidateSha256-from-plan> \
   --apply \
   --ack I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ACTIVATION
 ```
 
-The production CLI destination is not configurable. It is fixed by the reviewed contract to `/opt/dashboard_RPi5`.
+The production destination is not configurable. It is fixed by the reviewed contract to `/opt/dashboard_RPi5`.
 
-Before any apply lock or release write, the candidate is verified read-only. Apply then acquires `/opt/dashboard_RPi5/.dashboard-release-controller.lock` with exclusive create semantics and repeats the reviewed validation while holding that lock. A second activation or rollback cannot run concurrently through this controller.
+Before any apply lock or release write, the trusted controller validates the reviewed candidate-manifest binding read-only. Apply then acquires `/opt/dashboard_RPi5/.dashboard-release-controller.lock` with exclusive create semantics and repeats the binding/current checks while holding that lock. A second activation or rollback cannot run concurrently through this controller.
 
 A pre-existing lock is fail-closed. The controller does not infer whether it is stale and does not auto-delete it. A leftover lock after a crash requires separate owner evidence review and explicit cleanup before any retry.
-
-Each copied file is restricted to the candidate manifest, must remain a regular non-symlink file, and is verified by byte count and SHA-256 before and after copy. Destination parent directories are also checked as real directories rather than followed through symlinks. The completed release is then reverified as a whole and receives a private manifest marker.
 
 Immediately before switching `current`, the controller re-reads the current pointer while still holding the exclusive apply lock. If it changed since the reviewed plan, activation blocks. The new pointer is created as a relative symlink and moved into place with a same-directory rename.
 
 The activation operation never deletes the previous or new release.
 
+## First descriptor-safe controller bootstrap
+
+The #236 trust boundary creates an intentional chicken-and-egg gate for a host whose current verified release predates this hardened controller: the new candidate controller is not allowed to gain root authority merely because its source is ready.
+
+The first production adoption of this hardening therefore needs a **separate explicit owner-authorized bootstrap/reconciliation** that establishes the exact reviewed hardened controller as root-owned immutable trusted code before privileged apply is attempted. That bootstrap is a live/root mutation and is not authorized by this source issue, a merge, `turpini`, or a read-only preflight.
+
+Do not bypass the bootstrap gate by running the controller directly from a candidate checkout, by using an operator-writable symlink, or by copying an unverified controller into a privileged path.
+
+After a hardened release is current, later releases use that current verified controller as the privileged entrypoint.
+
 ## Partial-copy failure
 
-If copying fails after a new release directory was created, the controller fails closed and leaves that incomplete directory in place. It does not recursively delete production data as part of error recovery.
+If copying fails after a new release directory or destination file was created, the controller fails closed and leaves that incomplete evidence in place. It does not recursively delete production data as part of error recovery. A candidate file that fails descriptor/hash verification is not promoted to normal `0644` release metadata.
 
 A later attempt will see the existing but unverified target and block. Cleanup of such a partial release is a separate explicit owner action after evidence review.
 
-On an ordinary handled error the controller closes and removes the lock it acquired. A process crash can leave the lock behind; that lock is deliberately not auto-recovered.
+The current handled-error lock cleanup behavior remains unchanged in this issue; the separate post-mutation evidence/lock semantics are tracked in issue #238. Do not fold #238 into #236.
 
 ## Rollback plan
 
@@ -126,17 +196,16 @@ Rollback only targets a release already present under `releases/<sha>` with a va
 Plan first:
 
 ```text
-npm run release:production -- --rollback <verified-rollback-sha>
+node tools/production-release-controller.mjs --rollback <verified-rollback-sha>
 ```
 
 The plan reports the observed current SHA and the verified rollback candidate digest. Rollback planning is read-only and does not acquire the apply lock.
 
 ## Rollback apply — future explicit owner authorization only
 
-**STOP. Do not run this during source preparation or merge.**
-
 Rollback requires:
 
+- execution from the current verified root-owned release controller;
 - exact rollback SHA;
 - `--expected-current <currently-reviewed-sha>`;
 - `--apply`;
@@ -145,7 +214,8 @@ Rollback requires:
 Example shape only:
 
 ```text
-npm run release:production -- \
+sudo /usr/bin/node \
+  /opt/dashboard_RPi5/releases/<current-reviewed-sha>/tools/production-release-controller.mjs \
   --rollback <verified-rollback-sha> \
   --expected-current <currently-reviewed-sha> \
   --apply \
@@ -170,4 +240,4 @@ Quick Commands and the full terminal remain disabled during the base launch unle
 
 ## CI test boundary
 
-CI tests the same exported activation/rollback functions against temporary directories only. The production CLI has no arbitrary destination-root argument, and CI never writes `/opt/dashboard_RPi5`.
+CI tests descriptor pinning, symlink rejection, same-inode tamper detection, private pre-verification destination mode and the existing activation/rollback functions against temporary directories only. The production CLI has no arbitrary destination-root argument, and CI never writes `/opt/dashboard_RPi5`.

@@ -3,12 +3,12 @@ import { constants, createReadStream } from "node:fs";
 import {
   chmod,
   chown,
-  copyFile,
   lstat,
   mkdir,
   open,
   readFile,
   readlink,
+  realpath,
   rename,
   symlink,
   unlink,
@@ -16,11 +16,12 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   PRODUCTION_CANDIDATE_HASH,
   PRODUCTION_CANDIDATE_SCHEMA,
+  validateCandidateManifestShape,
   verifyInstalledProductionCandidateManifest,
   verifyProductionCandidateManifest,
 } from "./production-candidate-manifest.mjs";
@@ -37,9 +38,14 @@ const SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
 const RELEASE_DIRECTORY_MODE = 0o755;
 const RELEASE_REGULAR_FILE_MODE = 0o644;
+const PREVERIFICATION_DESTINATION_MODE = 0o600;
 const MANIFEST_MARKER_MODE = 0o600;
 const ROOT_UID = 0;
 const ROOT_GID = 0;
+const SECURE_COPY_BUFFER_BYTES = 64 * 1024;
+const PROC_SELF_FD = "/proc/self/fd";
+const MODULE_FILE = fileURLToPath(import.meta.url);
+const MODULE_ROOT = resolve(dirname(MODULE_FILE), "..");
 
 function assertObject(value, label) {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -55,6 +61,19 @@ function assertSha(value, label = "source SHA") {
   return value;
 }
 
+function assertSha256(value, label) {
+  if (typeof value !== "string" || !SHA256.test(value)) {
+    throw new Error(`${label} must be 64 lowercase hexadecimal characters`);
+  }
+  return value;
+}
+
+function comparePath(left, right) {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
 function isWithin(root, candidate) {
   const value = relative(root, candidate);
   return value !== "" && value !== ".." && !value.startsWith(`..${sep}`) && !isAbsolute(value);
@@ -64,6 +83,10 @@ function assertRealDirectoryStat(stat, label) {
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
     throw new Error(`${label} must be a real directory`);
   }
+}
+
+function modeOf(stat) {
+  return stat.mode & 0o777;
 }
 
 async function ensureRealDirectory(path, label, create = false) {
@@ -89,9 +112,39 @@ function validateManifestEntry(entry) {
   if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
     throw new Error("candidate manifest file path escapes release root");
   }
+  if (value.path === MANIFEST_MARKER || segments.includes("node_modules")) {
+    throw new Error("candidate manifest file path is reserved");
+  }
   if (!Number.isSafeInteger(value.bytes) || value.bytes < 0) throw new Error("candidate manifest file size is invalid");
   if (typeof value.sha256 !== "string" || !SHA256.test(value.sha256)) throw new Error("candidate manifest file digest is invalid");
   return value;
+}
+
+function validateManifestForPrivilegedConsumption(manifest, sourceSha) {
+  validateCandidateManifestShape(manifest, sourceSha);
+  if (manifest.files.length !== manifest.fileCount) throw new Error("candidate manifest file count mismatch");
+  const files = manifest.files.map((entry) => validateManifestEntry(entry));
+  const paths = files.map((entry) => entry.path);
+  const sorted = [...paths].sort(comparePath);
+  if (JSON.stringify(paths) !== JSON.stringify(sorted)) throw new Error("candidate manifest files are not deterministically sorted");
+  if (new Set(paths).size !== paths.length) throw new Error("candidate manifest contains duplicate paths");
+  const totalBytes = files.reduce((total, entry) => total + entry.bytes, 0);
+  if (!Number.isSafeInteger(totalBytes) || totalBytes !== manifest.totalBytes) {
+    throw new Error("candidate manifest total bytes mismatch");
+  }
+  const core = {
+    schema: manifest.schema,
+    sourceSha: manifest.sourceSha,
+    releasePath: manifest.releasePath,
+    nodeMajor: manifest.nodeMajor,
+    hashAlgorithm: manifest.hashAlgorithm,
+    fileCount: files.length,
+    totalBytes,
+    files,
+  };
+  const digest = createHash(PRODUCTION_CANDIDATE_HASH).update(JSON.stringify(core), "utf8").digest("hex");
+  if (digest !== manifest.candidateSha256) throw new Error("candidate manifest digest mismatch");
+  return { ...manifest, files };
 }
 
 export function validateReleaseActivationContract(contractValue) {
@@ -147,7 +200,12 @@ export function validateReleaseActivationContract(contractValue) {
     throw new Error("base launch capabilities must remain disabled");
   }
   const applyGate = assertObject(contract.applyGate, "apply gate");
-  if (applyGate.flag !== "--apply" || applyGate.acknowledgement !== RELEASE_ACTIVATION_ACK || applyGate.requiresExpectedCurrent !== true) {
+  if (
+    applyGate.flag !== "--apply" ||
+    applyGate.acknowledgement !== RELEASE_ACTIVATION_ACK ||
+    applyGate.requiresExpectedCurrent !== true ||
+    applyGate.requiresExpectedCandidateSha256 !== true
+  ) {
     throw new Error("release activation apply gate mismatch");
   }
   const rollbackGate = assertObject(contract.rollbackGate, "rollback gate");
@@ -179,6 +237,120 @@ async function readJsonBounded(path, label) {
     throw new Error(`${label} must be a bounded regular file`);
   }
   return JSON.parse(await readFile(path, "utf8"));
+}
+
+function assertDescriptorSafetyAvailable() {
+  if (process.platform !== "linux") throw new Error("descriptor-safe candidate consumption requires Linux");
+  for (const name of ["O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK"]) {
+    if (!Number.isInteger(constants[name])) throw new Error(`descriptor-safe candidate consumption requires ${name}`);
+  }
+}
+
+function descriptorChildPath(handle, child) {
+  return `${PROC_SELF_FD}/${handle.fd}/${child}`;
+}
+
+async function closeIgnoringError(handle) {
+  if (handle === undefined) return;
+  try {
+    await handle.close();
+  } catch {
+    // Best-effort descriptor cleanup only. The original operation error remains authoritative.
+  }
+}
+
+async function openDirectoryChild(parentHandle, segment, label) {
+  let handle;
+  try {
+    handle = await open(
+      descriptorChildPath(parentHandle, segment),
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    const stat = await handle.stat();
+    if (!stat.isDirectory()) throw new Error(`${label} must be a real directory`);
+    return handle;
+  } catch (error) {
+    await closeIgnoringError(handle);
+    if (error instanceof Error && error.message === `${label} must be a real directory`) throw error;
+    throw new Error(`${label} must be a real non-symlink directory`, { cause: error });
+  }
+}
+
+async function openAnchoredDirectory(absoluteDirectory, label) {
+  assertDescriptorSafetyAvailable();
+  const resolved = resolve(absoluteDirectory);
+  if (!isAbsolute(resolved)) throw new Error(`${label} must be absolute`);
+  let handle = await open("/", constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try {
+    for (const segment of resolved.split(sep).filter(Boolean)) {
+      const next = await openDirectoryChild(handle, segment, label);
+      await handle.close();
+      handle = next;
+    }
+    return handle;
+  } catch (error) {
+    await closeIgnoringError(handle);
+    throw error;
+  }
+}
+
+async function openAnchoredRegularFile(absolutePath, label, extraFlags = 0) {
+  const resolved = resolve(absolutePath);
+  const parentHandle = await openAnchoredDirectory(dirname(resolved), `${label} parent`);
+  let fileHandle;
+  try {
+    const name = resolved.slice(dirname(resolved).length + (dirname(resolved) === "/" ? 0 : 1));
+    if (name === "" || name.includes(sep)) throw new Error(`${label} filename is invalid`);
+    try {
+      fileHandle = await open(
+        descriptorChildPath(parentHandle, name),
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK | extraFlags,
+      );
+    } catch (error) {
+      throw new Error(`${label} must be a real non-symlink regular file`, { cause: error });
+    }
+    const stat = await fileHandle.stat();
+    if (!stat.isFile()) throw new Error(`${label} must be a real non-symlink regular file`);
+    return { handle: fileHandle, stat };
+  } catch (error) {
+    await closeIgnoringError(fileHandle);
+    throw error;
+  } finally {
+    await parentHandle.close();
+  }
+}
+
+async function readHandleBounded(handle, maximumBytes, label) {
+  const chunks = [];
+  let total = 0;
+  let position = 0;
+  while (true) {
+    const remaining = maximumBytes + 1 - total;
+    if (remaining <= 0) throw new Error(`${label} exceeds maximum size`);
+    const buffer = Buffer.allocUnsafe(Math.min(SECURE_COPY_BUFFER_BYTES, remaining));
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+    if (bytesRead === 0) break;
+    total += bytesRead;
+    if (total > maximumBytes) throw new Error(`${label} exceeds maximum size`);
+    position += bytesRead;
+    chunks.push(Buffer.from(buffer.subarray(0, bytesRead)));
+  }
+  return Buffer.concat(chunks, total);
+}
+
+async function readCandidateManifestBounded(path, sourceSha) {
+  const { handle, stat } = await openAnchoredRegularFile(resolve(path), "candidate manifest");
+  try {
+    if (stat.size > MAX_MANIFEST_BYTES) throw new Error("candidate manifest must be a bounded regular file");
+    const bytes = await readHandleBounded(handle, MAX_MANIFEST_BYTES, "candidate manifest");
+    const finalStat = await handle.stat();
+    if (!finalStat.isFile() || finalStat.size !== bytes.length) {
+      throw new Error("candidate manifest changed while being read");
+    }
+    return validateManifestForPrivilegedConsumption(JSON.parse(bytes.toString("utf8")), sourceSha);
+  } finally {
+    await handle.close();
+  }
 }
 
 async function pathState(path) {
@@ -270,9 +442,77 @@ function assertExpectedCurrent(observed, expected) {
   return normalized;
 }
 
+function assertExpectedCandidateSha256(observed, expected) {
+  const normalized = assertSha256(expected, "expected candidate SHA-256");
+  if (observed !== normalized) throw new Error("candidate manifest changed since reviewed plan");
+  return normalized;
+}
+
 async function assertCurrentUnchanged(activationRoot, reviewedCurrent) {
   const current = await inspectCurrent(activationRoot);
   if (current !== reviewedCurrent) throw new Error("current release changed during activation");
+}
+
+function isProductionActivationRoot(activationRoot) {
+  return resolve(activationRoot) === PRODUCTION_ROOT;
+}
+
+async function assertTrustedProductionControllerEntrypoint() {
+  if (typeof process.geteuid !== "function" || process.geteuid() !== ROOT_UID) {
+    throw new Error("production release apply requires root through the trusted controller boundary");
+  }
+  const modulePath = await realpath(MODULE_FILE);
+  const releasesRoot = resolve(PRODUCTION_ROOT, "releases");
+  const moduleRelative = relative(releasesRoot, modulePath);
+  const segments = moduleRelative.split(sep);
+  if (
+    moduleRelative === "" ||
+    moduleRelative === ".." ||
+    moduleRelative.startsWith(`..${sep}`) ||
+    isAbsolute(moduleRelative) ||
+    segments.length !== 3 ||
+    !FULL_SHA.test(segments[0]) ||
+    segments[1] !== "tools" ||
+    segments[2] !== "production-release-controller.mjs"
+  ) {
+    throw new Error("production apply must execute the controller from the current root-owned immutable release");
+  }
+  const releaseSha = segments[0];
+  const releaseDir = resolve(releasesRoot, releaseSha);
+  const releaseStat = await lstat(releaseDir);
+  const controllerStat = await lstat(modulePath);
+  if (
+    releaseStat.isSymbolicLink() ||
+    !releaseStat.isDirectory() ||
+    releaseStat.uid !== ROOT_UID ||
+    releaseStat.gid !== ROOT_GID ||
+    modeOf(releaseStat) !== RELEASE_DIRECTORY_MODE
+  ) {
+    throw new Error("trusted controller release directory metadata is unsafe");
+  }
+  if (
+    controllerStat.isSymbolicLink() ||
+    !controllerStat.isFile() ||
+    controllerStat.uid !== ROOT_UID ||
+    controllerStat.gid !== ROOT_GID ||
+    modeOf(controllerStat) !== RELEASE_REGULAR_FILE_MODE
+  ) {
+    throw new Error("trusted production release controller metadata is unsafe");
+  }
+  const current = await inspectCurrent(PRODUCTION_ROOT);
+  if (current !== releaseSha) throw new Error("production apply controller must come from the current release");
+  await readInstalledManifest(PRODUCTION_ROOT, releaseSha);
+  return releaseSha;
+}
+
+function assertProductionPlanRunsUnprivileged(activationRoot) {
+  if (
+    isProductionActivationRoot(activationRoot) &&
+    typeof process.geteuid === "function" &&
+    process.geteuid() === ROOT_UID
+  ) {
+    throw new Error("production candidate planning must run without root privileges");
+  }
 }
 
 async function loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha }) {
@@ -287,6 +527,7 @@ async function loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha }
 
 export async function planReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, contract }) {
   validateReleaseActivationContract(contract);
+  assertProductionPlanRunsUnprivileged(activationRoot);
   const verified = await loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha });
   const observedCurrent = await inspectCurrent(activationRoot);
   if (observedCurrent !== null) await readInstalledManifest(activationRoot, observedCurrent);
@@ -303,6 +544,21 @@ export async function planReleaseActivation({ activationRoot, candidateRoot, man
     targetRelease: target.exists ? "verified-existing" : "absent",
     operations,
   };
+}
+
+async function preparePrivilegedActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, expectedCandidateSha256, contract }) {
+  validateReleaseActivationContract(contract);
+  assertSha(sourceSha);
+  const candidateRootResolved = resolve(candidateRoot);
+  const manifest = await readCandidateManifestBounded(manifestPath, sourceSha);
+  assertExpectedCandidateSha256(manifest.candidateSha256, expectedCandidateSha256);
+  const observedCurrent = await inspectCurrent(activationRoot);
+  if (observedCurrent !== null) await readInstalledManifest(activationRoot, observedCurrent);
+  const target = await inspectTargetRelease(activationRoot, sourceSha);
+  if (target.exists && target.manifest?.candidateSha256 !== manifest.candidateSha256) {
+    throw new Error("existing target release does not match reviewed candidate manifest");
+  }
+  return { candidateRoot: candidateRootResolved, manifest, observedCurrent, target };
 }
 
 async function normalizeInstalledReleasePath(path, mode, activationRoot) {
@@ -322,6 +578,89 @@ async function ensureReleaseParentDirectories(releaseDir, entryPath, activationR
     current = resolve(current, segment);
     await ensureRealDirectory(current, `release directory ${segment}`, true);
     await normalizeInstalledReleasePath(current, RELEASE_DIRECTORY_MODE, activationRoot);
+  }
+}
+
+export async function openVerifiedCandidateSource({ candidateRoot, entry: rawEntry }) {
+  const entry = validateManifestEntry(rawEntry);
+  const candidateRootResolved = resolve(candidateRoot);
+  let directoryHandle = await openAnchoredDirectory(candidateRootResolved, "candidate root");
+  let sourceHandle;
+  try {
+    const segments = entry.path.split("/");
+    for (const segment of segments.slice(0, -1)) {
+      const next = await openDirectoryChild(directoryHandle, segment, `candidate directory ${segment}`);
+      await directoryHandle.close();
+      directoryHandle = next;
+    }
+    const filename = segments.at(-1);
+    try {
+      sourceHandle = await open(
+        descriptorChildPath(directoryHandle, filename),
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+      );
+    } catch (error) {
+      throw new Error(`candidate source must be a real non-symlink regular file: ${entry.path}`, { cause: error });
+    }
+    const stat = await sourceHandle.stat();
+    if (!stat.isFile()) throw new Error(`candidate source must be a regular file: ${entry.path}`);
+    if (stat.size !== entry.bytes) throw new Error(`candidate source size mismatch: ${entry.path}`);
+    return sourceHandle;
+  } catch (error) {
+    await closeIgnoringError(sourceHandle);
+    throw error;
+  } finally {
+    await directoryHandle.close();
+  }
+}
+
+async function writeAll(handle, buffer, position) {
+  let offset = 0;
+  while (offset < buffer.length) {
+    const { bytesWritten } = await handle.write(buffer, offset, buffer.length - offset, position + offset);
+    if (bytesWritten <= 0) throw new Error("release destination write made no progress");
+    offset += bytesWritten;
+  }
+}
+
+export async function copyVerifiedCandidateSourceHandle({ sourceHandle, destinationPath, entry: rawEntry }) {
+  const entry = validateManifestEntry(rawEntry);
+  const sourceBefore = await sourceHandle.stat();
+  if (!sourceBefore.isFile()) throw new Error(`candidate source must remain a regular file: ${entry.path}`);
+  if (sourceBefore.size !== entry.bytes) throw new Error(`candidate source size mismatch: ${entry.path}`);
+
+  let destinationHandle;
+  try {
+    destinationHandle = await open(
+      destinationPath,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      PREVERIFICATION_DESTINATION_MODE,
+    );
+    const hash = createHash(PRODUCTION_CANDIDATE_HASH);
+    const buffer = Buffer.allocUnsafe(SECURE_COPY_BUFFER_BYTES);
+    let total = 0;
+    let position = 0;
+    while (true) {
+      const maximumRead = Math.min(buffer.length, entry.bytes - total + 1);
+      if (maximumRead <= 0) throw new Error(`candidate source size mismatch: ${entry.path}`);
+      const { bytesRead } = await sourceHandle.read(buffer, 0, maximumRead, position);
+      if (bytesRead === 0) break;
+      if (total + bytesRead > entry.bytes) throw new Error(`candidate source size mismatch: ${entry.path}`);
+      const chunk = buffer.subarray(0, bytesRead);
+      hash.update(chunk);
+      await writeAll(destinationHandle, chunk, total);
+      total += bytesRead;
+      position += bytesRead;
+    }
+    if (total !== entry.bytes) throw new Error(`candidate source size mismatch: ${entry.path}`);
+    if (hash.digest("hex") !== entry.sha256) throw new Error(`candidate source digest mismatch: ${entry.path}`);
+    const sourceAfter = await sourceHandle.stat();
+    if (!sourceAfter.isFile() || sourceAfter.size !== entry.bytes) {
+      throw new Error(`candidate source changed during copy: ${entry.path}`);
+    }
+    await destinationHandle.sync();
+  } finally {
+    if (destinationHandle !== undefined) await destinationHandle.close();
   }
 }
 
@@ -349,9 +688,13 @@ async function copyVerifiedRelease({ activationRoot, candidateRoot, manifest }) 
     if (!isWithin(resolve(candidateRoot), sourcePath) || !isWithin(releaseDir, destinationPath)) {
       throw new Error("manifest path escaped reviewed roots");
     }
-    await verifyManifestFileAgainstEntry(sourcePath, entry);
     await ensureReleaseParentDirectories(releaseDir, entry.path, activationRoot);
-    await copyFile(sourcePath, destinationPath, constants.COPYFILE_EXCL);
+    const sourceHandle = await openVerifiedCandidateSource({ candidateRoot, entry });
+    try {
+      await copyVerifiedCandidateSourceHandle({ sourceHandle, destinationPath, entry });
+    } finally {
+      await sourceHandle.close();
+    }
     await normalizeInstalledReleasePath(destinationPath, RELEASE_REGULAR_FILE_MODE, activationRoot);
     await verifyManifestFileAgainstEntry(destinationPath, entry);
   }
@@ -427,15 +770,60 @@ async function withExclusiveApplyLock(activationRoot, operation) {
   return result;
 }
 
-export async function applyReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, expectedCurrent, contract }) {
-  await planReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, contract });
+export async function applyReleaseActivation({
+  activationRoot,
+  candidateRoot,
+  manifestPath,
+  sourceSha,
+  expectedCurrent,
+  expectedCandidateSha256,
+  contract,
+}) {
+  const production = isProductionActivationRoot(activationRoot);
+  if (production) {
+    await assertTrustedProductionControllerEntrypoint();
+    await preparePrivilegedActivation({
+      activationRoot,
+      candidateRoot,
+      manifestPath,
+      sourceSha,
+      expectedCandidateSha256,
+      contract,
+    });
+  } else {
+    await planReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, contract });
+  }
+
   return withExclusiveApplyLock(activationRoot, async () => {
-    const plan = await planReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, contract });
-    const observed = plan.observedCurrent === "none" ? null : plan.observedCurrent;
+    let observed;
+    let manifest;
+    let target;
+    let candidateRootResolved;
+    if (production) {
+      const prepared = await preparePrivilegedActivation({
+        activationRoot,
+        candidateRoot,
+        manifestPath,
+        sourceSha,
+        expectedCandidateSha256,
+        contract,
+      });
+      observed = prepared.observedCurrent;
+      manifest = prepared.manifest;
+      target = prepared.target;
+      candidateRootResolved = prepared.candidateRoot;
+    } else {
+      const plan = await planReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, contract });
+      observed = plan.observedCurrent === "none" ? null : plan.observedCurrent;
+      manifest = await loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha });
+      target = await inspectTargetRelease(activationRoot, sourceSha);
+      candidateRootResolved = resolve(candidateRoot);
+    }
+
     assertExpectedCurrent(observed, expectedCurrent);
-    const manifest = await loadAndVerifyCandidate({ candidateRoot, manifestPath, sourceSha });
-    const target = await inspectTargetRelease(activationRoot, sourceSha);
-    if (!target.exists) await copyVerifiedRelease({ activationRoot, candidateRoot: resolve(candidateRoot), manifest });
+    if (!target.exists) {
+      await copyVerifiedRelease({ activationRoot, candidateRoot: candidateRootResolved, manifest });
+    }
     await assertCurrentUnchanged(activationRoot, observed);
     if (observed !== sourceSha) await swapCurrentPointer(activationRoot, sourceSha);
     const finalCurrent = await inspectCurrent(activationRoot);
@@ -471,6 +859,7 @@ export async function planReleaseRollback({ activationRoot, rollbackSha, contrac
 }
 
 export async function applyReleaseRollback({ activationRoot, rollbackSha, expectedCurrent, contract }) {
+  if (isProductionActivationRoot(activationRoot)) await assertTrustedProductionControllerEntrypoint();
   await planReleaseRollback({ activationRoot, rollbackSha, contract });
   return withExclusiveApplyLock(activationRoot, async () => {
     const plan = await planReleaseRollback({ activationRoot, rollbackSha, contract });
@@ -506,6 +895,7 @@ function parseCli(argv) {
     else if (key === "--sha") input.sourceSha = value;
     else if (key === "--rollback") input.rollbackSha = value;
     else if (key === "--expected-current") input.expectedCurrent = value;
+    else if (key === "--expected-candidate") input.expectedCandidateSha256 = value;
     else if (key === "--ack") input.ack = value;
     else throw new Error("unknown CLI argument");
   }
@@ -516,7 +906,7 @@ function parseCli(argv) {
 async function main() {
   try {
     const input = parseCli(process.argv.slice(2));
-    const contractPath = resolve("ops/production/release-activation-contract.json");
+    const contractPath = resolve(MODULE_ROOT, "ops/production/release-activation-contract.json");
     const contract = validateReleaseActivationContract(await readJsonBounded(contractPath, "release activation contract"));
 
     if (input.rollbackSha !== undefined) {
@@ -551,12 +941,14 @@ async function main() {
       return;
     }
     if (input.ack !== RELEASE_ACTIVATION_ACK) throw new Error("activation owner acknowledgement mismatch");
+    if (input.expectedCandidateSha256 === undefined) throw new Error("activation apply requires --expected-candidate from the reviewed plan");
     const result = await applyReleaseActivation({
       activationRoot: PRODUCTION_ROOT,
       candidateRoot: input.candidateRoot,
       manifestPath: input.manifestPath,
       sourceSha: input.sourceSha,
       expectedCurrent: input.expectedCurrent,
+      expectedCandidateSha256: input.expectedCandidateSha256,
       contract,
     });
     process.stdout.write(`${JSON.stringify(result)}\n`);
