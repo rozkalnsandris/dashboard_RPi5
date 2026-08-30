@@ -64,6 +64,8 @@ export async function readDescriptorSafeFileTail(
   if (typeof constants.O_NOFOLLOW !== "number") throw new LogSourceUnavailableError();
 
   let handle: DescriptorFileHandle | undefined;
+  let result: DescriptorSafeFileTailResult | undefined;
+  let failure: LogSourceUnavailableError | undefined;
   try {
     handle = await dependencies.openFile(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     const metadata = await handle.stat();
@@ -89,19 +91,23 @@ export async function readDescriptorSafeFileTail(
       total += bytesRead;
     }
     signal?.throwIfAborted();
-    return { text: buffer.toString("utf8"), truncated: start > 0 };
+    result = { text: buffer.toString("utf8"), truncated: start > 0 };
   } catch (error: unknown) {
-    if (error instanceof LogSourceUnavailableError) throw error;
-    throw new LogSourceUnavailableError();
-  } finally {
-    if (handle !== undefined) {
-      try {
-        await handle.close();
-      } catch {
-        throw new LogSourceUnavailableError();
-      }
+    failure = error instanceof LogSourceUnavailableError ? error : new LogSourceUnavailableError();
+  }
+
+  if (handle !== undefined) {
+    try {
+      await handle.close();
+    } catch {
+      failure = new LogSourceUnavailableError();
     }
   }
+
+  if (failure !== undefined || result === undefined) {
+    throw failure ?? new LogSourceUnavailableError();
+  }
+  return result;
 }
 
 export function readProductionBackupLogTail(
