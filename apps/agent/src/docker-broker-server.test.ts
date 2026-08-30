@@ -212,30 +212,35 @@ describe("bounded Docker broker HTTP contract", () => {
 });
 
 describe("Docker Engine reader authority", () => {
-  it("constructs only hard-coded GET paths on an isolated fake Docker Unix socket", async () => {
+  it("constructs only negotiated hard-coded GET paths on an isolated fake Docker Unix socket", async () => {
     const socket = await tempSocket("docker.sock");
     const requests: Array<{ method: string | undefined; url: string | undefined }> = [];
     const fakeDocker = createServer((incoming, response) => {
       requests.push({ method: incoming.method, url: incoming.url });
       const url = incoming.url ?? "";
-      if (url === "/v1.40/_ping") {
-        response.end("OK");
-        return;
-      }
       response.setHeader("content-type", "application/json");
-      if (url === "/v1.40/version") {
+      if (url === "/version") {
         response.end(JSON.stringify({ Version: "29.6.1", ApiVersion: "1.55", MinAPIVersion: "1.40" }));
         return;
       }
-      if (url === "/v1.40/containers/json?all=true") {
+      if (url === "/v1.55/_ping") {
+        response.removeHeader("content-type");
+        response.end("OK");
+        return;
+      }
+      if (url === "/v1.55/version") {
+        response.end(JSON.stringify({ Version: "29.6.1", ApiVersion: "1.55", MinAPIVersion: "1.40" }));
+        return;
+      }
+      if (url === "/v1.55/containers/json?all=true") {
         response.end(JSON.stringify([{ Id: ID }]));
         return;
       }
-      if (url === `/v1.40/containers/${ID}/json`) {
+      if (url === `/v1.55/containers/${ID}/json`) {
         response.end(JSON.stringify({ Id: ID }));
         return;
       }
-      if (url === `/v1.40/containers/${ID}/stats?stream=false`) {
+      if (url === `/v1.55/containers/${ID}/stats?stream=false`) {
         response.end(JSON.stringify({ cpu_stats: {} }));
         return;
       }
@@ -253,16 +258,17 @@ describe("Docker Engine reader authority", () => {
     await reader.statsContainer(ID);
 
     expect(requests).toEqual([
-      { method: "GET", url: "/v1.40/_ping" },
-      { method: "GET", url: "/v1.40/version" },
-      { method: "GET", url: "/v1.40/containers/json?all=true" },
-      { method: "GET", url: `/v1.40/containers/${ID}/json` },
-      { method: "GET", url: `/v1.40/containers/${ID}/stats?stream=false` },
+      { method: "GET", url: "/version" },
+      { method: "GET", url: "/v1.55/_ping" },
+      { method: "GET", url: "/v1.55/version" },
+      { method: "GET", url: "/v1.55/containers/json?all=true" },
+      { method: "GET", url: `/v1.55/containers/${ID}/json` },
+      { method: "GET", url: `/v1.55/containers/${ID}/stats?stream=false` },
     ]);
     await expect(reader.inspectContainer("../etc/passwd")).rejects.toBeInstanceOf(
       DockerEngineUnavailableError,
     );
-    expect(requests).toHaveLength(5);
+    expect(requests).toHaveLength(6);
   });
 
   it("fails closed on oversized and timed-out Engine evidence", async () => {
