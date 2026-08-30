@@ -149,6 +149,37 @@ A pre-existing lock is fail-closed. The controller does not infer whether it is 
 
 Immediately before switching `current`, the controller re-reads the current pointer while holding the lock. If it changed since PLAN, activation blocks. The new pointer is a relative symlink moved into place with a same-directory rename. Activation never deletes previous or new releases.
 
+## Fail-closed mutation evidence
+
+The exclusive apply lock has two roles: transient serialization before mutation, and durable review-required evidence after the release mutation boundary has been crossed.
+
+The controller distinguishes these outcomes:
+
+```text
+PRE_MUTATION_FAILURE
+  -> no release mutation boundary was crossed
+  -> close descriptors
+  -> remove only the transient apply lock
+
+POST_MUTATION_FAILURE
+  -> release directory/file or current-pointer mutation has begun
+  -> close descriptors as necessary
+  -> preserve .dashboard-release-controller.lock
+  -> preserve other partial filesystem evidence
+  -> STOP for manual review and new exact authorization
+
+SUCCESS
+  -> all required installed-release/current verification passed
+  -> close the lock descriptor
+  -> remove the transient apply lock
+```
+
+The preserved lock is intentionally content-free: it stores no secrets, arbitrary process output or caller-controlled metadata. Its existence is the bounded durable signal that the production root is not retry-ready. A subsequent APPLY/ROLLBACK refuses to proceed while it exists.
+
+There is no controller flag for force, ignore-lock, clear-lock or automatic stale-lock cleanup. Inspection and any eventual lock/partial-evidence cleanup are separate owner-reviewed live operations; they are never folded into a normal apply retry.
+
+Current-pointer replacement also follows this rule. Once the temporary relative symlink is created, a later rename/verification failure is post-mutation. The controller does not automatically unlink that temporary symlink on the error path; the lock and partial pointer evidence remain available for review.
+
 ## First descriptor-safe controller bootstrap
 
 The #236 boundary intentionally creates a bootstrap gate for a host whose current verified release predates the hardened controller. The new candidate controller is not permitted to become root-authoritative merely because source is merged.
@@ -163,9 +194,7 @@ After a hardened release is current, future operations use that current verified
 
 If copying fails after a release directory or destination file is created, the controller leaves that incomplete evidence in place and does not recursively delete production data. A source that fails descriptor/hash verification is not promoted to `0644` release metadata.
 
-A later attempt sees the existing but unverified target and blocks. Cleanup is a separate explicit owner action after evidence review.
-
-The handled-error apply-lock cleanup behavior is intentionally unchanged in #236; post-mutation evidence/lock semantics are tracked separately in #238.
+Because that failure occurs after the mutation boundary, the apply lock is also preserved. A later attempt therefore blocks both on the durable review-required lock and, where applicable, on the existing unverified target release. Cleanup is a separate explicit owner action after evidence review and fresh authorization.
 
 ## Rollback
 
@@ -184,7 +213,7 @@ sudo /usr/bin/node \
   --ack I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ROLLBACK
 ```
 
-Rollback uses the same exclusive lock, revalidates current/rollback releases and atomically repoints `current` only. It does not delete releases or restart services.
+Rollback uses the same exclusive lock, revalidates current/rollback releases and atomically repoints `current` only. A failure after its pointer-mutation boundary preserves the same review-required apply lock. It does not delete releases or restart services.
 
 ## Separate gates after a release pointer change
 
@@ -192,4 +221,4 @@ A release pointer change is not a complete production launch. Host identities/pe
 
 ## CI test boundary
 
-CI exercises descriptor pinning, parent/final symlink rejection, same-inode tamper detection, private pre-verification destination mode and existing activation/rollback functions against temporary directories only. The production CLI has no arbitrary destination-root argument, and CI never writes `/opt/dashboard_RPi5`.
+CI exercises descriptor pinning, parent/final symlink rejection, same-inode tamper detection, private pre-verification destination mode, fail-closed post-mutation apply-lock preservation and existing activation/rollback functions against temporary directories only. The production CLI has no arbitrary destination-root or lock-cleanup argument, and CI never writes `/opt/dashboard_RPi5`.
