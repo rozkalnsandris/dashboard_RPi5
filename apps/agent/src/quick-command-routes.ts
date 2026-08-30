@@ -57,8 +57,7 @@ export function createQuickCommandExecutor(
     const runnerPromise = Promise.resolve().then(() => runner(commandId, controller.signal));
 
     let runnerSettled = false;
-    let lifecycleCompletion!: Promise<void>;
-    lifecycleCompletion = runnerPromise
+    const lifecycleCompletion = runnerPromise
       .then(
         () => {
           runnerSettled = true;
@@ -68,7 +67,7 @@ export function createQuickCommandExecutor(
         },
       )
       .finally(() => {
-        if (activeLifecycle?.completion === lifecycleCompletion) {
+        if (activeLifecycle?.controller === controller) {
           activeLifecycle = undefined;
         }
       });
