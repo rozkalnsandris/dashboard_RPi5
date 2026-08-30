@@ -56,11 +56,16 @@ export function createQuickCommandExecutor(
     const controller = new AbortController();
     const runnerPromise = Promise.resolve().then(() => runner(commandId, controller.signal));
 
+    let runnerSettled = false;
     let lifecycleCompletion!: Promise<void>;
     lifecycleCompletion = runnerPromise
       .then(
-        () => undefined,
-        () => undefined,
+        () => {
+          runnerSettled = true;
+        },
+        () => {
+          runnerSettled = true;
+        },
       )
       .finally(() => {
         if (activeLifecycle?.completion === lifecycleCompletion) {
@@ -89,7 +94,7 @@ export function createQuickCommandExecutor(
       if (timeoutHandle !== undefined) {
         clearTimeout(timeoutHandle);
       }
-      if (!timedOut) {
+      if (!timedOut || runnerSettled) {
         await lifecycleCompletion;
       }
     }
