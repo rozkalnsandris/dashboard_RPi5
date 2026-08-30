@@ -3,17 +3,20 @@ import type {
   QuickCommandResult,
 } from "@dashboard-rpi5/contracts/quick-commands";
 import Fastify from "fastify";
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   createQuickCommandExecutor,
   QUICK_COMMAND_TIMEOUT_MS,
+  QuickCommandConcurrencyLimitError,
   registerQuickCommandRoutes,
 } from "./quick-command-routes.js";
 import { OperationTimeoutError } from "./operation-registry.js";
 import {
   listQuickCommands,
+  QUICK_COMMAND_TERMINATION_GRACE_MS,
   QuickCommandSourceUnavailableError,
   runQuickCommand,
 } from "./quick-commands.js";
@@ -54,8 +57,12 @@ describe("Quick Commands", () => {
 
   it("keeps the fixed runner timeout, output bound and shell-free spawn", () => {
     expect(QUICK_COMMAND_TIMEOUT_MS).toBe(5_000);
+    expect(QUICK_COMMAND_TERMINATION_GRACE_MS).toBe(250);
     expect(quickCommandsSource).toContain("const MAX_OUTPUT_BYTES = 16 * 1024;");
     expect(quickCommandsSource).toContain("shell: false");
+    expect(quickCommandsSource).toContain('child.kill("SIGTERM")');
+    expect(quickCommandsSource).toContain('child.kill("SIGKILL")');
+    expect(quickCommandsSource).toContain('child.once("close"');
   });
 
   it("runs the fixed kernel diagnostic without shell output controls", async () => {
@@ -95,7 +102,7 @@ describe("Quick Commands", () => {
     await app.close();
   });
 
-  it("admits one active run and releases capacity after success and failure", async () => {
+  it("admits one active run and releases capacity after lifecycle completion", async () => {
     let releaseFirst!: () => void;
     const firstBlocked = new Promise<void>((resolve) => {
       releaseFirst = resolve;
@@ -158,38 +165,147 @@ describe("Quick Commands", () => {
     await app.close();
   });
 
-  it("aborts at the fixed timeout and releases capacity for the next run", async () => {
-    vi.useFakeTimers();
-    try {
-      let calls = 0;
-      let firstSignal: AbortSignal | undefined;
-      const runner = vi.fn(
-        (commandId: QuickCommandId, signal: AbortSignal): Promise<QuickCommandResult> => {
-          calls += 1;
-          if (calls === 1) {
-            firstSignal = signal;
-            return new Promise<QuickCommandResult>(() => undefined);
-          }
+  it("does not release capacity when request timeout fires before lifecycle completion", async () => {
+    let calls = 0;
+    let firstSignal: AbortSignal | undefined;
+    let releaseFirst!: () => void;
+
+    const runner = vi.fn(
+      (commandId: QuickCommandId, signal: AbortSignal): Promise<QuickCommandResult> => {
+        calls += 1;
+        if (calls === 1) {
+          firstSignal = signal;
+          return new Promise<QuickCommandResult>((resolve) => {
+            releaseFirst = () => resolve(successResult(commandId));
+          });
+        }
+        return Promise.resolve(successResult(commandId));
+      },
+    );
+    const executeQuickCommand = createQuickCommandExecutor(runner, { timeoutMs: 25 });
+
+    await expect(executeQuickCommand("host.uptime")).rejects.toBeInstanceOf(OperationTimeoutError);
+    expect(firstSignal?.aborted).toBe(true);
+
+    await expect(executeQuickCommand("host.kernel")).rejects.toBeInstanceOf(
+      QuickCommandConcurrencyLimitError,
+    );
+    expect(runner).toHaveBeenCalledTimes(1);
+
+    releaseFirst();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await expect(executeQuickCommand("host.kernel")).resolves.toEqual(
+      successResult("host.kernel"),
+    );
+    expect(runner).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps capacity while a real child ignores SIGTERM and releases only after close", async () => {
+    let calls = 0;
+    let childClosed = false;
+    let markChildReady!: () => void;
+    const childReady = new Promise<void>((resolve) => {
+      markChildReady = resolve;
+    });
+
+    const runner = vi.fn(
+      (commandId: QuickCommandId, signal: AbortSignal): Promise<QuickCommandResult> => {
+        calls += 1;
+        if (calls > 1) {
           return Promise.resolve(successResult(commandId));
-        },
-      );
-      const executeQuickCommand = createQuickCommandExecutor(runner);
+        }
 
-      const timedOut = executeQuickCommand("host.uptime");
-      const timeoutExpectation = expect(timedOut).rejects.toBeInstanceOf(OperationTimeoutError);
-      await vi.advanceTimersByTimeAsync(0);
-      expect(firstSignal?.aborted).toBe(false);
+        return new Promise<QuickCommandResult>((resolve, reject) => {
+          const child = spawn(
+            process.execPath,
+            [
+              "-e",
+              'process.on("SIGTERM", () => {}); process.stdout.write("ready\\n"); setInterval(() => {}, 1000);',
+            ],
+            {
+              shell: false,
+              stdio: ["ignore", "pipe", "pipe"],
+            },
+          );
+          let killTimer: ReturnType<typeof setTimeout> | undefined;
 
-      await vi.advanceTimersByTimeAsync(QUICK_COMMAND_TIMEOUT_MS);
-      await timeoutExpectation;
-      expect(firstSignal?.aborted).toBe(true);
+          child.stdout.once("data", () => {
+            markChildReady();
+          });
+          child.once("error", reject);
+          child.once("close", () => {
+            childClosed = true;
+            if (killTimer !== undefined) clearTimeout(killTimer);
+            resolve(successResult(commandId));
+          });
 
-      await expect(executeQuickCommand("host.kernel")).resolves.toEqual(
-        successResult("host.kernel"),
-      );
-      expect(runner).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
+          signal.addEventListener(
+            "abort",
+            () => {
+              child.kill("SIGTERM");
+              killTimer = setTimeout(() => {
+                if (!childClosed) child.kill("SIGKILL");
+              }, 40);
+            },
+            { once: true },
+          );
+        });
+      },
+    );
+
+    const executeQuickCommand = createQuickCommandExecutor(runner, { timeoutMs: 500 });
+    const firstRequest = executeQuickCommand("host.uptime");
+    await childReady;
+
+    await expect(firstRequest).rejects.toBeInstanceOf(OperationTimeoutError);
+    expect(childClosed).toBe(false);
+    await expect(executeQuickCommand("host.kernel")).rejects.toBeInstanceOf(
+      QuickCommandConcurrencyLimitError,
+    );
+
+    const deadline = Date.now() + 2_000;
+    while (!childClosed && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
+    expect(childClosed).toBe(true);
+
+    await expect(executeQuickCommand("host.kernel")).resolves.toEqual(
+      successResult("host.kernel"),
+    );
+    expect(runner).toHaveBeenCalledTimes(2);
+  });
+
+  it("aborts and waits for the active lifecycle during executor shutdown", async () => {
+    let activeSignal: AbortSignal | undefined;
+    let releaseActive!: () => void;
+    const runner = vi.fn(
+      (commandId: QuickCommandId, signal: AbortSignal): Promise<QuickCommandResult> => {
+        activeSignal = signal;
+        return new Promise<QuickCommandResult>((resolve) => {
+          releaseActive = () => resolve(successResult(commandId));
+        });
+      },
+    );
+    const executeQuickCommand = createQuickCommandExecutor(runner, { timeoutMs: 1_000 });
+
+    const activeRequest = executeQuickCommand("host.uptime");
+    await Promise.resolve();
+
+    let shutdownCompleted = false;
+    const shutdown = executeQuickCommand.shutdown().then(() => {
+      shutdownCompleted = true;
+    });
+    expect(activeSignal?.aborted).toBe(true);
+    await Promise.resolve();
+    expect(shutdownCompleted).toBe(false);
+    await expect(executeQuickCommand("host.kernel")).rejects.toBeInstanceOf(
+      QuickCommandConcurrencyLimitError,
+    );
+
+    releaseActive();
+    await shutdown;
+    expect(shutdownCompleted).toBe(true);
+    await expect(activeRequest).resolves.toEqual(successResult("host.uptime"));
   });
 });

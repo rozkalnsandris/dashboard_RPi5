@@ -6,6 +6,7 @@ import type {
 import { spawn } from "node:child_process";
 
 const MAX_OUTPUT_BYTES = 16 * 1024;
+export const QUICK_COMMAND_TERMINATION_GRACE_MS = 250;
 
 const COMMANDS = {
   "host.uptime": {
@@ -93,7 +94,6 @@ export async function runQuickCommand(
     try {
       child = spawn(spec.executable, [...spec.args], {
         shell: false,
-        signal,
         env: {
           LANG: "C",
           LC_ALL: "C",
@@ -109,21 +109,42 @@ export async function runQuickCommand(
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let totalBytes = 0;
-    let settled = false;
+    let closed = false;
+    let terminalError: Error | undefined;
+    let terminationTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const finish = (callback: () => void) => {
-      if (settled) return;
-      settled = true;
-      callback();
+    const clearTerminationTimer = () => {
+      if (terminationTimer !== undefined) {
+        clearTimeout(terminationTimer);
+        terminationTimer = undefined;
+      }
+    };
+
+    const requestTermination = () => {
+      if (closed) return;
+      child.kill("SIGTERM");
+      if (terminationTimer !== undefined) return;
+      terminationTimer = setTimeout(() => {
+        terminationTimer = undefined;
+        if (!closed) {
+          child.kill("SIGKILL");
+        }
+      }, QUICK_COMMAND_TERMINATION_GRACE_MS);
+      terminationTimer.unref?.();
+    };
+
+    const onAbort = () => {
+      requestTermination();
     };
 
     const capture = (target: Buffer[]) => (chunk: Buffer | string) => {
-      if (settled) return;
+      if (closed || terminalError !== undefined) return;
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       totalBytes += buffer.length;
       if (totalBytes > MAX_OUTPUT_BYTES) {
+        terminalError = new QuickCommandOutputLimitError();
+        clearTerminationTimer();
         child.kill("SIGKILL");
-        finish(() => reject(new QuickCommandOutputLimitError()));
         return;
       }
       target.push(buffer);
@@ -131,10 +152,21 @@ export async function runQuickCommand(
 
     child.stdout.on("data", capture(stdout));
     child.stderr.on("data", capture(stderr));
-    child.once("error", () => finish(() => reject(new QuickCommandSourceUnavailableError())));
+    child.once("error", () => {
+      terminalError ??= new QuickCommandSourceUnavailableError();
+    });
     child.once("close", (code) => {
+      closed = true;
+      clearTerminationTimer();
+      signal.removeEventListener("abort", onAbort);
+
+      if (terminalError !== undefined) {
+        reject(terminalError);
+        return;
+      }
+
       const finishedMs = Date.now();
-      finish(() => resolve({
+      resolve({
         commandId,
         status: code === 0 ? "SUCCESS" : "FAILED",
         startedAt,
@@ -143,7 +175,13 @@ export async function runQuickCommand(
         exitCode: code,
         stdout: sanitizeOutput(stdout),
         stderr: sanitizeOutput(stderr),
-      }));
+      });
     });
+
+    if (signal.aborted) {
+      onAbort();
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
   });
 }
