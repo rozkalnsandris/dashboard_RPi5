@@ -10,7 +10,7 @@ Canonical files:
 - `smoke-contract.json` — machine-readable future post-deploy acceptance baseline;
 - `cloudflare-contract.json` — exact `dash.rozkalns.net` Access/Tunnel/loopback edge contract;
 - `cloudflare.env.example` — placeholder-only out-of-repo activation binding names; never production values;
-- `release-activation-contract.json` — exact immutable release/current-pointer, exclusive apply lock and owner acknowledgement boundary;
+- `release-activation-contract.json` — exact immutable release/current-pointer, exclusive apply lock, reviewed-candidate binding and owner acknowledgement boundary;
 - `host-readiness-contract.json` — fixed read-only RPi5 pre-bootstrap evidence contract.
 
 The web service environment contract is ordered and fail-closed:
@@ -53,16 +53,60 @@ npm run manifest:production -- --root . --sha <exact-source-sha>
 
 The manifest hashes only explicit production roots, including the Cloudflare launch contract, release activation contract/controller and host-readiness contract/verifier, rejects symlinks/non-regular files, records per-file SHA-256 evidence and derives the intended immutable release path from the exact source SHA.
 
-Release activation is plan-only by default:
+## Release-controller trust boundary
+
+Candidate bytes and privileged controller code are separate trust domains.
+
+An operator-owned **candidate checkout is untrusted by root**. Future production PLAN/APPLY/ROLLBACK must never execute `tools/production-release-controller.mjs` from that checkout with `sudo`/root authority.
+
+Once this hardening is established on the host, the production controller entrypoint is the controller inside the currently active, fully verified, **root-owned immutable release**:
 
 ```text
-npm run release:production -- \
-  --candidate-root . \
+/opt/dashboard_RPi5/releases/<reviewed-current-sha>/tools/production-release-controller.mjs
+```
+
+Production PLAN uses that trusted controller, even though PLAN itself remains filesystem non-mutating:
+
+```text
+sudo /usr/bin/node \
+  /opt/dashboard_RPi5/releases/<reviewed-current-sha>/tools/production-release-controller.mjs \
+  --candidate-root <operator-candidate-root> \
   --manifest <candidate-manifest.json> \
   --sha <exact-source-sha>
 ```
 
-The production CLI destination is fixed to `/opt/dashboard_RPi5`. A filesystem-changing apply additionally requires the reviewed current SHA (or `none`), `--apply`, and the exact owner acknowledgement string defined in `release-activation-contract.json`. Apply/rollback serialize through an exclusive lock under the production root; a pre-existing lock blocks and is never auto-cleared. Merge or `turpini` does not authorize apply.
+The trusted PLAN descriptor-safely reads the candidate manifest and every manifest-listed candidate file, then reports both:
+
+- `observedCurrent`, which becomes apply-time `--expected-current`; and
+- `candidateSha256`, which becomes apply-time `--expected-candidate`.
+
+A future owner-authorized APPLY has this shape:
+
+```text
+sudo /usr/bin/node \
+  /opt/dashboard_RPi5/releases/<reviewed-current-sha>/tools/production-release-controller.mjs \
+  --candidate-root <operator-candidate-root> \
+  --manifest <candidate-manifest.json> \
+  --sha <exact-source-sha> \
+  --expected-current <reviewed-current-sha-or-none> \
+  --expected-candidate <candidateSha256-from-plan> \
+  --apply \
+  --ack I_AUTHORIZED_DASHBOARD_RPI5_PRODUCTION_RELEASE_ACTIVATION
+```
+
+The controller rejects a production operation unless its own real path is inside the current verified release, its release/controller metadata is `root:root` with the reviewed modes, and the current pointer still identifies that release. Its release activation contract is loaded relative to that trusted module rather than the caller's working directory.
+
+During privileged candidate inspection/copy, the controller does not validate a pathname and then reopen it later. On Linux it pins every candidate directory component through open directory descriptors, opens the final file with no-symlink semantics, validates it with descriptor-backed `stat`, and hashes the same descriptor bytes used by the operation. During APPLY the destination is created exclusively as `0600`; only exact byte-count and SHA-256 PASS allows promotion to the normal root-owned `0644` release-file metadata. A mismatch therefore leaves at most private incomplete evidence and never publishes unverified bytes as a normal release file.
+
+The complete root-owned release is still reverified against the production manifest before the private manifest marker is written or `current` can move. Existing path containment, exact source SHA, immutable release directory, no-delete and atomic relative `current` swap semantics remain unchanged.
+
+The production CLI destination is fixed to `/opt/dashboard_RPi5`. APPLY/ROLLBACK serialize through an exclusive lock under the production root; a pre-existing lock blocks. Merge or `turpini` does not authorize any production operation.
+
+### First hardened-controller bootstrap
+
+A host whose current verified release predates #236 cannot safely gain the new boundary by running the new JavaScript directly from a candidate checkout. The first adoption therefore requires a separately reviewed and explicitly owner-authorized bootstrap/reconciliation that establishes the exact reviewed hardened controller as root-owned immutable trusted code before it is used with root authority. This source issue does not authorize or perform that bootstrap.
+
+Do not work around this gate with `sudo /usr/bin/node ./tools/production-release-controller.mjs`, a writable symlink/path indirection, or controller bytes whose exact reviewed provenance is not established.
 
 Phase 11B rollout/rollback and candidate integrity are documented in `docs/PHASE11B_PRODUCTION_CANDIDATE.md`.
 
@@ -72,4 +116,4 @@ Phase 11D exact-SHA release activation, atomic current-pointer swap and rollback
 
 Phase 11E actual-host pre-bootstrap evidence and fail-closed readiness semantics are documented in `docs/PHASE11E_HOST_READINESS.md`.
 
-The preflight tools and default release plan do not activate production. Any production filesystem apply, systemd, host-permission or Cloudflare change still requires a separate explicit owner authorization under issue #1.
+The preflight tools and source changes do not activate production. Any production filesystem apply, trusted-controller bootstrap, systemd, host-permission or Cloudflare change still requires a separate explicit owner authorization under issue #1.

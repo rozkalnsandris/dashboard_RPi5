@@ -20,6 +20,17 @@ export default [
     },
   },
   {
+    files: [
+      "tools/production-release-controller.mjs",
+      "tools/issue236-release-controller-descriptor-safety.test.mjs",
+    ],
+    languageOptions: {
+      globals: {
+        Buffer: "readonly",
+      },
+    },
+  },
+  {
     files: ["apps/agent/src/logs-read.ts"],
     rules: {
       // The log sanitizer intentionally matches non-printing control bytes before UI rendering.
