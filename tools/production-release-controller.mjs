@@ -200,6 +200,16 @@ export function validateReleaseActivationContract(contractValue) {
   ) {
     throw new Error("release activation atomic/retention invariant mismatch");
   }
+  const failureEvidence = assertObject(contract.failureEvidence, "release failure evidence contract");
+  if (
+    failureEvidence.preMutationFailureReleasesApplyLock !== true ||
+    failureEvidence.postMutationFailurePreservesApplyLock !== true ||
+    failureEvidence.successfulApplyReleasesApplyLock !== true ||
+    failureEvidence.manualCleanupRequired !== true ||
+    failureEvidence.storedMetadata !== "none"
+  ) {
+    throw new Error("release activation failure evidence invariant mismatch");
+  }
   if (
     contract.networkAllowed !== false ||
     contract.processExecutionAllowed !== false ||
@@ -967,11 +977,12 @@ export async function copyVerifiedCandidateSourceHandle({ sourceHandle, destinat
   }
 }
 
-async function copyVerifiedRelease({ activationRoot, candidateRoot, manifest }) {
+async function copyVerifiedRelease({ activationRoot, candidateRoot, manifest, mutationState }) {
   const root = resolve(activationRoot);
   await ensureRealDirectory(root, "activation root");
   const releasesRoot = resolve(root, "releases");
   await ensureRealDirectory(releasesRoot, "releases root", true);
+  mutationState.markStarted();
   const releaseDir = resolve(releasesRoot, manifest.sourceSha);
   if (!isWithin(root, releaseDir)) throw new Error("release destination escaped activation root");
 
@@ -1009,7 +1020,7 @@ async function copyVerifiedRelease({ activationRoot, candidateRoot, manifest }) 
   await readInstalledManifest(activationRoot, manifest.sourceSha);
 }
 
-async function swapCurrentPointer(activationRoot, sourceSha) {
+async function swapCurrentPointer(activationRoot, sourceSha, mutationState) {
   assertSha(sourceSha);
   const root = resolve(activationRoot);
   await ensureRealDirectory(root, "activation root");
@@ -1017,19 +1028,21 @@ async function swapCurrentPointer(activationRoot, sourceSha) {
   const temporary = resolve(root, `.current.next-${sourceSha}-${randomUUID()}`);
   const target = `releases/${sourceSha}`;
   await symlink(target, temporary);
+  mutationState.markStarted();
+  await rename(temporary, currentPath);
+}
+
+async function removeTransientApplyLock(lockPath) {
   try {
-    await rename(temporary, currentPath);
+    await unlink(lockPath);
+    return undefined;
   } catch (error) {
-    try {
-      await unlink(temporary);
-    } catch (cleanupError) {
-      if (cleanupError?.code !== "ENOENT") throw cleanupError;
-    }
-    throw error;
+    if (error?.code === "ENOENT") return undefined;
+    return error;
   }
 }
 
-async function withExclusiveApplyLock(activationRoot, operation) {
+export async function withExclusiveApplyLock(activationRoot, operation) {
   const root = resolve(activationRoot);
   await ensureRealDirectory(root, "activation root", true);
   const lockPath = resolve(root, APPLY_LOCK_NAME);
@@ -1043,33 +1056,62 @@ async function withExclusiveApplyLock(activationRoot, operation) {
     throw error;
   }
 
+  let mutationStarted = false;
+  const mutationState = Object.freeze({
+    markStarted() {
+      mutationStarted = true;
+    },
+  });
+
   let result;
   let operationError;
   try {
-    result = await operation();
+    result = await operation(mutationState);
   } catch (error) {
     operationError = error;
   }
 
-  let cleanupError;
+  let closeError;
   try {
     await lockHandle.close();
   } catch (error) {
-    cleanupError = error;
-  }
-  try {
-    await unlink(lockPath);
-  } catch (error) {
-    if (error?.code !== "ENOENT" && cleanupError === undefined) cleanupError = error;
+    closeError = error;
   }
 
+  if (operationError !== undefined && mutationStarted) {
+    throw new Error("release operation failed after mutation started; apply lock preserved for explicit review", {
+      cause: operationError,
+    });
+  }
+  if (closeError !== undefined && mutationStarted) {
+    throw new Error("release operation completed after mutation but apply lock close failed; lock preserved for explicit review", {
+      cause: closeError,
+    });
+  }
+
+  const unlinkError = await removeTransientApplyLock(lockPath);
   if (operationError !== undefined) {
-    if (cleanupError !== undefined) {
-      throw new Error("release operation failed and apply lock cleanup also failed", { cause: operationError });
+    if (closeError !== undefined || unlinkError !== undefined) {
+      throw new Error("pre-mutation release operation failed and transient apply lock cleanup was incomplete", {
+        cause: operationError,
+      });
     }
     throw operationError;
   }
-  if (cleanupError !== undefined) throw cleanupError;
+  if (closeError !== undefined) {
+    if (unlinkError !== undefined) {
+      throw new Error("transient apply lock close and cleanup failed before any release mutation", { cause: closeError });
+    }
+    throw closeError;
+  }
+  if (unlinkError !== undefined) {
+    if (mutationStarted) {
+      throw new Error("release operation succeeded but apply lock cleanup failed; explicit review required", {
+        cause: unlinkError,
+      });
+    }
+    throw unlinkError;
+  }
   return result;
 }
 
@@ -1097,7 +1139,7 @@ export async function applyReleaseActivation({
     await planReleaseActivation({ activationRoot, candidateRoot, manifestPath, sourceSha, contract });
   }
 
-  return withExclusiveApplyLock(activationRoot, async () => {
+  return withExclusiveApplyLock(activationRoot, async (mutationState) => {
     let observed;
     let manifest;
     let target;
@@ -1125,10 +1167,15 @@ export async function applyReleaseActivation({
 
     assertExpectedCurrent(observed, expectedCurrent);
     if (!target.exists) {
-      await copyVerifiedRelease({ activationRoot, candidateRoot: candidateRootResolved, manifest });
+      await copyVerifiedRelease({
+        activationRoot,
+        candidateRoot: candidateRootResolved,
+        manifest,
+        mutationState,
+      });
     }
     await assertCurrentUnchanged(activationRoot, observed);
-    if (observed !== sourceSha) await swapCurrentPointer(activationRoot, sourceSha);
+    if (observed !== sourceSha) await swapCurrentPointer(activationRoot, sourceSha, mutationState);
     const finalCurrent = await inspectCurrent(activationRoot);
     if (finalCurrent !== sourceSha) throw new Error("current pointer did not activate exact source SHA");
     await readInstalledManifest(activationRoot, sourceSha);
@@ -1165,11 +1212,11 @@ export async function planReleaseRollback({ activationRoot, rollbackSha, contrac
 export async function applyReleaseRollback({ activationRoot, rollbackSha, expectedCurrent, contract }) {
   if (isProductionActivationRoot(activationRoot)) await assertTrustedProductionControllerEntrypoint();
   await planReleaseRollback({ activationRoot, rollbackSha, contract });
-  return withExclusiveApplyLock(activationRoot, async () => {
+  return withExclusiveApplyLock(activationRoot, async (mutationState) => {
     const plan = await planReleaseRollback({ activationRoot, rollbackSha, contract });
     const reviewedCurrent = assertExpectedCurrent(plan.observedCurrent, expectedCurrent);
     await assertCurrentUnchanged(activationRoot, reviewedCurrent);
-    if (reviewedCurrent !== rollbackSha) await swapCurrentPointer(activationRoot, rollbackSha);
+    if (reviewedCurrent !== rollbackSha) await swapCurrentPointer(activationRoot, rollbackSha, mutationState);
     const finalCurrent = await inspectCurrent(activationRoot);
     if (finalCurrent !== rollbackSha) throw new Error("rollback pointer did not activate exact target SHA");
     await readInstalledManifest(activationRoot, rollbackSha);
