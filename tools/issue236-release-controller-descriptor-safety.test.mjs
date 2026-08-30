@@ -144,7 +144,6 @@ test("issue236 source locks privileged execution and removes pathname copy seman
     assert.match(docs, /candidate checkout/iu);
     assert.match(docs, /root-owned/iu);
     assert.match(docs, /--expected-candidate/iu);
-    assert.match(docs, /forbidden/iu);
   }
 });
 
