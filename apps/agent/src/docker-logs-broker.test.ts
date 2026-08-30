@@ -110,11 +110,16 @@ describe("registered Docker log broker protocol", () => {
 });
 
 describe("Docker Engine log reader authority", () => {
-  it("constructs only fixed Engine GET paths with broker-owned flags and bounds", async () => {
+  it("constructs only fixed negotiated Engine GET paths with broker-owned flags and bounds", async () => {
     const socket = await tempSocket("docker.sock");
     const requests: Array<{ method: string | undefined; url: string | undefined }> = [];
     const fakeDocker = createServer((incoming, response) => {
       requests.push({ method: incoming.method, url: incoming.url });
+      if (incoming.url === "/version") {
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({ Version: "29.6.1", ApiVersion: "1.55", MinAPIVersion: "1.40" }));
+        return;
+      }
       response.statusCode = 200;
       response.end(Buffer.from("docker-log-body", "utf8"));
     });
@@ -130,20 +135,26 @@ describe("Docker Engine log reader authority", () => {
     );
 
     expect(requests).toEqual([
+      { method: "GET", url: "/version" },
       {
         method: "GET",
-        url: `/v1.40/containers/homeassistant/logs?stdout=true&stderr=true&since=${NOW_SECONDS - 900}&timestamps=true&tail=${DOCKER_BROKER_LOG_TAIL}`,
+        url: `/v1.55/containers/homeassistant/logs?stdout=true&stderr=true&since=${NOW_SECONDS - 900}&timestamps=true&tail=${DOCKER_BROKER_LOG_TAIL}`,
       },
       {
         method: "GET",
-        url: `/v1.40/containers/prometheus/logs?stdout=true&stderr=true&since=${NOW_SECONDS - 86_400}&timestamps=true&tail=${DOCKER_BROKER_LOG_TAIL}`,
+        url: `/v1.55/containers/prometheus/logs?stdout=true&stderr=true&since=${NOW_SECONDS - 86_400}&timestamps=true&tail=${DOCKER_BROKER_LOG_TAIL}`,
       },
     ]);
   });
 
   it("fails closed on oversized raw log evidence", async () => {
     const socket = await tempSocket("docker.sock");
-    const fakeDocker = createServer((_incoming, response) => {
+    const fakeDocker = createServer((incoming, response) => {
+      if (incoming.url === "/version") {
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({ Version: "29.6.1", ApiVersion: "1.55", MinAPIVersion: "1.40" }));
+        return;
+      }
       response.statusCode = 200;
       response.end(Buffer.alloc(65));
     });

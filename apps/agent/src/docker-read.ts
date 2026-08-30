@@ -11,6 +11,7 @@ import {
   DOCKER_CONTAINER_CONCURRENCY,
   isDockerContainerId,
 } from "./docker-api.js";
+import { selectDockerApiVersion } from "./docker-api-version.js";
 import {
   createDockerBrokerTransport,
   DockerBrokerRequestError,
@@ -25,7 +26,6 @@ export {
   DOCKER_REQUEST_TIMEOUT_MS,
 } from "./docker-api.js";
 
-const VERSION_PATTERN = /^\d+\.\d+$/;
 const ZERO_TIME_PREFIX = "0001-01-01T00:00:00";
 
 export class DockerSourceUnavailableError extends Error {
@@ -78,26 +78,6 @@ function toIsoDate(value: unknown): string {
   return parsed.toISOString();
 }
 
-function compareApiVersions(left: string, right: string): number {
-  if (!VERSION_PATTERN.test(left) || !VERSION_PATTERN.test(right)) {
-    throw new DockerSourceUnavailableError();
-  }
-
-  const [leftMajorRaw, leftMinorRaw] = left.split(".");
-  const [rightMajorRaw, rightMinorRaw] = right.split(".");
-  const leftMajor = Number(leftMajorRaw);
-  const leftMinor = Number(leftMinorRaw);
-  const rightMajor = Number(rightMajorRaw);
-  const rightMinor = Number(rightMinorRaw);
-
-  if (![leftMajor, leftMinor, rightMajor, rightMinor].every(Number.isSafeInteger)) {
-    throw new DockerSourceUnavailableError();
-  }
-
-  if (leftMajor !== rightMajor) return leftMajor - rightMajor;
-  return leftMinor - rightMinor;
-}
-
 interface DockerVersionEvidence {
   engineVersion: string;
   daemonApiVersion: string;
@@ -110,10 +90,9 @@ export function parseDockerVersion(value: unknown): DockerVersionEvidence {
   const daemonApiVersion = requireString(record.ApiVersion);
   const daemonMinApiVersion = requireString(record.MinAPIVersion);
 
-  if (
-    compareApiVersions(daemonApiVersion, DOCKER_API_VERSION) < 0 ||
-    compareApiVersions(daemonMinApiVersion, DOCKER_API_VERSION) > 0
-  ) {
+  try {
+    selectDockerApiVersion(record);
+  } catch {
     throw new DockerSourceUnavailableError();
   }
 

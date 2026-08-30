@@ -128,7 +128,7 @@ function runningStats() {
 }
 
 describe("Docker version and inventory parsing", () => {
-  it("accepts a daemon whose supported range includes API v1.40", () => {
+  it("accepts a daemon whose supported range includes the dashboard interval", () => {
     expect(parseDockerVersion(versionEvidence)).toEqual({
       engineVersion: "29.6.1",
       daemonApiVersion: "1.55",
@@ -136,12 +136,26 @@ describe("Docker version and inventory parsing", () => {
     });
   });
 
-  it("fails closed when the daemon no longer supports API v1.40", () => {
-    expect(() =>
+  it("accepts a higher daemon minimum when a supported overlap still exists", () => {
+    expect(
       parseDockerVersion({
         Version: "future",
         ApiVersion: "1.60",
         MinAPIVersion: "1.41",
+      }),
+    ).toEqual({
+      engineVersion: "future",
+      daemonApiVersion: "1.60",
+      daemonMinApiVersion: "1.41",
+    });
+  });
+
+  it("fails closed when the daemon range has no supported overlap", () => {
+    expect(() =>
+      parseDockerVersion({
+        Version: "future",
+        ApiVersion: "1.60",
+        MinAPIVersion: "1.56",
       }),
     ).toThrow(DockerSourceUnavailableError);
   });

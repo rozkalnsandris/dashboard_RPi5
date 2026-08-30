@@ -3,12 +3,12 @@ import { isAbsolute } from "node:path";
 
 import {
   DEFAULT_DOCKER_ENGINE_SOCKET_PATH,
-  DOCKER_API_PREFIX,
   DOCKER_ENGINE_SOCKET_ENV,
   DOCKER_MAX_RESPONSE_BYTES,
   DOCKER_REQUEST_TIMEOUT_MS,
   isDockerContainerId,
 } from "./docker-api.js";
+import { dockerApiPrefix, selectDockerApiVersion } from "./docker-api-version.js";
 import {
   DOCKER_BROKER_LOG_LOOKBACK_SECONDS,
   DOCKER_BROKER_LOG_MAX_RESPONSE_BYTES,
@@ -65,10 +65,14 @@ interface DockerLogReaderOptions extends DockerEngineReaderOptions {
 
 type DockerEngineOperation =
   | { kind: "ping" }
-  | { kind: "version" }
   | { kind: "containers" }
   | { kind: "inspect"; id: string }
   | { kind: "stats"; id: string };
+
+interface DockerApiVersionResolution {
+  apiVersion: string;
+  evidence: unknown;
+}
 
 const DOCKER_LOG_CONTAINER_BY_SOURCE: Readonly<Record<DockerBrokerLogSource, string>> = {
   homeassistant: "homeassistant",
@@ -87,32 +91,36 @@ function validateDockerSocketPath(socketPath: string): string {
   return socketPath;
 }
 
-function pathForOperation(operation: DockerEngineOperation): string {
+function pathForOperation(operation: DockerEngineOperation, apiVersion: string): string {
+  let prefix: string;
+  try {
+    prefix = dockerApiPrefix(apiVersion);
+  } catch {
+    throw new DockerEngineUnavailableError();
+  }
+
   switch (operation.kind) {
     case "ping":
-      return `${DOCKER_API_PREFIX}/_ping`;
-    case "version":
-      return `${DOCKER_API_PREFIX}/version`;
+      return `${prefix}/_ping`;
     case "containers":
-      return `${DOCKER_API_PREFIX}/containers/json?all=true`;
+      return `${prefix}/containers/json?all=true`;
     case "inspect":
       if (!isDockerContainerId(operation.id)) throw new DockerEngineUnavailableError();
-      return `${DOCKER_API_PREFIX}/containers/${operation.id}/json`;
+      return `${prefix}/containers/${operation.id}/json`;
     case "stats":
       if (!isDockerContainerId(operation.id)) throw new DockerEngineUnavailableError();
-      return `${DOCKER_API_PREFIX}/containers/${operation.id}/stats?stream=false`;
+      return `${prefix}/containers/${operation.id}/stats?stream=false`;
   }
 }
 
-async function readDockerEngineBody(
+async function readDockerEnginePath(
   socketPath: string,
-  operation: DockerEngineOperation,
+  path: string,
+  accept: string,
   signal: AbortSignal | undefined,
   requestTimeoutMs: number,
   maxResponseBytes: number,
 ): Promise<Buffer> {
-  const path = pathForOperation(operation);
-
   return new Promise<Buffer>((resolve, reject) => {
     let settled = false;
     const fail = (error: unknown) => {
@@ -135,7 +143,7 @@ async function readDockerEngineBody(
         socketPath,
         path,
         method: "GET",
-        headers: { accept: operation.kind === "ping" ? "text/plain" : "application/json" },
+        headers: { accept },
         ...(signal === undefined ? {} : { signal }),
       },
       (response) => {
@@ -180,6 +188,29 @@ function parseDockerJson(body: Buffer): unknown {
   }
 }
 
+async function discoverDockerApiVersion(
+  socketPath: string,
+  signal: AbortSignal | undefined,
+  requestTimeoutMs: number,
+  maxResponseBytes: number,
+): Promise<DockerApiVersionResolution> {
+  const evidence = parseDockerJson(
+    await readDockerEnginePath(
+      socketPath,
+      "/version",
+      "application/json",
+      signal,
+      requestTimeoutMs,
+      maxResponseBytes,
+    ),
+  );
+  try {
+    return { apiVersion: selectDockerApiVersion(evidence), evidence };
+  } catch {
+    throw new DockerEngineUnavailableError();
+  }
+}
+
 export function createDockerEngineReader(
   options: DockerEngineReaderOptions = {},
 ): DockerEngineReader {
@@ -194,15 +225,39 @@ export function createDockerEngineReader(
   const maxResponseBytes = validatePositiveBound(
     options.maxResponseBytes ?? DOCKER_MAX_RESPONSE_BYTES,
   );
+  let versionResolution: DockerApiVersionResolution | null = null;
 
-  const read = (operation: DockerEngineOperation, signal?: AbortSignal) =>
-    readDockerEngineBody(
+  const resolveVersion = async (signal?: AbortSignal) => {
+    if (versionResolution !== null) return versionResolution;
+    versionResolution = await discoverDockerApiVersion(
       socketPath,
-      operation,
       signal,
       requestTimeoutMs,
       maxResponseBytes,
     );
+    return versionResolution;
+  };
+
+  const read = async (operation: DockerEngineOperation, signal?: AbortSignal) => {
+    const resolution = await resolveVersion(signal);
+    try {
+      return await readDockerEnginePath(
+        socketPath,
+        pathForOperation(operation, resolution.apiVersion),
+        operation.kind === "ping" ? "text/plain" : "application/json",
+        signal,
+        requestTimeoutMs,
+        maxResponseBytes,
+      );
+    } catch (error: unknown) {
+      const stableContainerNotFound =
+        error instanceof DockerEngineHttpStatusError &&
+        error.statusCode === 404 &&
+        (operation.kind === "inspect" || operation.kind === "stats");
+      if (!stableContainerNotFound) versionResolution = null;
+      throw error;
+    }
+  };
 
   return {
     async ping(signal?: AbortSignal): Promise<void> {
@@ -210,7 +265,7 @@ export function createDockerEngineReader(
       if (body.toString("utf8").trim() !== "OK") throw new DockerEngineUnavailableError();
     },
     async version(signal?: AbortSignal): Promise<unknown> {
-      return parseDockerJson(await read({ kind: "version" }, signal));
+      return (await resolveVersion(signal)).evidence;
     },
     async listContainers(signal?: AbortSignal): Promise<unknown> {
       return parseDockerJson(await read({ kind: "containers" }, signal));
@@ -240,6 +295,18 @@ export function createDockerLogReader(options: DockerLogReaderOptions = {}): Doc
   );
   const maxResponseBytes = Math.min(configuredMaxResponseBytes, DOCKER_BROKER_LOG_MAX_RESPONSE_BYTES);
   const now = options.now ?? (() => new Date());
+  let versionResolution: DockerApiVersionResolution | null = null;
+
+  const resolveVersion = async (signal?: AbortSignal) => {
+    if (versionResolution !== null) return versionResolution;
+    versionResolution = await discoverDockerApiVersion(
+      socketPath,
+      signal,
+      requestTimeoutMs,
+      maxResponseBytes,
+    );
+    return versionResolution;
+  };
 
   return {
     async readLogs(source, range, signal) {
@@ -255,65 +322,29 @@ export function createDockerLogReader(options: DockerLogReaderOptions = {}): Doc
         throw new DockerEngineUnavailableError();
       }
       const sinceSeconds = Math.max(0, observedSeconds - lookbackSeconds);
-      const path = `${DOCKER_API_PREFIX}/containers/${containerName}/logs?stdout=true&stderr=true&since=${sinceSeconds}&timestamps=true&tail=${DOCKER_BROKER_LOG_TAIL}`;
+      const resolution = await resolveVersion(signal);
+      const prefix = (() => {
+        try {
+          return dockerApiPrefix(resolution.apiVersion);
+        } catch {
+          throw new DockerEngineUnavailableError();
+        }
+      })();
+      const path = `${prefix}/containers/${containerName}/logs?stdout=true&stderr=true&since=${sinceSeconds}&timestamps=true&tail=${DOCKER_BROKER_LOG_TAIL}`;
 
-      return new Promise<Buffer>((resolve, reject) => {
-        let settled = false;
-        const fail = (error: unknown) => {
-          if (settled) return;
-          settled = true;
-          reject(
-            error instanceof DockerEngineUnavailableError
-              ? error
-              : new DockerEngineUnavailableError(),
-          );
-        };
-        const succeed = (body: Buffer) => {
-          if (settled) return;
-          settled = true;
-          resolve(body);
-        };
-
-        const req = request(
-          {
-            socketPath,
-            path,
-            method: "GET",
-            headers: { accept: "application/octet-stream" },
-            ...(signal === undefined ? {} : { signal }),
-          },
-          (response) => {
-            const statusCode = response.statusCode ?? 0;
-            if (statusCode < 200 || statusCode >= 300) {
-              response.resume();
-              fail(new DockerEngineHttpStatusError(statusCode));
-              return;
-            }
-
-            const chunks: Buffer[] = [];
-            let totalBytes = 0;
-            response.on("data", (chunk: Buffer) => {
-              if (settled) return;
-              totalBytes += chunk.length;
-              if (totalBytes > maxResponseBytes) {
-                fail(new DockerEngineUnavailableError());
-                response.destroy();
-                return;
-              }
-              chunks.push(chunk);
-            });
-            response.once("error", fail);
-            response.once("end", () => succeed(Buffer.concat(chunks)));
-          },
+      try {
+        return await readDockerEnginePath(
+          socketPath,
+          path,
+          "application/octet-stream",
+          signal,
+          requestTimeoutMs,
+          maxResponseBytes,
         );
-
-        req.setTimeout(requestTimeoutMs, () => {
-          fail(new DockerEngineUnavailableError());
-          req.destroy();
-        });
-        req.once("error", fail);
-        req.end();
-      });
+      } catch (error: unknown) {
+        versionResolution = null;
+        throw error;
+      }
     },
   };
 }
