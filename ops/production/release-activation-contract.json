@@ -22,6 +22,13 @@
   "staleLockAutoCleanup": false,
   "retainPreviousRelease": true,
   "deleteReleaseDuringActivation": false,
+  "failureEvidence": {
+    "preMutationFailureReleasesApplyLock": true,
+    "postMutationFailurePreservesApplyLock": true,
+    "successfulApplyReleasesApplyLock": true,
+    "manualCleanupRequired": true,
+    "storedMetadata": "none"
+  },
   "networkAllowed": false,
   "processExecutionAllowed": false,
   "systemdMutationAllowed": false,
