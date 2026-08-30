@@ -170,11 +170,21 @@ export function attachTerminalWebSocketBridge(options: TerminalWebSocketBridgeOp
   const failInternal = (reason: TerminalBridgeFailureReason) => finish(true, 1011, reason);
 
   const browserFrameCanBeSent = (frame: string): boolean => {
-    if (Buffer.byteLength(frame, "utf8") > TERMINAL_BRIDGE_MAX_WEBSOCKET_FRAME_BYTES) {
+    const frameBytes = Buffer.byteLength(frame, "utf8");
+    if (frameBytes > TERMINAL_BRIDGE_MAX_WEBSOCKET_FRAME_BYTES) {
       failOverload("TERMINAL_OUTPUT_OVERLOAD");
       return false;
     }
-    if (socket.bufferedAmount >= TERMINAL_BRIDGE_MAX_WEBSOCKET_BUFFER_BYTES) {
+
+    // ws bufferedAmount reports queued application-data bytes. Keep this application-level
+    // queue budget exact in serialized UTF-8 payload bytes rather than guessing transport
+    // framing overhead that bufferedAmount itself does not expose.
+    const bufferedAmount = socket.bufferedAmount;
+    if (!Number.isSafeInteger(bufferedAmount) || bufferedAmount < 0) {
+      failOverload("TERMINAL_OUTPUT_BACKPRESSURE");
+      return false;
+    }
+    if (bufferedAmount > TERMINAL_BRIDGE_MAX_WEBSOCKET_BUFFER_BYTES - frameBytes) {
       failOverload("TERMINAL_OUTPUT_BACKPRESSURE");
       return false;
     }
