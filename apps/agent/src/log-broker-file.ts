@@ -19,6 +19,33 @@ export interface FileMetadataContract {
   mode: number;
 }
 
+interface DescriptorMetadata {
+  size: number;
+  uid: number;
+  gid: number;
+  mode: number;
+  isFile(): boolean;
+}
+
+export interface DescriptorFileHandle {
+  stat(): Promise<DescriptorMetadata>;
+  read(
+    buffer: Buffer,
+    offset: number,
+    length: number,
+    position: number,
+  ): Promise<{ bytesRead: number }>;
+  close(): Promise<void>;
+}
+
+export interface DescriptorSafeFileDependencies {
+  openFile(path: string, flags: number): Promise<DescriptorFileHandle>;
+}
+
+const defaultDependencies: DescriptorSafeFileDependencies = {
+  openFile: (path, flags) => open(path, flags),
+};
+
 const backupLogMetadataContract: FileMetadataContract = Object.freeze({
   uid: RPI5_BACKUP_LOG_UID,
   gid: RPI5_BACKUP_LOG_GID,
@@ -30,14 +57,15 @@ export async function readDescriptorSafeFileTail(
   maxBytes: number,
   metadataContract: FileMetadataContract,
   signal?: AbortSignal,
+  dependencies: DescriptorSafeFileDependencies = defaultDependencies,
 ): Promise<DescriptorSafeFileTailResult> {
   signal?.throwIfAborted();
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) throw new LogSourceUnavailableError();
   if (typeof constants.O_NOFOLLOW !== "number") throw new LogSourceUnavailableError();
 
-  let handle;
+  let handle: DescriptorFileHandle | undefined;
   try {
-    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    handle = await dependencies.openFile(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     const metadata = await handle.stat();
     if (
       !metadata.isFile() ||
@@ -70,8 +98,7 @@ export async function readDescriptorSafeFileTail(
       try {
         await handle.close();
       } catch {
-        // Closing a read-only descriptor must not replace an already-determined
-        // source result, but the descriptor is never intentionally retained.
+        throw new LogSourceUnavailableError();
       }
     }
   }
