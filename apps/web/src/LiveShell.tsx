@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   TerminalSquare,
 } from "lucide-react";
+import { useEffect } from "react";
 import {
   Button,
   Menu,
@@ -89,6 +90,10 @@ export function LiveAppShell() {
   const activeLabel = primaryNavigation.find(({ to }) =>
     to === "/" ? location.pathname === "/" : location.pathname.startsWith(to),
   )?.label ?? "Overview";
+
+  useEffect(() => {
+    document.title = `${activeLabel} · dashboard_RPi5`;
+  }, [activeLabel]);
 
   return (
     <div className="app-shell">
