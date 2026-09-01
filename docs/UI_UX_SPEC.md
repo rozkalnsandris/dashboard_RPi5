@@ -165,6 +165,7 @@ Example tokens:
 Target WCAG 2.2 AA.
 
 - visible `:focus-visible`;
+- browser/PWA document title follows the active top-level destination as `<Route> · dashboard_RPi5` and updates after client-side navigation;
 - status is text + icon + color, never color-only;
 - adequate touch targets;
 - reduced-motion support;
