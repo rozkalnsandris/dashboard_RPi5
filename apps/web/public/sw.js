@@ -1,7 +1,11 @@
 /* global self, caches, URL, fetch, Response */
 
 const CACHE_PREFIX = "dashboard-rpi5-static-";
-const CACHE_NAME = `${CACHE_PREFIX}v1`;
+const BUILD_ID = "__DASHBOARD_BUILD_ID__";
+if (!/^[0-9a-f]{40}$/.test(BUILD_ID)) {
+  throw new Error("Service worker build ID was not injected during the production build");
+}
+const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const PRECACHE_URLS = [
   "/offline.html",
   "/manifest.webmanifest",
