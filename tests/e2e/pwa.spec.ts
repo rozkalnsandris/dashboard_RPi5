@@ -63,7 +63,7 @@ test("offline state is explicit and never looks current", async ({ page }) => {
   expect(hasHorizontalOverflow).toBe(false);
 });
 
-test("service worker caches only reviewed static assets and uses an offline fallback", async ({ page }, testInfo) => {
+test("service worker versions static caches by exact build and preserves the cache boundary", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop-1440", "One browser project is sufficient for service-worker cache semantics");
 
   await page.goto("/");
@@ -72,6 +72,17 @@ test("service worker caches only reviewed static assets and uses an offline fall
     await navigator.serviceWorker.ready;
   });
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+
+  const serviceWorkerResponse = await page.request.get("/sw.js");
+  expect(serviceWorkerResponse.ok()).toBe(true);
+  const serviceWorkerSource = await serviceWorkerResponse.text();
+  expect(serviceWorkerSource).not.toContain("__DASHBOARD_BUILD_ID__");
+  const buildIdMatch = serviceWorkerSource.match(/const BUILD_ID = "([0-9a-f]{40})";/);
+  if (!buildIdMatch?.[1]) throw new Error("built service worker is missing its exact source build ID");
+  const currentCacheName = `dashboard-rpi5-static-${buildIdMatch[1]}`;
+
+  const updateViaCache = await page.evaluate(async () => (await navigator.serviceWorker.ready).updateViaCache);
+  expect(updateViaCache).toBe("none");
 
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
@@ -84,19 +95,47 @@ test("service worker caches only reviewed static assets and uses an offline fall
     await fetch("/api/pwa-cache-probe").catch(() => undefined);
   });
 
-  const cachedUrls = await page.evaluate(async () => {
+  const cachedState = await page.evaluate(async () => {
+    const keys = await caches.keys();
     const urls: string[] = [];
-    for (const key of await caches.keys()) {
+    for (const key of keys) {
       if (!key.startsWith("dashboard-rpi5-static-")) continue;
       const cache = await caches.open(key);
       for (const request of await cache.keys()) urls.push(request.url);
     }
-    return urls;
+    return { keys, urls };
   });
 
-  expect(cachedUrls.some((url) => url.includes("/api/"))).toBe(false);
-  expect(cachedUrls.some((url) => url.endsWith("/offline.html"))).toBe(true);
-  expect(cachedUrls.some((url) => url.includes("icon-192.png?runtime-cache=1"))).toBe(true);
+  expect(cachedState.keys).toContain(currentCacheName);
+  expect(cachedState.keys).not.toContain("dashboard-rpi5-static-v1");
+  expect(cachedState.urls.some((url) => url.includes("/api/"))).toBe(false);
+  expect(cachedState.urls.some((url) => url.endsWith("/offline.html"))).toBe(true);
+  expect(cachedState.urls.some((url) => url.includes("icon-192.png?runtime-cache=1"))).toBe(true);
+
+  const staleCacheName = "dashboard-rpi5-static-stale-browser-test";
+  const unrelatedCacheName = "unrelated-origin-cache-browser-test";
+  await page.evaluate(
+    async ({ staleCacheName, unrelatedCacheName }) => {
+      await caches.open(staleCacheName);
+      await caches.open(unrelatedCacheName);
+      const registration = await navigator.serviceWorker.ready;
+      await registration.unregister();
+    },
+    { staleCacheName, unrelatedCacheName },
+  );
+
+  await page.reload();
+  await page.evaluate(async () => {
+    if (!("serviceWorker" in navigator)) throw new Error("service workers unavailable");
+    await navigator.serviceWorker.ready;
+  });
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+
+  const cacheKeysAfterActivation = await page.evaluate(async () => caches.keys());
+  expect(cacheKeysAfterActivation).toContain(currentCacheName);
+  expect(cacheKeysAfterActivation).not.toContain(staleCacheName);
+  expect(cacheKeysAfterActivation).toContain(unrelatedCacheName);
+  await page.evaluate(async (cacheName) => caches.delete(cacheName), unrelatedCacheName);
 
   await page.context().setOffline(true);
   try {
