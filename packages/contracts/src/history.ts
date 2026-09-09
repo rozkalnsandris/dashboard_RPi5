@@ -17,6 +17,27 @@ export const HostHistoryMetricSchema = Type.Union([
 
 export type HostHistoryMetric = Static<typeof HostHistoryMetricSchema>;
 
+/**
+ * Server-owned registry vocabulary prepared for richer native host history.
+ * HostHistoryMetric remains the active public snapshot vocabulary until a later
+ * activation phase explicitly expands the response contract.
+ */
+export type HostHistoryRegistryMetric =
+  | HostHistoryMetric
+  | "CPU_USER_PERCENT"
+  | "CPU_SYSTEM_PERCENT"
+  | "CPU_IOWAIT_PERCENT"
+  | "SWAP_PERCENT"
+  | "SOC_TEMP_CELSIUS"
+  | "NVME_TEMP_CELSIUS"
+  | "FAN_RPM"
+  | "FAN_PWM_PERCENT"
+  | "NETWORK_RX_BYTES_PER_SECOND"
+  | "NETWORK_TX_BYTES_PER_SECOND"
+  | "DISK_READ_BYTES_PER_SECOND"
+  | "DISK_WRITE_BYTES_PER_SECOND"
+  | "UPTIME_SECONDS";
+
 export const HistorySeriesStateSchema = Type.Union([
   Type.Literal("AVAILABLE"),
   Type.Literal("UNAVAILABLE"),

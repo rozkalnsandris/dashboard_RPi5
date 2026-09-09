@@ -53,6 +53,51 @@ describe("Prometheus matrix normalization", () => {
     ).toEqual({ metric: "LOAD1", state: "UNAVAILABLE", points: [] });
   });
 
+  it("validates the expanded registry metric domains without activating them publicly", () => {
+    expect(
+      normalizePrometheusMatrix(matrix([[1_000, "55.5"]]), "SOC_TEMP_CELSIUS", 1_000, 1_060, 121),
+    ).toEqual({
+      metric: "SOC_TEMP_CELSIUS",
+      state: "AVAILABLE",
+      points: [{ timestamp: "1970-01-01T00:16:40.000Z", value: 55.5 }],
+    });
+    expect(
+      normalizePrometheusMatrix(
+        matrix([[1_000, "1048576"]]),
+        "NETWORK_RX_BYTES_PER_SECOND",
+        1_000,
+        1_060,
+        121,
+      ),
+    ).toEqual({
+      metric: "NETWORK_RX_BYTES_PER_SECOND",
+      state: "AVAILABLE",
+      points: [{ timestamp: "1970-01-01T00:16:40.000Z", value: 1_048_576 }],
+    });
+
+    const invalidRegistryValues = [
+      ["CPU_USER_PERCENT", "100.1"],
+      ["CPU_SYSTEM_PERCENT", "-0.1"],
+      ["CPU_IOWAIT_PERCENT", "101"],
+      ["SWAP_PERCENT", "101"],
+      ["SOC_TEMP_CELSIUS", "251"],
+      ["NVME_TEMP_CELSIUS", "-274"],
+      ["FAN_RPM", "-1"],
+      ["FAN_PWM_PERCENT", "100.1"],
+      ["NETWORK_RX_BYTES_PER_SECOND", "-1"],
+      ["NETWORK_TX_BYTES_PER_SECOND", "-1"],
+      ["DISK_READ_BYTES_PER_SECOND", "-1"],
+      ["DISK_WRITE_BYTES_PER_SECOND", "-1"],
+      ["UPTIME_SECONDS", "-1"],
+    ] as const;
+
+    for (const [metric, value] of invalidRegistryValues) {
+      expect(() =>
+        normalizePrometheusMatrix(matrix([[1_000, value]]), metric, 1_000, 1_060, 121),
+      ).toThrow("Prometheus source unavailable");
+    }
+  });
+
   it("fails closed for malformed, out-of-order, oversized or out-of-domain data", () => {
     expect(() =>
       normalizePrometheusMatrix(
