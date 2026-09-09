@@ -1,6 +1,13 @@
-import type { HostHistoryMetric, HostHistorySeries } from "@dashboard-rpi5/contracts/history";
+import type {
+  HistoryPoint,
+  HostHistoryRegistryMetric,
+} from "@dashboard-rpi5/contracts/history";
 
 import { PrometheusSourceUnavailableError } from "./prometheus-types.js";
+
+export type NormalizedHostHistorySeries<M extends HostHistoryRegistryMetric> =
+  | { metric: M; state: "AVAILABLE"; points: HistoryPoint[] }
+  | { metric: M; state: "UNAVAILABLE"; points: [] };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -15,19 +22,40 @@ function isNonFinitePrometheusValue(value: string): boolean {
   return value === "NaN" || value === "+Inf" || value === "-Inf" || value === "Inf";
 }
 
-function validateMetricValue(metric: HostHistoryMetric, value: number): boolean {
+function validateMetricValue(metric: HostHistoryRegistryMetric, value: number): boolean {
   if (!Number.isFinite(value)) return false;
-  if (metric === "LOAD1") return value >= 0;
-  return value >= 0 && value <= 100;
+
+  switch (metric) {
+    case "CPU_PERCENT":
+    case "CPU_USER_PERCENT":
+    case "CPU_SYSTEM_PERCENT":
+    case "CPU_IOWAIT_PERCENT":
+    case "MEMORY_PERCENT":
+    case "SWAP_PERCENT":
+    case "ROOT_FS_PERCENT":
+    case "FAN_PWM_PERCENT":
+      return value >= 0 && value <= 100;
+    case "SOC_TEMP_CELSIUS":
+    case "NVME_TEMP_CELSIUS":
+      return value >= -273.15 && value <= 250;
+    case "LOAD1":
+    case "FAN_RPM":
+    case "NETWORK_RX_BYTES_PER_SECOND":
+    case "NETWORK_TX_BYTES_PER_SECOND":
+    case "DISK_READ_BYTES_PER_SECOND":
+    case "DISK_WRITE_BYTES_PER_SECOND":
+    case "UPTIME_SECONDS":
+      return value >= 0;
+  }
 }
 
-export function normalizePrometheusMatrix(
+export function normalizePrometheusMatrix<M extends HostHistoryRegistryMetric>(
   raw: unknown,
-  metric: HostHistoryMetric,
+  metric: M,
   startEpochSeconds: number,
   endEpochSeconds: number,
   maxPoints: number,
-): HostHistorySeries {
+): NormalizedHostHistorySeries<M> {
   const envelope = requireRecord(raw);
   if (envelope.status !== "success") throw new PrometheusSourceUnavailableError();
 
@@ -45,7 +73,7 @@ export function normalizePrometheusMatrix(
     throw new PrometheusSourceUnavailableError();
   }
 
-  const points: Array<{ timestamp: string; value: number }> = [];
+  const points: HistoryPoint[] = [];
   let previousTimestamp = -1;
 
   for (const rawPoint of result.values) {

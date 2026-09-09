@@ -38,6 +38,22 @@ The server owns a fixed PromQL registry for:
 
 An optional node-exporter `instance` value is server configuration only. It is escaped as a label value and is never accepted from browser input.
 
+### Expanded registry foundation
+
+Issue #261 prepares additional fixed server-owned registry entries without activating them in the public snapshot. The active `/api/history/host` response remains exactly the four initial series above.
+
+The prepared registry vocabulary adds:
+
+- `CPU_USER_PERCENT`, `CPU_SYSTEM_PERCENT`, `CPU_IOWAIT_PERCENT`;
+- `SWAP_PERCENT`;
+- `SOC_TEMP_CELSIUS`, `NVME_TEMP_CELSIUS`;
+- `FAN_RPM`, `FAN_PWM_PERCENT`;
+- `NETWORK_RX_BYTES_PER_SECOND`, `NETWORK_TX_BYTES_PER_SECOND`;
+- `DISK_READ_BYTES_PER_SECOND`, `DISK_WRITE_BYTES_PER_SECOND`;
+- `UPTIME_SECONDS`.
+
+Queries aggregate CPU cores, non-loopback network devices and physical disk devices to one result series. Temperature/fan selectors are fixed server-side from observed node-exporter identities. The normalizer applies domain checks for percentages, temperatures and non-negative rates/RPM/seconds. Browser input and range policy do not expand. Public activation and UI work remain a later bounded phase.
+
 ## Prometheus transport
 
 The transport:
