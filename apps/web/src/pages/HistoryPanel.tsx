@@ -8,6 +8,7 @@ import {
   fetchHostHistory,
   formatHistoryValue,
   getSeriesStats,
+  HISTORY_GROUPS,
   HISTORY_METRIC_META,
   HISTORY_RANGES,
 } from "../history-ui";
@@ -21,7 +22,7 @@ function HistorySparkline({ series }: { series: HostHistorySeries }) {
 
   if (stats === null) {
     return (
-      <article className="history-metric history-metric--unavailable">
+      <article className="history-metric history-metric--unavailable" aria-label={`${meta.label} history`}>
         <div className="history-metric__heading">
           <span>{meta.label}</span>
           <span className="history-state">Unavailable</span>
@@ -33,7 +34,7 @@ function HistorySparkline({ series }: { series: HostHistorySeries }) {
   }
 
   return (
-    <article className="history-metric">
+    <article className="history-metric" aria-label={`${meta.label} history`}>
       <div className="history-metric__heading">
         <span>{meta.label}</span>
         <span className="history-state history-state--available">Available</span>
@@ -70,6 +71,10 @@ export function HistoryPanel() {
   const ageMs = query.data === undefined ? 0 : Date.now() - Date.parse(query.data.observedAt);
   const stale = query.data !== undefined && ageMs > HISTORY_STALE_AFTER_MS;
   const degraded = query.isError && query.data !== undefined;
+  const seriesByMetric =
+    query.data === undefined
+      ? undefined
+      : new Map(query.data.series.map((series) => [series.metric, series] as const));
 
   return (
     <section className="panel history-panel" aria-labelledby="history-title">
@@ -124,9 +129,19 @@ export function HistoryPanel() {
             </div>
           ) : null}
 
-          <div className="history-grid" aria-label={`${range} host history`}>
-            {query.data.series.map((series) => (
-              <HistorySparkline key={series.metric} series={series} />
+          <div className="history-groups">
+            {HISTORY_GROUPS.map((group) => (
+              <section className="history-group" key={group.id} aria-labelledby={`history-group-${group.id}`}>
+                <h3 id={`history-group-${group.id}`} className="history-group__heading">
+                  {group.label}
+                </h3>
+                <div className="history-grid" aria-label={`${range} ${group.label} history`}>
+                  {group.metrics.map((metric) => {
+                    const series = seriesByMetric?.get(metric);
+                    return series === undefined ? null : <HistorySparkline key={metric} series={series} />;
+                  })}
+                </div>
+              </section>
             ))}
           </div>
 

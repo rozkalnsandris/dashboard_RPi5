@@ -22,7 +22,7 @@ function matrix(start: number, end: number, value = "10") {
 }
 
 describe("host history reader", () => {
-  it("owns the 24h window, step and four fixed Prometheus queries", async () => {
+  it("owns the 24h window, step and seventeen fixed Prometheus queries", async () => {
     const requests: PrometheusQueryRangeRequest[] = [];
     const transport: PrometheusTransport = {
       async read(request) {
@@ -40,7 +40,7 @@ describe("host history reader", () => {
 
     const snapshot = await reader("24h");
 
-    expect(requests).toHaveLength(4);
+    expect(requests).toHaveLength(17);
     expect(requests.every((request) => request.stepSeconds === 300)).toBe(true);
     expect(requests.every((request) => request.endEpochSeconds === observedAt.getTime() / 1_000)).toBe(
       true,
@@ -53,9 +53,22 @@ describe("host history reader", () => {
     expect(snapshot.range).toBe("24h");
     expect(snapshot.series.map((series) => series.metric)).toEqual([
       "CPU_PERCENT",
+      "CPU_USER_PERCENT",
+      "CPU_SYSTEM_PERCENT",
+      "CPU_IOWAIT_PERCENT",
       "MEMORY_PERCENT",
+      "SWAP_PERCENT",
       "ROOT_FS_PERCENT",
       "LOAD1",
+      "SOC_TEMP_CELSIUS",
+      "NVME_TEMP_CELSIUS",
+      "FAN_RPM",
+      "FAN_PWM_PERCENT",
+      "NETWORK_RX_BYTES_PER_SECOND",
+      "NETWORK_TX_BYTES_PER_SECOND",
+      "DISK_READ_BYTES_PER_SECOND",
+      "DISK_WRITE_BYTES_PER_SECOND",
+      "UPTIME_SECONDS",
     ]);
     expect(snapshot.grafanaHref).toBe(
       "https://grafana.rozkalns.net/d/rpi5-host/rpi5-host?from=now-24h&to=now",
@@ -78,7 +91,7 @@ describe("host history reader", () => {
     });
 
     const snapshot = await reader("1h");
-    expect(snapshot.series.at(-1)).toEqual({
+    expect(snapshot.series.find((series) => series.metric === "LOAD1")).toEqual({
       metric: "LOAD1",
       state: "UNAVAILABLE",
       points: [],

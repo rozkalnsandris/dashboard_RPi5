@@ -53,7 +53,7 @@ describe("Prometheus matrix normalization", () => {
     ).toEqual({ metric: "LOAD1", state: "UNAVAILABLE", points: [] });
   });
 
-  it("validates the expanded registry metric domains without activating them publicly", () => {
+  it("validates the expanded public registry metric domains", () => {
     expect(
       normalizePrometheusMatrix(matrix([[1_000, "55.5"]]), "SOC_TEMP_CELSIUS", 1_000, 1_060, 121),
     ).toEqual({
