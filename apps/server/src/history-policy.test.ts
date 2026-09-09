@@ -24,18 +24,13 @@ const REGISTRY_METRICS = [
 ] as const;
 
 describe("history range policy", () => {
-  it("keeps the three browser-selectable windows and active public metrics bounded", () => {
+  it("keeps the three browser-selectable windows and public registry bounded", () => {
     expect(HISTORY_RANGE_POLICY).toEqual({
       "1h": { durationSeconds: 3_600, stepSeconds: 30, maxPoints: 121 },
       "24h": { durationSeconds: 86_400, stepSeconds: 300, maxPoints: 289 },
       "7d": { durationSeconds: 604_800, stepSeconds: 1_800, maxPoints: 337 },
     });
-    expect(HOST_HISTORY_METRICS).toEqual([
-      "CPU_PERCENT",
-      "MEMORY_PERCENT",
-      "ROOT_FS_PERCENT",
-      "LOAD1",
-    ]);
+    expect(HOST_HISTORY_METRICS).toEqual(REGISTRY_METRICS);
   });
 });
 

@@ -3,18 +3,14 @@ import { describe, expect, it } from "vitest";
 
 import { buildApp } from "./app.js";
 import type { HostHistoryReader } from "./host-history.js";
+import { HOST_HISTORY_METRICS } from "./history-policy.js";
 
 const fixture: HostHistorySnapshot = {
   observedAt: "2026-08-15T12:00:00.000Z",
   range: "1h",
   windowStart: "2026-08-15T11:00:00.000Z",
   windowEnd: "2026-08-15T12:00:00.000Z",
-  series: [
-    { metric: "CPU_PERCENT", state: "UNAVAILABLE", points: [] },
-    { metric: "MEMORY_PERCENT", state: "UNAVAILABLE", points: [] },
-    { metric: "ROOT_FS_PERCENT", state: "UNAVAILABLE", points: [] },
-    { metric: "LOAD1", state: "UNAVAILABLE", points: [] },
-  ],
+  series: HOST_HISTORY_METRICS.map((metric) => ({ metric, state: "UNAVAILABLE" as const, points: [] })),
   grafanaHref: null,
 };
 

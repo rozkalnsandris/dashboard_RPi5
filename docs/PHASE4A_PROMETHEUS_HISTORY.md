@@ -27,32 +27,22 @@ The browser can choose only a preset range. It cannot send PromQL, arbitrary tim
 
 The server owns `end=now` and derives the start time.
 
-## Initial host series
+## Public host series
 
-The server owns a fixed PromQL registry for:
+The server owns a fixed 17-series PromQL registry. Issue #261 prepared the expanded vocabulary and issue #263 activates it in the public snapshot:
 
-- `CPU_PERCENT`;
-- `MEMORY_PERCENT`;
-- `ROOT_FS_PERCENT`;
-- `LOAD1`.
-
-An optional node-exporter `instance` value is server configuration only. It is escaped as a label value and is never accepted from browser input.
-
-### Expanded registry foundation
-
-Issue #261 prepares additional fixed server-owned registry entries without activating them in the public snapshot. The active `/api/history/host` response remains exactly the four initial series above.
-
-The prepared registry vocabulary adds:
-
-- `CPU_USER_PERCENT`, `CPU_SYSTEM_PERCENT`, `CPU_IOWAIT_PERCENT`;
-- `SWAP_PERCENT`;
+- `CPU_PERCENT`, `CPU_USER_PERCENT`, `CPU_SYSTEM_PERCENT`, `CPU_IOWAIT_PERCENT`;
+- `MEMORY_PERCENT`, `SWAP_PERCENT`;
+- `ROOT_FS_PERCENT`, `LOAD1`;
 - `SOC_TEMP_CELSIUS`, `NVME_TEMP_CELSIUS`;
 - `FAN_RPM`, `FAN_PWM_PERCENT`;
 - `NETWORK_RX_BYTES_PER_SECOND`, `NETWORK_TX_BYTES_PER_SECOND`;
 - `DISK_READ_BYTES_PER_SECOND`, `DISK_WRITE_BYTES_PER_SECOND`;
 - `UPTIME_SECONDS`.
 
-Queries aggregate CPU cores, non-loopback network devices and physical disk devices to one result series. Temperature/fan selectors are fixed server-side from observed node-exporter identities. The normalizer applies domain checks for percentages, temperatures and non-negative rates/RPM/seconds. Browser input and range policy do not expand. Public activation and UI work remain a later bounded phase.
+An optional node-exporter `instance` value is server configuration only. It is escaped as a label value and is never accepted from browser input. Queries aggregate CPU cores, non-loopback network devices and physical disk devices to one result series. Temperature/fan selectors are fixed server-side from reviewed node-exporter identities. The normalizer applies domain checks for percentages, temperatures and non-negative rates/RPM/seconds. Browser input and range policy remain unchanged.
+
+The native History panel groups these series into CPU, memory/storage, thermals/cooling, network, disk I/O and host sections. Every chart retains textual latest/min/max summaries; unavailable series remain explicit. Percentages use a 0..100 chart domain, while temperature/uptime use bounded data-range scaling and load/RPM/throughput use a non-negative zero baseline.
 
 ## Prometheus transport
 
@@ -123,6 +113,6 @@ They are not secrets and no production values are committed in this phase. Produ
 
 ## Explicit exclusions
 
-Phase 4A does not include React charts, top-consumer UI, cAdvisor, arbitrary PromQL, Prometheus writes/admin APIs, Grafana tokens, agent activation, Docker permission changes, Cloudflare changes or any host/production mutation.
+The original Phase 4A boundary did not include React charts. Issue #263 adds only the bounded native host-history panel on top of that API. Top-consumer UI, cAdvisor, arbitrary PromQL, Prometheus writes/admin APIs, Grafana tokens, agent activation, Docker permission changes, Cloudflare changes and all host/production mutations remain excluded.
 
 **Production deploy: NO.**

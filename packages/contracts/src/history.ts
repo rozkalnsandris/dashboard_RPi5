@@ -10,33 +10,28 @@ export type HistoryRange = Static<typeof HistoryRangeSchema>;
 
 export const HostHistoryMetricSchema = Type.Union([
   Type.Literal("CPU_PERCENT"),
+  Type.Literal("CPU_USER_PERCENT"),
+  Type.Literal("CPU_SYSTEM_PERCENT"),
+  Type.Literal("CPU_IOWAIT_PERCENT"),
   Type.Literal("MEMORY_PERCENT"),
+  Type.Literal("SWAP_PERCENT"),
   Type.Literal("ROOT_FS_PERCENT"),
   Type.Literal("LOAD1"),
+  Type.Literal("SOC_TEMP_CELSIUS"),
+  Type.Literal("NVME_TEMP_CELSIUS"),
+  Type.Literal("FAN_RPM"),
+  Type.Literal("FAN_PWM_PERCENT"),
+  Type.Literal("NETWORK_RX_BYTES_PER_SECOND"),
+  Type.Literal("NETWORK_TX_BYTES_PER_SECOND"),
+  Type.Literal("DISK_READ_BYTES_PER_SECOND"),
+  Type.Literal("DISK_WRITE_BYTES_PER_SECOND"),
+  Type.Literal("UPTIME_SECONDS"),
 ]);
 
 export type HostHistoryMetric = Static<typeof HostHistoryMetricSchema>;
 
-/**
- * Server-owned registry vocabulary prepared for richer native host history.
- * HostHistoryMetric remains the active public snapshot vocabulary until a later
- * activation phase explicitly expands the response contract.
- */
-export type HostHistoryRegistryMetric =
-  | HostHistoryMetric
-  | "CPU_USER_PERCENT"
-  | "CPU_SYSTEM_PERCENT"
-  | "CPU_IOWAIT_PERCENT"
-  | "SWAP_PERCENT"
-  | "SOC_TEMP_CELSIUS"
-  | "NVME_TEMP_CELSIUS"
-  | "FAN_RPM"
-  | "FAN_PWM_PERCENT"
-  | "NETWORK_RX_BYTES_PER_SECOND"
-  | "NETWORK_TX_BYTES_PER_SECOND"
-  | "DISK_READ_BYTES_PER_SECOND"
-  | "DISK_WRITE_BYTES_PER_SECOND"
-  | "UPTIME_SECONDS";
+/** Server-owned query-registry vocabulary; public activation now matches it exactly. */
+export type HostHistoryRegistryMetric = HostHistoryMetric;
 
 export const HistorySeriesStateSchema = Type.Union([
   Type.Literal("AVAILABLE"),
@@ -95,7 +90,7 @@ export const HostHistorySnapshotSchema = Type.Object(
     range: HistoryRangeSchema,
     windowStart: Type.String({ format: "date-time" }),
     windowEnd: Type.String({ format: "date-time" }),
-    series: Type.Array(HostHistorySeriesSchema, { minItems: 4, maxItems: 4 }),
+    series: Type.Array(HostHistorySeriesSchema, { minItems: 17, maxItems: 17 }),
     grafanaHref: Type.Union([
       Type.String({ minLength: 1, maxLength: 2048, format: "uri" }),
       Type.Null(),
