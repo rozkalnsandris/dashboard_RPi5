@@ -1,9 +1,23 @@
 {
-  "schema": "dashboard-rpi5.container-metrics-source-readiness.v1",
+  "schema": "dashboard-rpi5.container-metrics-source-readiness.v2",
   "sourceOnly": true,
   "parentIssue": 247,
-  "implementationIssue": 265,
-  "collectorSelected": false,
+  "readinessIssue": 265,
+  "selectionDecisionIssue": 267,
+  "collectorSelected": true,
+  "collector": {
+    "kind": "broker-backed-prometheus-exporter",
+    "implementationStatus": "design-selected-not-implemented",
+    "prometheusScrapeOnly": true,
+    "publicExposureAllowed": false,
+    "dockerSocketAccessAllowed": false,
+    "dockerSocketMountAllowed": false,
+    "dockerGroupMembershipAllowed": false,
+    "dockerTcpCredentialsAllowed": false,
+    "genericEngineProxyAllowed": false,
+    "brokerCapabilityRequired": "bounded-container-metrics-snapshot",
+    "brokerCapabilityImplementationAllowedByThisChild": false
+  },
   "productionBaseline": {
     "observedAt": "2026-09-10",
     "evidenceReference": "https://github.com/rozkalnsandris/dashboard_RPi5/issues/265",
@@ -15,6 +29,21 @@
     ],
     "containerMetricSeriesObserved": false,
     "effectivePrometheusRetentionObserved": "15d or 2GiB"
+  },
+  "selectionEvidence": {
+    "observedAt": "2026-09-10",
+    "evidenceReference": "https://github.com/rozkalnsandris/dashboard_RPi5/issues/267",
+    "notCurrentRuntimeTruth": true,
+    "runningDockerContainersObserved": 20,
+    "fullComposeIdentityTuplesObserved": 19,
+    "uniqueFullComposeIdentityTuplesObserved": 19,
+    "duplicateFullComposeIdentityTuplesObserved": 0,
+    "containersWithNoSelectedComposeIdentityLabelsObserved": 1,
+    "selectedLabelKeysOnly": [
+      "com.docker.compose.project",
+      "com.docker.compose.service",
+      "com.docker.compose.container-number"
+    ]
   },
   "requiredCapabilities": {
     "cpu": {
@@ -74,11 +103,34 @@
     "stableLogicalContainerKeyRequired": true,
     "identityMustBeProvedByReadOnlyLiveEvidence": true,
     "recreatedContainerContinuityMustBeDefined": true,
+    "primaryStrategy": "compose-project-service-container-number",
+    "composeLabelKeys": [
+      "com.docker.compose.project",
+      "com.docker.compose.service",
+      "com.docker.compose.container-number"
+    ],
+    "allComposeTupleComponentsRequired": true,
+    "tupleComponentsMustBeValidatedAndBounded": true,
+    "automaticContainerNameFallbackAllowed": false,
+    "automaticRawContainerIdFallbackAllowed": false,
     "rawContainerIdAsPublicHistoryKeyAllowed": false,
+    "nonComposeWithoutExplicitStaticMapping": "UNAVAILABLE",
+    "partialMalformedOrDuplicateTupleBehavior": "UNAVAILABLE",
+    "staticMappingPolicy": "server-owned-source-reviewed-bounded",
     "labelAllowlistRequired": true,
     "environmentLabelExportAllowed": false,
     "unboundedContainerLabelExportAllowed": false,
     "queryMustReturnOneLogicalSeriesPerContainer": true
+  },
+  "exporterBrokerBoundary": {
+    "brokerCapabilityPurpose": "typed-sanitized-container-metric-and-identity-evidence",
+    "arbitraryDockerEndpointAllowed": false,
+    "dockerMutationsAllowed": false,
+    "timeoutBoundRequired": true,
+    "responseSizeBoundRequired": true,
+    "concurrencyBoundRequired": true,
+    "rawEnvironmentAllowed": false,
+    "arbitraryDockerLabelsAllowed": false
   },
   "prometheusBoundary": {
     "serverOwnedQueryRegistryRequired": true,
@@ -95,24 +147,26 @@
     "mainAgentDockerSocketAccessAllowed": false,
     "serverDockerSocketAccessAllowed": false,
     "authorityExpansionAllowedByThisChild": false,
-    "ifRequiredBySelectedCollector": "separate-adr-security-owner-decision-required"
+    "ifAuthorityExpansionIsProposed": "separate-adr-security-owner-decision-required"
   },
   "activationGate": {
     "liveAuthorizationRequired": true,
     "collectorDeploymentAllowedByThisContract": false,
+    "brokerCapabilityRuntimeActivationAllowedByThisContract": false,
     "prometheusScrapeMutationAllowedByThisContract": false,
     "prometheusRetentionMutationAllowedByThisContract": false,
     "dockerRuntimeMutationAllowedByThisContract": false,
     "systemdMutationAllowedByThisContract": false,
     "networkMutationAllowedByThisContract": false,
     "requiredReadOnlyEvidence": [
-      "required metric families are emitted",
-      "stable logical container identity is proved",
+      "required metric families are emitted with reviewed semantics",
+      "stable logical container identity is re-proved from current runtime evidence",
       "raw label cardinality is bounded and reviewed",
       "server query aggregation produces one logical series per container",
       "Prometheus scrape target is healthy after separately authorized activation",
       "effective retention still satisfies the 7d product range",
-      "Docker Engine authority remains unchanged"
+      "Docker Engine authority remains exclusive to dashboard-rpi5-docker-broker",
+      "broker and exporter latency/concurrency stay within reviewed resource budgets"
     ]
   },
   "mutationAllowed": false
