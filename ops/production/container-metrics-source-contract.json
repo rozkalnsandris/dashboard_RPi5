@@ -1,0 +1,119 @@
+{
+  "schema": "dashboard-rpi5.container-metrics-source-readiness.v1",
+  "sourceOnly": true,
+  "parentIssue": 247,
+  "implementationIssue": 265,
+  "collectorSelected": false,
+  "productionBaseline": {
+    "observedAt": "2026-09-10",
+    "evidenceReference": "https://github.com/rozkalnsandris/dashboard_RPi5/issues/265",
+    "notCurrentRuntimeTruth": true,
+    "runningDockerContainersObserved": 20,
+    "containerCollectorObserved": false,
+    "prometheusActiveJobsObserved": [
+      "node"
+    ],
+    "containerMetricSeriesObserved": false,
+    "effectivePrometheusRetentionObserved": "15d or 2GiB"
+  },
+  "requiredCapabilities": {
+    "cpu": {
+      "acceptedMetricNames": [
+        "container_cpu_usage_seconds_total"
+      ],
+      "rateRequired": true,
+      "aggregateAwayLabels": [
+        "cpu"
+      ]
+    },
+    "memory": {
+      "acceptedMetricNames": [
+        "container_memory_working_set_bytes"
+      ],
+      "rateRequired": false,
+      "aggregateAwayLabels": []
+    },
+    "networkReceive": {
+      "acceptedMetricNames": [
+        "container_network_receive_bytes_total"
+      ],
+      "rateRequired": true,
+      "aggregateAwayLabels": [
+        "interface"
+      ]
+    },
+    "networkTransmit": {
+      "acceptedMetricNames": [
+        "container_network_transmit_bytes_total"
+      ],
+      "rateRequired": true,
+      "aggregateAwayLabels": [
+        "interface"
+      ]
+    },
+    "filesystemRead": {
+      "acceptedMetricNames": [
+        "container_fs_reads_bytes_total"
+      ],
+      "rateRequired": true,
+      "aggregateAwayLabels": [
+        "device"
+      ]
+    },
+    "filesystemWrite": {
+      "acceptedMetricNames": [
+        "container_fs_writes_bytes_total"
+      ],
+      "rateRequired": true,
+      "aggregateAwayLabels": [
+        "device"
+      ]
+    }
+  },
+  "identity": {
+    "stableLogicalContainerKeyRequired": true,
+    "identityMustBeProvedByReadOnlyLiveEvidence": true,
+    "recreatedContainerContinuityMustBeDefined": true,
+    "rawContainerIdAsPublicHistoryKeyAllowed": false,
+    "labelAllowlistRequired": true,
+    "environmentLabelExportAllowed": false,
+    "unboundedContainerLabelExportAllowed": false,
+    "queryMustReturnOneLogicalSeriesPerContainer": true
+  },
+  "prometheusBoundary": {
+    "serverOwnedQueryRegistryRequired": true,
+    "browserArbitraryPromqlAllowed": false,
+    "browserArbitraryLabelMatcherAllowed": false,
+    "browserDirectCollectorAccessAllowed": false,
+    "collectorPublicExposureAllowed": false,
+    "rawCollectorLabelsReturnedToBrowserAllowed": false
+  },
+  "dockerAuthorityBoundary": {
+    "engineAuthorityOwner": "dashboard-rpi5-docker-broker",
+    "collectorDockerSocketAccessAllowed": false,
+    "collectorDockerSocketMountAllowed": false,
+    "mainAgentDockerSocketAccessAllowed": false,
+    "serverDockerSocketAccessAllowed": false,
+    "authorityExpansionAllowedByThisChild": false,
+    "ifRequiredBySelectedCollector": "separate-adr-security-owner-decision-required"
+  },
+  "activationGate": {
+    "liveAuthorizationRequired": true,
+    "collectorDeploymentAllowedByThisContract": false,
+    "prometheusScrapeMutationAllowedByThisContract": false,
+    "prometheusRetentionMutationAllowedByThisContract": false,
+    "dockerRuntimeMutationAllowedByThisContract": false,
+    "systemdMutationAllowedByThisContract": false,
+    "networkMutationAllowedByThisContract": false,
+    "requiredReadOnlyEvidence": [
+      "required metric families are emitted",
+      "stable logical container identity is proved",
+      "raw label cardinality is bounded and reviewed",
+      "server query aggregation produces one logical series per container",
+      "Prometheus scrape target is healthy after separately authorized activation",
+      "effective retention still satisfies the 7d product range",
+      "Docker Engine authority remains unchanged"
+    ]
+  },
+  "mutationAllowed": false
+}

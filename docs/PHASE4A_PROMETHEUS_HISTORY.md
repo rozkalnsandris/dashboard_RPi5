@@ -104,6 +104,16 @@ DASHBOARD_GRAFANA_HOST_DASHBOARD_PATH
 
 They are not secrets and no production values are committed in this phase. Production wiring remains a separate owner-gated action.
 
+## Per-container history source gate
+
+Issue #265 defines the container-metrics source-readiness gate required before #247 can add per-container historical queries or UI. The 2026-09-10 read-only production baseline found no usable `container_*` series and no container collector target, so current source code must not assume those series exist.
+
+The machine-readable gate is `ops/production/container-metrics-source-contract.json`. It fixes the required CPU, memory, network and filesystem-I/O metric capabilities, stable logical container identity, bounded label cardinality and preservation of the server-owned query-registry boundary.
+
+The Docker broker remains the sole accepted Docker Engine/socket authority. A container collector may not gain Docker socket access under this source-only gate. Collector deployment, Prometheus scrape configuration and any authority/trust-boundary change are separate LIVE work and require fresh runtime evidence plus explicit owner authorization.
+
+See `docs/ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md` for the evidence and activation acceptance boundary.
+
 ## Official references checked 2026-08-15
 
 - Prometheus HTTP API: https://prometheus.io/docs/prometheus/latest/querying/api/
@@ -113,6 +123,6 @@ They are not secrets and no production values are committed in this phase. Produ
 
 ## Explicit exclusions
 
-The original Phase 4A boundary did not include React charts. Issue #263 adds only the bounded native host-history panel on top of that API. Top-consumer UI, cAdvisor, arbitrary PromQL, Prometheus writes/admin APIs, Grafana tokens, agent activation, Docker permission changes, Cloudflare changes and all host/production mutations remain excluded.
+The original Phase 4A boundary did not include React charts. Issue #263 adds only the bounded native host-history panel on top of that API. Top-consumer UI, container collector activation, arbitrary PromQL, Prometheus writes/admin APIs, Grafana tokens, agent activation, Docker permission changes, Cloudflare changes and all host/production mutations remain excluded. Issue #265 records the source-readiness contract only; it does not activate cAdvisor or any replacement collector.
 
 **Production deploy: NO.**
