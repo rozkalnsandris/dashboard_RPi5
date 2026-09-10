@@ -14,11 +14,12 @@ const issueDoc = await read("docs/ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md
 const adr = await read("docs/adr/0005-docker-broker-only-engine-authority.md");
 
 test("container metrics readiness stays source-only and records evidence provenance", () => {
-  assert.equal(contract.schema, "dashboard-rpi5.container-metrics-source-readiness.v1");
+  assert.equal(contract.schema, "dashboard-rpi5.container-metrics-source-readiness.v2");
   assert.equal(contract.sourceOnly, true);
   assert.equal(contract.parentIssue, 247);
-  assert.equal(contract.implementationIssue, 265);
-  assert.equal(contract.collectorSelected, false);
+  assert.equal(contract.readinessIssue, 265);
+  assert.equal(contract.selectionDecisionIssue, 267);
+  assert.equal(contract.collectorSelected, true);
   assert.equal(contract.productionBaseline.notCurrentRuntimeTruth, true);
   assert.equal(contract.productionBaseline.containerCollectorObserved, false);
   assert.equal(contract.productionBaseline.containerMetricSeriesObserved, false);
@@ -69,7 +70,7 @@ test("Docker Engine authority cannot expand through the container metrics source
   assert.equal(contract.dockerAuthorityBoundary.serverDockerSocketAccessAllowed, false);
   assert.equal(contract.dockerAuthorityBoundary.authorityExpansionAllowedByThisChild, false);
   assert.equal(
-    contract.dockerAuthorityBoundary.ifRequiredBySelectedCollector,
+    contract.dockerAuthorityBoundary.ifAuthorityExpansionIsProposed,
     "separate-adr-security-owner-decision-required",
   );
   assert.match(issueDoc, /unix:\/\/\/var\/run\/docker\.sock/u);
@@ -87,15 +88,16 @@ test("Prometheus and browser boundaries remain server-owned", () => {
   assert.match(issueDoc, /fixed registered expressions/u);
 });
 
-test("LIVE activation remains outside this source-only child", () => {
+test("LIVE activation remains outside the source-only contract", () => {
   assert.equal(contract.activationGate.liveAuthorizationRequired, true);
   assert.equal(contract.activationGate.collectorDeploymentAllowedByThisContract, false);
+  assert.equal(contract.activationGate.brokerCapabilityRuntimeActivationAllowedByThisContract, false);
   assert.equal(contract.activationGate.prometheusScrapeMutationAllowedByThisContract, false);
   assert.equal(contract.activationGate.prometheusRetentionMutationAllowedByThisContract, false);
   assert.equal(contract.activationGate.dockerRuntimeMutationAllowedByThisContract, false);
   assert.equal(contract.activationGate.systemdMutationAllowedByThisContract, false);
   assert.equal(contract.activationGate.networkMutationAllowedByThisContract, false);
-  assert.equal(contract.activationGate.requiredReadOnlyEvidence.length, 7);
+  assert.equal(contract.activationGate.requiredReadOnlyEvidence.length, 8);
   assert.match(issueDoc, /Production deploy: NO\./u);
 });
 

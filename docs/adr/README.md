@@ -5,3 +5,4 @@
 - [`0003-read-only-first.md`](0003-read-only-first.md) — observability before terminal/write capability.
 - [`0004-phase1-implementation-stack.md`](0004-phase1-implementation-stack.md) — Node/TypeScript + React/Vite/Fastify + A55-focused UI stack.
 - [`0005-docker-broker-only-engine-authority.md`](0005-docker-broker-only-engine-authority.md) — dedicated bounded Docker broker is the sole Docker Engine authority.
+- [`0006-broker-backed-container-metrics-exporter.md`](0006-broker-backed-container-metrics-exporter.md) — historical container metrics use a Prometheus exporter backed only by bounded Docker-broker capability and Compose tuple identity.

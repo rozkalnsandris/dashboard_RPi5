@@ -15,7 +15,7 @@ Use the authoritative source that already owns the data. Avoid duplicate collect
 | SoC temperature | `/sys/class/thermal/thermal_zone0/temp` for local current state | exact current Pi temperature |
 | Thermal/power flags | `vcgencmd get_throttled` when the firmware mailbox is readable | current + since-boot evidence, otherwise explicit unavailable |
 | Docker live stats | Docker Engine stats API | CPU/RAM/net/block/PIDs |
-| Container history | Prometheus via a separately approved container-metrics source | per-container history after source-readiness + LIVE activation gates |
+| Container history | Prometheus scraping a broker-backed Prometheus exporter after separate LIVE activation | per-container history after source-readiness + activation gates |
 | Docker lifecycle | Docker Engine events API | activity timeline |
 | Docker logs | Docker Engine logs API | log explorer |
 | systemd state | `systemctl show`/systemd interface | allowlisted service status |
@@ -77,15 +77,31 @@ Docker daemon access is a separate high-privilege boundary. Read-only intent at 
 
 ## Container history source readiness
 
-Container history is a distinct ownership/transport path from Docker live stats. Historical series belong in Prometheus, but #265 establishes a container-metrics source-readiness gate before any collector is activated or any public per-container history surface is implemented.
+Container history is a distinct ownership/transport path from Docker live stats. Historical series belong in Prometheus. Issue #265 established the container-metrics source-readiness gate, and #267 now selects the source architecture without activating it.
 
-The 2026-09-10 read-only production baseline found no container collector and no usable container-metric series. The reviewed source contract therefore requires CPU, memory, network RX/TX and filesystem read/write capabilities, plus a stable server-owned logical container identity and bounded label cardinality.
+The selected path is a **broker-backed Prometheus exporter**:
 
-Docker broker remains the sole Docker Engine authority. A candidate collector must not reach or mount the Docker Engine socket under the source-only #265 contract. If required metrics or stable identity cannot be provided without widening that authority boundary, the design requires a separate ADR/security decision rather than a direct runtime workaround.
+```text
+Prometheus
+  -> bounded container-metrics exporter
+      -> fixed typed broker capability
+          -> dashboard-rpi5-docker-broker
+              -> Docker Engine Unix socket
+```
+
+Docker broker remains the sole Docker Engine authority. The exporter must not receive Docker socket access/mounts, `docker` group membership, Docker TCP credentials, arbitrary Engine endpoint selection or a generic Docker proxy. The fixed metrics capability and exporter runtime are not implemented by the #267 architecture-decision child.
+
+The primary stable history identity is the validated Docker Compose tuple `project/service/container-number`. Container name and raw Docker ID are not automatic recreate-continuity fallbacks. Missing, partial, malformed or duplicate Compose identity remains `UNAVAILABLE` unless a separate server-owned, source-reviewed bounded static mapping exists.
+
+The 2026-09-10 read-only identity evidence recorded by #267 observed 20 containers, 19 complete unique Compose tuples, zero duplicate complete tuples and one container with none of the selected Compose labels. This is historical provenance only, not current runtime truth. Fresh evidence is mandatory before any later LIVE activation.
+
+Required CPU, memory, network RX/TX and filesystem read/write families remain fixed in `ops/production/container-metrics-source-contract.json`, with bounded label cardinality and one logical series per container after reviewed server-owned aggregation.
 
 The browser remains outside the collector/Prometheus trust boundary: queries are fixed server-side, raw collector labels are not public output and arbitrary PromQL or label matchers remain forbidden.
 
-See [`docs/ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md`](ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md) and `ops/production/container-metrics-source-contract.json`.
+See [`docs/ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md`](ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md), [`ADR-0006`](adr/0006-broker-backed-container-metrics-exporter.md) and `ops/production/container-metrics-source-contract.json`.
+
+Collector/exporter deployment, broker runtime capability activation, Prometheus scrape/retention mutation, Docker permission changes, systemd/container changes and restarts remain separate explicit LIVE owner gates.
 
 ## Refresh cadence starting point
 
