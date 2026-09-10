@@ -15,6 +15,7 @@ Use the authoritative source that already owns the data. Avoid duplicate collect
 | SoC temperature | `/sys/class/thermal/thermal_zone0/temp` for local current state | exact current Pi temperature |
 | Thermal/power flags | `vcgencmd get_throttled` when the firmware mailbox is readable | current + since-boot evidence, otherwise explicit unavailable |
 | Docker live stats | Docker Engine stats API | CPU/RAM/net/block/PIDs |
+| Container history | Prometheus via a separately approved container-metrics source | per-container history after source-readiness + LIVE activation gates |
 | Docker lifecycle | Docker Engine events API | activity timeline |
 | Docker logs | Docker Engine logs API | log explorer |
 | systemd state | `systemctl show`/systemd interface | allowlisted service status |
@@ -73,6 +74,18 @@ Expose normalized values for:
 The API and CLI differ in how Linux memory cache is reported; normalization must be documented and tested so the dashboard does not compare unlike values.
 
 Docker daemon access is a separate high-privilege boundary. Read-only intent at the Docker HTTP method level does not make direct daemon access low privilege. The main agent consumes only the typed broker protocol; the dedicated broker remains the sole Docker Engine authority and must never become a generic passthrough API.
+
+## Container history source readiness
+
+Container history is a distinct ownership/transport path from Docker live stats. Historical series belong in Prometheus, but #265 establishes a container-metrics source-readiness gate before any collector is activated or any public per-container history surface is implemented.
+
+The 2026-09-10 read-only production baseline found no container collector and no usable container-metric series. The reviewed source contract therefore requires CPU, memory, network RX/TX and filesystem read/write capabilities, plus a stable server-owned logical container identity and bounded label cardinality.
+
+Docker broker remains the sole Docker Engine authority. A candidate collector must not reach or mount the Docker Engine socket under the source-only #265 contract. If required metrics or stable identity cannot be provided without widening that authority boundary, the design requires a separate ADR/security decision rather than a direct runtime workaround.
+
+The browser remains outside the collector/Prometheus trust boundary: queries are fixed server-side, raw collector labels are not public output and arbitrary PromQL or label matchers remain forbidden.
+
+See [`docs/ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md`](ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md) and `ops/production/container-metrics-source-contract.json`.
 
 ## Refresh cadence starting point
 
