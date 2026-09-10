@@ -63,6 +63,8 @@ Event filters/window semantics remain server-owned and bounded. No container mut
 
 1h/24h/7d history, top consumers, compact sparklines and deep links to Grafana. Prometheus remains the time-series authority; no duplicate metrics database.
 
+For per-container history, #265 established source readiness and #267 selects a broker-backed container-metrics exporter that preserves ADR-0005: `dashboard-rpi5-docker-broker` remains the sole Docker Engine socket authority. Compose `project/service/container-number` is the primary stable logical identity; non-Compose or invalid/duplicate identity is `UNAVAILABLE` without an explicit reviewed static mapping. This is source architecture only — exporter/broker capability implementation, Prometheus scrape wiring and activation remain separate owner-gated LIVE work.
+
 ### Phase 5A — Services read-only
 
 Allowlisted systemd/native service state and detail evidence. No arbitrary unit names and no service mutation.
