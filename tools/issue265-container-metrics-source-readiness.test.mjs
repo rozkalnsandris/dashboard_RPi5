@@ -61,7 +61,7 @@ test("stable identity and cardinality requirements fail closed", () => {
 });
 
 test("Docker Engine authority cannot expand through the container metrics source", () => {
-  assert.match(adr, /sole production owner of Docker Engine socket access/u);
+  assert.match(adr, /only dashboard component permitted to own Docker Engine Unix-socket authority/u);
   assert.equal(contract.dockerAuthorityBoundary.engineAuthorityOwner, "dashboard-rpi5-docker-broker");
   assert.equal(contract.dockerAuthorityBoundary.collectorDockerSocketAccessAllowed, false);
   assert.equal(contract.dockerAuthorityBoundary.collectorDockerSocketMountAllowed, false);
