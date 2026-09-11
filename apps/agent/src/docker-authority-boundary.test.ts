@@ -6,6 +6,18 @@ const dockerReadSource = readFileSync(new URL("./docker-read.ts", import.meta.ur
 const dockerEventsSource = readFileSync(new URL("./docker-events.ts", import.meta.url), "utf8");
 const dockerEventsLiveSource = readFileSync(new URL("./docker-events-live.ts", import.meta.url), "utf8");
 const brokerEventsSource = readFileSync(new URL("./docker-broker-events.ts", import.meta.url), "utf8");
+const brokerMetricsSource = readFileSync(
+  new URL("./docker-broker-container-metrics.ts", import.meta.url),
+  "utf8",
+);
+const metricsExporterSource = readFileSync(
+  new URL("./container-metrics-exporter.ts", import.meta.url),
+  "utf8",
+);
+const metricsExporterEntrySource = readFileSync(
+  new URL("./container-metrics-exporter-entry.ts", import.meta.url),
+  "utf8",
+);
 const logsReadSource = readFileSync(new URL("./logs-read.ts", import.meta.url), "utf8");
 const brokerServerSource = readFileSync(new URL("./docker-broker-server.ts", import.meta.url), "utf8");
 
@@ -40,6 +52,22 @@ describe("Docker Engine authority boundary", () => {
     await expect(readLogSnapshot("docker:homeassistant", "15m")).rejects.toBeInstanceOf(
       LogSourceUnavailableError,
     );
+  });
+
+  it("keeps the historical metrics exporter behind the broker with no Engine authority", () => {
+    for (const source of [metricsExporterSource, metricsExporterEntrySource]) {
+      expect(source).not.toContain("/var/run/docker.sock");
+      expect(source).not.toContain("DOCKER_ENGINE_SOCKET_ENV");
+      expect(source).not.toContain("DEFAULT_DOCKER_ENGINE_SOCKET_PATH");
+      expect(source).not.toContain("docker.sock");
+      expect(source).not.toContain("docker group");
+    }
+    expect(metricsExporterSource).toContain("createDockerBrokerTransport");
+    expect(metricsExporterSource).toContain("readContainerMetricsSnapshot");
+    expect(metricsExporterEntrySource).toContain("validateContainerMetricsListenHost");
+    expect(metricsExporterEntrySource).not.toContain("0.0.0.0");
+    expect(brokerMetricsSource).not.toContain("/var/run/docker.sock");
+    expect(brokerMetricsSource).not.toContain('from "node:http"');
   });
 
   it("confines Docker Engine event HTTP authority to the dedicated broker side", () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DOCKER_BROKER_CONTAINERS_PATH,
+  DOCKER_BROKER_CONTAINER_METRICS_PATH,
   DOCKER_BROKER_EVENTS_MAX_WINDOW_SECONDS,
   DOCKER_BROKER_HEALTH_PATH,
   DOCKER_BROKER_MAX_REQUEST_URL_BYTES,
@@ -21,6 +22,9 @@ describe("Docker broker fixed route protocol", () => {
     expect(parseDockerBrokerRoute(DOCKER_BROKER_PING_PATH)).toEqual({ kind: "ping" });
     expect(parseDockerBrokerRoute(DOCKER_BROKER_VERSION_PATH)).toEqual({ kind: "version" });
     expect(parseDockerBrokerRoute(DOCKER_BROKER_CONTAINERS_PATH)).toEqual({ kind: "containers" });
+    expect(parseDockerBrokerRoute(DOCKER_BROKER_CONTAINER_METRICS_PATH)).toEqual({
+      kind: "containerMetrics",
+    });
     expect(parseDockerBrokerRoute(dockerBrokerInspectPath(ID))).toEqual({ kind: "inspect", id: ID });
     expect(parseDockerBrokerRoute(dockerBrokerStatsPath(ID))).toEqual({ kind: "stats", id: ID });
     expect(parseDockerBrokerRoute(dockerBrokerEventsPath(100, 200))).toEqual({
@@ -53,7 +57,7 @@ describe("Docker broker fixed route protocol", () => {
     }
   });
 
-  it("rejects mutation paths, arbitrary Docker paths, queries and traversal", () => {
+  it("rejects mutation paths, arbitrary Docker paths, metrics queries and traversal", () => {
     for (const path of [
       `/v1/docker/containers/${ID}/stop`,
       `/v1/docker/containers/${ID}/kill`,
@@ -61,6 +65,8 @@ describe("Docker broker fixed route protocol", () => {
       "/v1/docker/images/json",
       "/v1/docker/containers/../version",
       `${DOCKER_BROKER_CONTAINERS_PATH}?all=false`,
+      `${DOCKER_BROKER_CONTAINER_METRICS_PATH}?container=${ID}`,
+      `${DOCKER_BROKER_CONTAINER_METRICS_PATH}?labels=all`,
       `${dockerBrokerInspectPath(ID)}?x=1`,
       `/v1/docker/containers/${"A".repeat(64)}/inspect`,
       "/v1/docker/containers/not-an-id/inspect",

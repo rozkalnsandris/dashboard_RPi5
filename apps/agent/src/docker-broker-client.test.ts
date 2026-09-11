@@ -16,6 +16,7 @@ import {
 } from "./docker-broker-client.js";
 import {
   DOCKER_BROKER_CONTAINERS_PATH,
+  DOCKER_BROKER_CONTAINER_METRICS_PATH,
   DOCKER_BROKER_PING_PATH,
   DOCKER_BROKER_VERSION_PATH,
   dockerBrokerInspectPath,
@@ -55,7 +56,11 @@ describe("typed Docker broker client", () => {
       seen.push({ method: request.method, url: request.url });
       response.setHeader("content-type", "application/json");
       if (request.url === DOCKER_BROKER_PING_PATH) response.end('{"ok":true}');
-      else response.end("{}");
+      else if (request.url === DOCKER_BROKER_CONTAINER_METRICS_PATH) {
+        response.end(
+          '{"schema":"dashboard-rpi5.container-metrics-snapshot.v1","observedAt":"2026-09-10T18:00:00.000Z","containers":[]}',
+        );
+      } else response.end("{}");
     });
     const broker = createDockerBrokerTransport({ socketPath });
 
@@ -64,6 +69,7 @@ describe("typed Docker broker client", () => {
     await broker.listContainers();
     await broker.inspectContainer(ID);
     await broker.statsContainer(ID);
+    await broker.readContainerMetricsSnapshot();
 
     expect(seen).toEqual([
       { method: "GET", url: DOCKER_BROKER_PING_PATH },
@@ -71,11 +77,12 @@ describe("typed Docker broker client", () => {
       { method: "GET", url: DOCKER_BROKER_CONTAINERS_PATH },
       { method: "GET", url: dockerBrokerInspectPath(ID) },
       { method: "GET", url: dockerBrokerStatsPath(ID) },
+      { method: "GET", url: DOCKER_BROKER_CONTAINER_METRICS_PATH },
     ]);
     await expect(broker.inspectContainer("../etc/passwd")).rejects.toBeInstanceOf(
       DockerBrokerRequestError,
     );
-    expect(seen).toHaveLength(5);
+    expect(seen).toHaveLength(6);
   });
 
   it("preserves broker 404 for disappearing-container semantics", async () => {

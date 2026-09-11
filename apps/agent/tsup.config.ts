@@ -1,7 +1,12 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/docker-broker-entry.ts", "src/log-broker-entry.ts"],
+  entry: [
+    "src/index.ts",
+    "src/docker-broker-entry.ts",
+    "src/log-broker-entry.ts",
+    "src/container-metrics-exporter-entry.ts",
+  ],
   format: ["esm"],
   platform: "node",
   target: "node24",

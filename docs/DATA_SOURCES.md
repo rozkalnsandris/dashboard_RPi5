@@ -38,7 +38,7 @@ web/API
   -> /var/run/docker.sock
 ```
 
-Only the dedicated broker may reach the Docker Engine Unix socket. The main `dashboard-rpi5-agent` has no persistent `docker` or `video` membership and must not regain direct Docker socket access merely to satisfy a read capability. The broker is not a generic Engine proxy: current-state, registered logs and recent events are explicit bounded capabilities, and unknown paths or unsupported capability parameters fail closed.
+Only the dedicated broker may reach the Docker Engine Unix socket. The main `dashboard-rpi5-agent` has no persistent `docker` or `video` membership and must not regain direct Docker socket access merely to satisfy a read capability. The broker is not a generic Engine proxy: current-state, registered logs, recent events and the sanitized historical-metrics snapshot are explicit bounded capabilities, and unknown paths or unsupported capability parameters fail closed.
 
 See [`docs/adr/0005-docker-broker-only-engine-authority.md`](adr/0005-docker-broker-only-engine-authority.md).
 
@@ -77,7 +77,7 @@ Docker daemon access is a separate high-privilege boundary. Read-only intent at 
 
 ## Container history source readiness
 
-Container history is a distinct ownership/transport path from Docker live stats. Historical series belong in Prometheus. Issue #265 established the container-metrics source-readiness gate, and #267 now selects the source architecture without activating it.
+Container history is a distinct ownership/transport path from Docker live stats. Historical series belong in Prometheus. Issue #265 established the container-metrics source-readiness gate, #267 selected the source architecture, and #270 implements that selected path in repository source without activating it.
 
 The selected path is a **broker-backed Prometheus exporter**:
 
@@ -89,19 +89,19 @@ Prometheus
               -> Docker Engine Unix socket
 ```
 
-Docker broker remains the sole Docker Engine authority. The exporter must not receive Docker socket access/mounts, `docker` group membership, Docker TCP credentials, arbitrary Engine endpoint selection or a generic Docker proxy. The fixed metrics capability and exporter runtime are not implemented by the #267 architecture-decision child.
+Docker broker remains the sole Docker Engine authority. The exporter must not receive Docker socket access/mounts, `docker` group membership, Docker TCP credentials, arbitrary Engine endpoint selection or a generic Docker proxy. The fixed sanitized snapshot capability and exporter are implemented in source by #270; no production service, listener address, Prometheus scrape target or runtime activation is implied by that source readiness.
 
 The primary stable history identity is the validated Docker Compose tuple `project/service/container-number`. Container name and raw Docker ID are not automatic recreate-continuity fallbacks. Missing, partial, malformed or duplicate Compose identity remains `UNAVAILABLE` unless a separate server-owned, source-reviewed bounded static mapping exists.
 
 The 2026-09-10 read-only identity evidence recorded by #267 observed 20 containers, 19 complete unique Compose tuples, zero duplicate complete tuples and one container with none of the selected Compose labels. This is historical provenance only, not current runtime truth. Fresh evidence is mandatory before any later LIVE activation.
 
-Required CPU, memory, network RX/TX and filesystem read/write families remain fixed in `ops/production/container-metrics-source-contract.json`, with bounded label cardinality and one logical series per container after reviewed server-owned aggregation.
+Required CPU, memory, network RX/TX and filesystem read/write families remain fixed in `ops/production/container-metrics-source-contract.json`, with bounded label cardinality and one logical series per container after reviewed aggregation in the source path.
 
 The browser remains outside the collector/Prometheus trust boundary: queries are fixed server-side, raw collector labels are not public output and arbitrary PromQL or label matchers remain forbidden.
 
 See [`docs/ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md`](ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md), [`ADR-0006`](adr/0006-broker-backed-container-metrics-exporter.md) and `ops/production/container-metrics-source-contract.json`.
 
-Collector/exporter deployment, broker runtime capability activation, Prometheus scrape/retention mutation, Docker permission changes, systemd/container changes and restarts remain separate explicit LIVE owner gates.
+Collector/exporter deployment, broker runtime capability activation, exact listener/network selection, Prometheus scrape/retention mutation, Docker permission changes, systemd/container changes and restarts remain separate explicit LIVE owner gates.
 
 ## Refresh cadence starting point
 

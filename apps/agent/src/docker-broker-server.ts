@@ -10,6 +10,8 @@ import {
 } from "./docker-api.js";
 import { dockerApiPrefix, selectDockerApiVersion } from "./docker-api-version.js";
 import {
+  DOCKER_BROKER_CONTAINER_METRICS_MAX_RESPONSE_BYTES,
+  DOCKER_BROKER_CONTAINER_METRICS_TIMEOUT_MS,
   DOCKER_BROKER_LOG_LOOKBACK_SECONDS,
   DOCKER_BROKER_LOG_MAX_RESPONSE_BYTES,
   DOCKER_BROKER_LOG_TAIL,
@@ -19,6 +21,10 @@ import {
   type DockerBrokerLogSource,
   type DockerBrokerRoute,
 } from "./docker-broker-protocol.js";
+import {
+  createDockerContainerMetricsReader,
+  type DockerContainerMetricsReader,
+} from "./docker-broker-container-metrics.js";
 import { createDockerEventReader, type DockerEventReader } from "./docker-broker-events.js";
 
 export const DOCKER_BROKER_SERVICE_NAME = "dashboard-rpi5-docker-broker" as const;
@@ -349,10 +355,11 @@ export function createDockerLogReader(options: DockerLogReaderOptions = {}): Doc
   };
 }
 
-interface DockerBrokerServerOptions {
+export interface DockerBrokerServerOptions {
   engineReader?: DockerEngineReader;
   logReader?: DockerLogReader;
   eventReader?: DockerEventReader;
+  containerMetricsReader?: DockerContainerMetricsReader;
   maxConcurrentRequests?: number;
 }
 
@@ -364,7 +371,12 @@ function requestHasBody(headers: Readonly<Record<string, string | string[] | und
   return value !== undefined && value !== "0";
 }
 
-function sendJson(response: import("node:http").ServerResponse, statusCode: number, value: unknown) {
+function sendJson(
+  response: import("node:http").ServerResponse,
+  statusCode: number,
+  value: unknown,
+  maxResponseBytes = DOCKER_MAX_RESPONSE_BYTES,
+) {
   let body: Buffer;
   try {
     body = Buffer.from(JSON.stringify(value), "utf8");
@@ -373,7 +385,7 @@ function sendJson(response: import("node:http").ServerResponse, statusCode: numb
     body = Buffer.from('{"error":"SOURCE_UNAVAILABLE"}', "utf8");
   }
 
-  if (body.byteLength > DOCKER_MAX_RESPONSE_BYTES) {
+  if (body.byteLength > maxResponseBytes) {
     statusCode = 503;
     body = Buffer.from('{"error":"SOURCE_UNAVAILABLE"}', "utf8");
   }
@@ -402,6 +414,7 @@ async function dispatchRoute(
   engineReader: DockerEngineReader,
   logReader: DockerLogReader,
   eventReader: DockerEventReader,
+  containerMetricsReader: DockerContainerMetricsReader,
   signal: AbortSignal,
 ): Promise<unknown | Buffer> {
   switch (route.kind) {
@@ -414,6 +427,8 @@ async function dispatchRoute(
       return engineReader.version(signal);
     case "containers":
       return engineReader.listContainers(signal);
+    case "containerMetrics":
+      return containerMetricsReader.readSnapshot(signal);
     case "inspect":
       return engineReader.inspectContainer(route.id, signal);
     case "stats":
@@ -431,10 +446,13 @@ export function createDockerBrokerServer(
   const engineReader = options.engineReader ?? createDockerEngineReader();
   const logReader = options.logReader ?? createDockerLogReader();
   const eventReader = options.eventReader ?? createDockerEventReader();
+  const containerMetricsReader =
+    options.containerMetricsReader ?? createDockerContainerMetricsReader(engineReader);
   const maxConcurrentRequests = validatePositiveBound(
     options.maxConcurrentRequests ?? DOCKER_BROKER_MAX_CONCURRENT_REQUESTS,
   );
   let activeRequests = 0;
+  let containerMetricsSnapshotActive = false;
 
   const server = createServer((incoming, response) => {
     void (async () => {
@@ -457,18 +475,34 @@ export function createDockerBrokerServer(
         sendJson(
           response,
           200,
-          await dispatchRoute(route, engineReader, logReader, eventReader, AbortSignal.timeout(500)),
+          await dispatchRoute(
+            route,
+            engineReader,
+            logReader,
+            eventReader,
+            containerMetricsReader,
+            AbortSignal.timeout(500),
+          ),
         );
         return;
       }
-      if (activeRequests >= maxConcurrentRequests) {
+      if (
+        activeRequests >= maxConcurrentRequests ||
+        (route.kind === "containerMetrics" && containerMetricsSnapshotActive)
+      ) {
         sendJson(response, 503, { error: "SOURCE_UNAVAILABLE" });
         return;
       }
 
       activeRequests += 1;
+      if (route.kind === "containerMetrics") containerMetricsSnapshotActive = true;
       const controller = new AbortController();
       const abort = () => controller.abort();
+      const timeout =
+        route.kind === "containerMetrics"
+          ? setTimeout(() => controller.abort(), DOCKER_BROKER_CONTAINER_METRICS_TIMEOUT_MS)
+          : null;
+      timeout?.unref();
       incoming.once("aborted", abort);
 
       try {
@@ -477,11 +511,22 @@ export function createDockerBrokerServer(
           engineReader,
           logReader,
           eventReader,
+          containerMetricsReader,
           controller.signal,
         );
         if (!response.writableEnded) {
-          if (Buffer.isBuffer(value)) sendLogBody(response, value);
-          else sendJson(response, 200, value);
+          if (Buffer.isBuffer(value)) {
+            sendLogBody(response, value);
+          } else {
+            sendJson(
+              response,
+              200,
+              value,
+              route.kind === "containerMetrics"
+                ? DOCKER_BROKER_CONTAINER_METRICS_MAX_RESPONSE_BYTES
+                : DOCKER_MAX_RESPONSE_BYTES,
+            );
+          }
         }
       } catch (error: unknown) {
         if (response.writableEnded) return;
@@ -495,7 +540,9 @@ export function createDockerBrokerServer(
           error: statusCode === 404 ? "NOT_FOUND" : "SOURCE_UNAVAILABLE",
         });
       } finally {
+        if (timeout !== null) clearTimeout(timeout);
         incoming.off("aborted", abort);
+        if (route.kind === "containerMetrics") containerMetricsSnapshotActive = false;
         activeRequests -= 1;
       }
     })().catch(() => {
