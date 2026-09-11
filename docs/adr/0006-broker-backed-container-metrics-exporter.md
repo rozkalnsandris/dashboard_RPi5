@@ -4,6 +4,7 @@
 **Date:** 2026-09-10  
 **Decision issue:** #267  
 **Source implementation issue:** #270  
+**Source activation-wiring issue:** #272
 **Parent backlog:** #247
 
 ## Context
@@ -39,7 +40,7 @@ The exporter is not a Docker authority. It must not receive:
 
 ADR-0005 remains unchanged: `dashboard-rpi5-docker-broker` is the sole Docker Engine Unix-socket authority.
 
-Issue #267 selected this architecture without implementing or activating it. The source implementation is provided by #270: the fixed broker metrics capability and exporter executable are implemented in repository source, while Prometheus scrape configuration, service installation, runtime activation and production deployment remain separately owner-gated LIVE work.
+Issue #267 selected this architecture without implementing or activating it. The source implementation is provided by #270: the fixed broker metrics capability and exporter executable are implemented in repository source. Issue #272 adds source-only activation wiring: a sandboxed exporter systemd blueprint, mandatory fresh-private-IPv4 listener binding, a fixed Prometheus scrape fragment with an explicit timeout budget, and deterministic production-candidate inclusion. None of those source artifacts activate production; service installation, exact listener selection, Prometheus configuration mutation/reload, runtime activation and deployment remain separately owner-gated LIVE work.
 
 ## Exporter/broker contract
 
@@ -78,7 +79,7 @@ If a running container has a missing, partial, malformed or duplicate Compose tu
 
 Prometheus remains the time-series authority. The exporter is only an internal scrape source.
 
-The eventual scrape surface must not be publicly exposed. The dashboard browser must not receive collector access, raw collector labels, arbitrary PromQL, arbitrary label matchers, arbitrary time ranges or collector URLs. Dashboard history queries remain fixed and server-owned.
+The eventual scrape surface must not be publicly exposed. The dashboard browser must not receive collector access, raw collector labels, arbitrary PromQL, arbitrary label matchers, arbitrary time ranges or collector URLs. Dashboard history queries remain fixed and server-owned. The #272 source fragment fixes job identity, `/metrics`, port 9464, a 30-second interval and a 20-second scrape timeout; its host token remains invalid until fresh LIVE preflight selects one reviewed private IPv4 reachable from Prometheus.
 
 ## Alternatives considered
 
@@ -97,10 +98,11 @@ Not selected. Prometheus remains the long-history authority and no duplicate das
 ## Consequences
 
 - Docker Engine authority remains concentrated in the existing broker.
-- The exporter and bounded broker metrics capability are implemented in source by #270 but are not production-activated.
+- The exporter and bounded broker metrics capability are implemented in source by #270; #272 makes their systemd/Prometheus activation wiring source-ready, but production remains not activated.
 - Containers without accepted identity fail closed to `UNAVAILABLE` rather than silently merging or fabricating history.
 - Before LIVE activation, fresh read-only evidence must re-prove metric semantics, identity uniqueness, cardinality, listener reachability, scrape health, retention/capacity and unchanged Docker authority.
 - Any exporter deployment, broker runtime update, Prometheus scrape mutation, systemd/container change, permission change or restart remains separately owner-authorized LIVE work.
 
 **Production deploy: NO for the #267 architecture-decision source change.**  
 **Production deploy: YES classification for the #270 deployable source implementation after merge; merge does not authorize deployment or activation.**
+**Production deploy: YES classification for the #272 source activation-wiring change after merge; merge still does not authorize systemd/Prometheus/runtime mutation.**
