@@ -21,7 +21,12 @@
     "brokerCapabilityImplementationIssue": 270,
     "brokerCapabilityImplementedInSource": true,
     "exporterImplementedInSource": true,
-    "productionActivated": false
+    "productionActivated": false,
+    "activationWiringIssue": 272,
+    "activationWiringStatus": "source-ready-not-activated",
+    "systemdBlueprintImplementedInSource": true,
+    "prometheusScrapeSourceImplementedInSource": true,
+    "productionActivationEnvironmentExampleImplementedInSource": true
   },
   "productionBaseline": {
     "observedAt": "2026-09-10",
@@ -145,7 +150,9 @@
     "maxConcurrentExporterScrapes": 1,
     "rawEnvironmentAllowed": false,
     "arbitraryDockerLabelsAllowed": false,
-    "wildcardOrPublicListenerAllowed": false
+    "wildcardOrPublicListenerAllowed": false,
+    "exporterListenPort": 9464,
+    "listenerHostPolicy": "fresh-private-ipv4-required"
   },
   "prometheusBoundary": {
     "serverOwnedQueryRegistryRequired": true,
@@ -153,7 +160,12 @@
     "browserArbitraryLabelMatcherAllowed": false,
     "browserDirectCollectorAccessAllowed": false,
     "collectorPublicExposureAllowed": false,
-    "rawCollectorLabelsReturnedToBrowserAllowed": false
+    "rawCollectorLabelsReturnedToBrowserAllowed": false,
+    "scrapeJobName": "dashboard-rpi5-container-metrics",
+    "scrapeMetricPath": "/metrics",
+    "scrapeIntervalSeconds": 30,
+    "scrapeTimeoutSeconds": 20,
+    "retentionMutationAllowedBySourceWiring": false
   },
   "dockerAuthorityBoundary": {
     "engineAuthorityOwner": "dashboard-rpi5-docker-broker",
@@ -182,7 +194,10 @@
       "effective retention still satisfies the 7d product range",
       "Docker Engine authority remains exclusive to dashboard-rpi5-docker-broker",
       "broker/exporter latency and concurrency stay within reviewed resource budgets, and exact exporter listener/Prometheus reachability are re-proved from current runtime topology"
-    ]
+    ],
+    "sourceWiringReadyForFutureLiveEnvelope": true,
+    "sourceWiringIssue": 272
   },
-  "mutationAllowed": false
+  "mutationAllowed": false,
+  "sourceActivationWiringIssue": 272
 }

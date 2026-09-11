@@ -1,0 +1,11 @@
+# SOURCE-ONLY Prometheus scrape fragment for issue #272.
+# Replace the token only from fresh owner-authorized LIVE preflight evidence.
+# Do not add service discovery, public targets, or retention changes here.
+- job_name: dashboard-rpi5-container-metrics
+  scrape_interval: 30s
+  scrape_timeout: 20s
+  metrics_path: /metrics
+  scheme: http
+  static_configs:
+    - targets:
+        - "__DASHBOARD_CONTAINER_METRICS_PRIVATE_IPV4__:9464"

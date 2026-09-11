@@ -89,7 +89,7 @@ Prometheus
               -> Docker Engine Unix socket
 ```
 
-Docker broker remains the sole Docker Engine authority. The exporter must not receive Docker socket access/mounts, `docker` group membership, Docker TCP credentials, arbitrary Engine endpoint selection or a generic Docker proxy. The fixed sanitized snapshot capability and exporter are implemented in source by #270; no production service, listener address, Prometheus scrape target or runtime activation is implied by that source readiness.
+Docker broker remains the sole Docker Engine authority. The exporter must not receive Docker socket access/mounts, `docker` group membership, Docker TCP credentials, arbitrary Engine endpoint selection or a generic Docker proxy. The fixed sanitized snapshot capability and exporter are implemented in source by #270. Issue #272 adds source-only activation wiring: a sandboxed exporter systemd blueprint, mandatory fresh-private-IPv4 listener binding, a fixed Prometheus scrape fragment, and deterministic release-manifest inclusion. Production remains not activated.
 
 The primary stable history identity is the validated Docker Compose tuple `project/service/container-number`. Container name and raw Docker ID are not automatic recreate-continuity fallbacks. Missing, partial, malformed or duplicate Compose identity remains `UNAVAILABLE` unless a separate server-owned, source-reviewed bounded static mapping exists.
 
@@ -99,7 +99,9 @@ Required CPU, memory, network RX/TX and filesystem read/write families remain fi
 
 The browser remains outside the collector/Prometheus trust boundary: queries are fixed server-side, raw collector labels are not public output and arbitrary PromQL or label matchers remain forbidden.
 
-See [`docs/ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md`](ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md), [`ADR-0006`](adr/0006-broker-backed-container-metrics-exporter.md) and `ops/production/container-metrics-source-contract.json`.
+The #272 source scrape budget is fixed at a 30-second interval with a 20-second timeout, leaving bounded headroom above the 17-second exporter request timeout and below the next scrape. The target host remains a deliberately invalid source token until a fresh LIVE preflight proves one exact private IPv4 reachable from the production Prometheus container; no historical bridge address is committed. Retention is unchanged.
+
+See [`docs/ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md`](ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md), [`ADR-0006`](adr/0006-broker-backed-container-metrics-exporter.md), `ops/production/container-metrics-source-contract.json` and `ops/production/container-metrics-activation-contract.json`.
 
 Collector/exporter deployment, broker runtime capability activation, exact listener/network selection, Prometheus scrape/retention mutation, Docker permission changes, systemd/container changes and restarts remain separate explicit LIVE owner gates.
 

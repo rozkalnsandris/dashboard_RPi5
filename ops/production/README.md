@@ -11,7 +11,11 @@ Canonical files:
 - `cloudflare-contract.json` — exact `dash.rozkalns.net` Access/Tunnel/loopback edge contract;
 - `cloudflare.env.example` — placeholder-only out-of-repo activation binding names; never production values;
 - `release-activation-contract.json` — exact immutable release/current-pointer, exclusive apply lock, reviewed-candidate binding and owner acknowledgement boundary;
-- `host-readiness-contract.json` — fixed read-only RPi5 pre-bootstrap evidence contract.
+- `host-readiness-contract.json` — fixed read-only RPi5 pre-bootstrap evidence contract;
+- `container-metrics-source-contract.json` — broker/exporter authority, identity and activation-gate invariants;
+- `container-metrics-activation-contract.json` — source-only exporter/systemd/Prometheus activation wiring and timeout budget;
+- `container-metrics-exporter.env.example` — fail-closed private-listener binding template;
+- `../prometheus/container-metrics-scrape.yml` — fixed container-metrics Prometheus scrape fragment.
 
 The web service environment contract is ordered and fail-closed:
 
@@ -52,6 +56,14 @@ npm run manifest:production -- --root . --sha <exact-source-sha>
 ```
 
 The manifest hashes only explicit production roots, including the Cloudflare launch contract, release activation contract/controller and host-readiness contract/verifier, rejects symlinks/non-regular files, records per-file SHA-256 evidence and derives the intended immutable release path from the exact source SHA.
+
+## Container-metrics activation source boundary
+
+Issue #272 makes the broker-backed container-metrics activation path source-ready without activating it. The production candidate includes the exporter unit, source/activation contracts, fail-closed env example and fixed Prometheus scrape fragment. The env/template placeholders are intentionally invalid until a fresh owner-authorized LIVE preflight proves one exact private IPv4 that is non-public and reachable from the production Prometheus container.
+
+The fixed source budget is port `9464`, path `/metrics`, scrape interval `30s` and scrape timeout `20s`. This leaves bounded headroom above the exporter request timeout while keeping each scrape inside its interval. The exporter has no Docker Engine socket/group/TCP authority; it can only consume `/run/dashboard-rpi5-docker-broker/broker.sock` through the existing broker-client group.
+
+Installing/enabling/restarting the exporter unit, creating `/etc/dashboard-rpi5/container-metrics-exporter.env`, editing/reloading/restarting Prometheus, changing Docker/network/permissions, or selecting the live private address remain separate explicit LIVE mutations. Do not substitute a historical bridge IP directly into production outside that gate.
 
 ## Release-controller trust boundary
 

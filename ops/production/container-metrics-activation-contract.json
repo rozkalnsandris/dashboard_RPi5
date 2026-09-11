@@ -1,0 +1,58 @@
+{
+  "schema": "dashboard-rpi5.container-metrics-activation.v1",
+  "sourceOnly": true,
+  "parentIssue": 247,
+  "sourceImplementationIssue": 270,
+  "sourceWiringIssue": 272,
+  "productionActivated": false,
+  "service": {
+    "unitSource": "ops/systemd/dashboard-rpi5-container-metrics-exporter.service",
+    "runtimeIdentity": "dashboard-rpi5-container-metrics-exporter",
+    "dynamicUser": true,
+    "supplementaryGroups": [
+      "dashboard-rpi5-docker-client"
+    ],
+    "brokerSocket": "/run/dashboard-rpi5-docker-broker/broker.sock",
+    "dockerSocketAuthority": false,
+    "environmentFile": "/etc/dashboard-rpi5/container-metrics-exporter.env",
+    "environmentExample": "ops/production/container-metrics-exporter.env.example"
+  },
+  "listener": {
+    "hostEnvironment": "DASHBOARD_CONTAINER_METRICS_LISTEN_HOST",
+    "hostPolicy": "fresh-private-ipv4-required",
+    "wildcardAllowed": false,
+    "publicAddressAllowed": false,
+    "portEnvironment": "DASHBOARD_CONTAINER_METRICS_LISTEN_PORT",
+    "port": 9464,
+    "metricsPath": "/metrics"
+  },
+  "prometheus": {
+    "sourceFragment": "ops/prometheus/container-metrics-scrape.yml",
+    "jobName": "dashboard-rpi5-container-metrics",
+    "targetHostToken": "__DASHBOARD_CONTAINER_METRICS_PRIVATE_IPV4__",
+    "targetPort": 9464,
+    "metricsPath": "/metrics",
+    "scrapeIntervalSeconds": 30,
+    "scrapeTimeoutSeconds": 20,
+    "serviceDiscoveryAllowed": false,
+    "retentionMutationAllowed": false
+  },
+  "timeoutBudgetMs": {
+    "brokerSnapshot": 15000,
+    "brokerClient": 16000,
+    "exporterRequest": 17000,
+    "prometheusScrapeTimeout": 20000,
+    "prometheusScrapeInterval": 30000
+  },
+  "activationGate": {
+    "liveAuthorizationRequired": true,
+    "freshPrivateIpv4ReachabilityRequired": true,
+    "systemdMutationAllowedByThisSourceIssue": false,
+    "prometheusConfigMutationAllowedByThisSourceIssue": false,
+    "prometheusReloadOrRestartAllowedByThisSourceIssue": false,
+    "dockerMutationAllowedByThisSourceIssue": false,
+    "networkMutationAllowedByThisSourceIssue": false,
+    "permissionMutationAllowedByThisSourceIssue": false
+  },
+  "mutationAllowed": false
+}
