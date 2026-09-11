@@ -3,6 +3,7 @@
 **Status:** Accepted  
 **Date:** 2026-09-10  
 **Decision issue:** #267  
+**Source implementation issue:** #270  
 **Parent backlog:** #247
 
 ## Context
@@ -38,11 +39,11 @@ The exporter is not a Docker authority. It must not receive:
 
 ADR-0005 remains unchanged: `dashboard-rpi5-docker-broker` is the sole Docker Engine Unix-socket authority.
 
-This ADR selects the architecture only. The fixed broker metrics capability, exporter executable/service, Prometheus scrape configuration and production activation are **not implemented or authorized by #267**.
+Issue #267 selected this architecture without implementing or activating it. The source implementation is provided by #270: the fixed broker metrics capability and exporter executable are implemented in repository source, while Prometheus scrape configuration, service installation, runtime activation and production deployment remain separately owner-gated LIVE work.
 
 ## Exporter/broker contract
 
-A future implementation must add a purpose-built broker capability that returns only the typed evidence needed by the exporter. It must be bounded by timeout, response size and concurrency, and it must fail closed on malformed or unsupported data.
+The source implementation provided by #270 adds a purpose-built broker capability that returns only the typed evidence needed by the exporter. It is bounded by timeout, response size and concurrency, and it fails closed on malformed or unsupported data.
 
 The capability may expose only the reviewed material required to derive these Prometheus families:
 
@@ -53,9 +54,9 @@ The capability may expose only the reviewed material required to derive these Pr
 - `container_fs_reads_bytes_total` — cumulative read counter;
 - `container_fs_writes_bytes_total` — cumulative write counter.
 
-Per-CPU, interface and device dimensions may exist inside the bounded evidence path but must be aggregated away by reviewed server-owned queries so each public metric resolves to one logical series per container.
+Per-CPU, interface and device dimensions are aggregated inside the reviewed source path so the exporter emits one logical series per accepted container identity for each family.
 
-The broker capability must not become a generic Docker API transport. Environment variables and arbitrary Docker labels are outside the contract.
+The broker capability is not a generic Docker API transport. Environment variables and arbitrary Docker labels remain outside the contract.
 
 ## Stable logical identity
 
@@ -67,7 +68,7 @@ com.docker.compose.service
 com.docker.compose.container-number
 ```
 
-All three components are required. They must be validated and bounded before metric-label emission. The logical identity is the tuple, not a runtime Docker container ID.
+All three components are required. They are validated and bounded before metric-label emission. The logical identity is the tuple, not a runtime Docker container ID.
 
 Recreate continuity follows the tuple: a recreated container with the same validated tuple represents the same logical history identity. A raw container ID or container name must never be used as an automatic continuity fallback.
 
@@ -96,10 +97,10 @@ Not selected. Prometheus remains the long-history authority and no duplicate das
 ## Consequences
 
 - Docker Engine authority remains concentrated in the existing broker.
-- A future exporter adds a bounded read-only process but no second Docker privilege owner.
-- The future broker metrics capability must be designed and tested before activation.
+- The exporter and bounded broker metrics capability are implemented in source by #270 but are not production-activated.
 - Containers without accepted identity fail closed to `UNAVAILABLE` rather than silently merging or fabricating history.
-- Before LIVE activation, fresh read-only evidence must re-prove metric semantics, identity uniqueness, cardinality, scrape health, retention/capacity and unchanged Docker authority.
+- Before LIVE activation, fresh read-only evidence must re-prove metric semantics, identity uniqueness, cardinality, listener reachability, scrape health, retention/capacity and unchanged Docker authority.
 - Any exporter deployment, broker runtime update, Prometheus scrape mutation, systemd/container change, permission change or restart remains separately owner-authorized LIVE work.
 
-**Production deploy: NO for this architecture-decision source change.**
+**Production deploy: NO for the #267 architecture-decision source change.**  
+**Production deploy: YES classification for the #270 deployable source implementation after merge; merge does not authorize deployment or activation.**

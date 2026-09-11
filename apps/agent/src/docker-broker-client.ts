@@ -4,6 +4,9 @@ import { DOCKER_MAX_RESPONSE_BYTES, isDockerContainerId } from "./docker-api.js"
 import {
   DEFAULT_DOCKER_BROKER_SOCKET_PATH,
   DOCKER_BROKER_CONTAINERS_PATH,
+  DOCKER_BROKER_CONTAINER_METRICS_MAX_RESPONSE_BYTES,
+  DOCKER_BROKER_CONTAINER_METRICS_PATH,
+  DOCKER_BROKER_CONTAINER_METRICS_TIMEOUT_MS,
   DOCKER_BROKER_EVENTS_MAX_ITEMS,
   DOCKER_BROKER_LOG_MAX_RESPONSE_BYTES,
   DOCKER_BROKER_PING_PATH,
@@ -20,6 +23,8 @@ import {
 // Keep the outer broker budget above the bounded Engine read so the broker
 // does not abort a valid two-cycle Docker stats response first.
 export const DOCKER_BROKER_REQUEST_TIMEOUT_MS = 3_500;
+export const DOCKER_BROKER_CONTAINER_METRICS_REQUEST_TIMEOUT_MS =
+  DOCKER_BROKER_CONTAINER_METRICS_TIMEOUT_MS + 1_000;
 
 export class DockerBrokerRequestError extends Error {
   constructor(readonly statusCode: number | null = null) {
@@ -36,6 +41,10 @@ export interface DockerBrokerTransport {
   statsContainer(id: string, signal?: AbortSignal): Promise<unknown>;
 }
 
+export interface DockerBrokerContainerMetricsTransport {
+  readContainerMetricsSnapshot(signal?: AbortSignal): Promise<unknown>;
+}
+
 export interface DockerBrokerLogTransport {
   readLogs(
     source: DockerBrokerLogSource,
@@ -49,12 +58,14 @@ export interface DockerBrokerEventTransport {
 }
 
 export type DockerBrokerFullTransport = DockerBrokerTransport &
+  DockerBrokerContainerMetricsTransport &
   DockerBrokerLogTransport &
   DockerBrokerEventTransport;
 
 interface DockerBrokerTransportOptions {
   socketPath?: string;
   requestTimeoutMs?: number;
+  containerMetricsRequestTimeoutMs?: number;
   maxResponseBytes?: number;
 }
 
@@ -153,6 +164,10 @@ export function createDockerBrokerTransport(
   const requestTimeoutMs = validatePositiveBound(
     options.requestTimeoutMs ?? DOCKER_BROKER_REQUEST_TIMEOUT_MS,
   );
+  const containerMetricsRequestTimeoutMs = validatePositiveBound(
+    options.containerMetricsRequestTimeoutMs ??
+      DOCKER_BROKER_CONTAINER_METRICS_REQUEST_TIMEOUT_MS,
+  );
   const maxResponseBytes = validatePositiveBound(
     options.maxResponseBytes ?? DOCKER_MAX_RESPONSE_BYTES,
   );
@@ -186,6 +201,15 @@ export function createDockerBrokerTransport(
     statsContainer(id: string, signal?: AbortSignal) {
       if (!isDockerContainerId(id)) return Promise.reject(new DockerBrokerRequestError());
       return get(dockerBrokerStatsPath(id), signal);
+    },
+    readContainerMetricsSnapshot(signal?: AbortSignal) {
+      return getBrokerJson(
+        socketPath,
+        DOCKER_BROKER_CONTAINER_METRICS_PATH,
+        signal,
+        containerMetricsRequestTimeoutMs,
+        Math.min(maxResponseBytes, DOCKER_BROKER_CONTAINER_METRICS_MAX_RESPONSE_BYTES),
+      );
     },
     readLogs(source: DockerBrokerLogSource, range: DockerBrokerLogRange, signal?: AbortSignal) {
       let path: string;

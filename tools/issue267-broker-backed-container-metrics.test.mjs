@@ -15,9 +15,10 @@ const roadmap = await read("docs/ROADMAP.md");
 
 test("issue 267 selects a broker-backed exporter without Docker authority", () => {
   assert.equal(contract.selectionDecisionIssue, 267);
+  assert.equal(contract.sourceImplementationIssue, 270);
   assert.equal(contract.collectorSelected, true);
   assert.equal(contract.collector.kind, "broker-backed-prometheus-exporter");
-  assert.equal(contract.collector.implementationStatus, "design-selected-not-implemented");
+  assert.equal(contract.collector.implementationStatus, "source-implemented-not-activated");
   assert.equal(contract.collector.prometheusScrapeOnly, true);
   assert.equal(contract.collector.publicExposureAllowed, false);
   assert.equal(contract.collector.dockerSocketAccessAllowed, false);
@@ -26,7 +27,11 @@ test("issue 267 selects a broker-backed exporter without Docker authority", () =
   assert.equal(contract.collector.dockerTcpCredentialsAllowed, false);
   assert.equal(contract.collector.genericEngineProxyAllowed, false);
   assert.equal(contract.collector.brokerCapabilityRequired, "bounded-container-metrics-snapshot");
-  assert.equal(contract.collector.brokerCapabilityImplementationAllowedByThisChild, false);
+  assert.equal(contract.collector.brokerCapabilityImplementationAllowedBySelectionChild, false);
+  assert.equal(contract.collector.brokerCapabilityImplementationIssue, 270);
+  assert.equal(contract.collector.brokerCapabilityImplementedInSource, true);
+  assert.equal(contract.collector.exporterImplementedInSource, true);
+  assert.equal(contract.collector.productionActivated, false);
 });
 
 test("Docker broker remains the sole Engine socket authority", () => {
@@ -38,11 +43,15 @@ test("Docker broker remains the sole Engine socket authority", () => {
     contract.dockerAuthorityBoundary.ifAuthorityExpansionIsProposed,
     "separate-adr-security-owner-decision-required",
   );
+  assert.equal(contract.exporterBrokerBoundary.fixedBrokerRoute, "/v1/docker/container-metrics/snapshot");
   assert.equal(contract.exporterBrokerBoundary.arbitraryDockerEndpointAllowed, false);
   assert.equal(contract.exporterBrokerBoundary.dockerMutationsAllowed, false);
   assert.equal(contract.exporterBrokerBoundary.timeoutBoundRequired, true);
   assert.equal(contract.exporterBrokerBoundary.responseSizeBoundRequired, true);
   assert.equal(contract.exporterBrokerBoundary.concurrencyBoundRequired, true);
+  assert.equal(contract.exporterBrokerBoundary.maxConcurrentBrokerSnapshots, 1);
+  assert.equal(contract.exporterBrokerBoundary.maxConcurrentExporterScrapes, 1);
+  assert.equal(contract.exporterBrokerBoundary.wildcardOrPublicListenerAllowed, false);
 });
 
 test("Compose tuple is the only automatic recreate continuity identity", () => {
@@ -51,6 +60,11 @@ test("Compose tuple is the only automatic recreate continuity identity", () => {
     "com.docker.compose.project",
     "com.docker.compose.service",
     "com.docker.compose.container-number",
+  ]);
+  assert.deepEqual(contract.identity.prometheusLabelNames, [
+    "compose_project",
+    "compose_service",
+    "compose_container_number",
   ]);
   assert.equal(contract.identity.allComposeTupleComponentsRequired, true);
   assert.equal(contract.identity.tupleComponentsMustBeValidatedAndBounded, true);
@@ -72,7 +86,7 @@ test("selection evidence is bounded provenance, not reusable runtime truth", () 
   assert.deepEqual(contract.selectionEvidence.selectedLabelKeysOnly, contract.identity.composeLabelKeys);
 });
 
-test("source decision does not authorize implementation or LIVE activation", () => {
+test("source implementation still does not authorize LIVE activation", () => {
   assert.equal(contract.mutationAllowed, false);
   assert.equal(contract.activationGate.liveAuthorizationRequired, true);
   assert.equal(contract.activationGate.collectorDeploymentAllowedByThisContract, false);
@@ -80,7 +94,7 @@ test("source decision does not authorize implementation or LIVE activation", () 
   assert.equal(contract.activationGate.prometheusScrapeMutationAllowedByThisContract, false);
   assert.equal(contract.activationGate.dockerRuntimeMutationAllowedByThisContract, false);
   assert.equal(contract.activationGate.systemdMutationAllowedByThisContract, false);
-  assert.match(adr6, /not implemented or authorized by #267/u);
-  assert.match(dataSources, /broker-backed Prometheus exporter/u);
-  assert.match(roadmap, /broker-backed container-metrics exporter/u);
+  assert.match(adr6, /source implementation is provided by #270/u);
+  assert.match(dataSources, /implemented in source by #270/u);
+  assert.match(roadmap, /implemented in source by #270/u);
 });

@@ -4,10 +4,11 @@
   "parentIssue": 247,
   "readinessIssue": 265,
   "selectionDecisionIssue": 267,
+  "sourceImplementationIssue": 270,
   "collectorSelected": true,
   "collector": {
     "kind": "broker-backed-prometheus-exporter",
-    "implementationStatus": "design-selected-not-implemented",
+    "implementationStatus": "source-implemented-not-activated",
     "prometheusScrapeOnly": true,
     "publicExposureAllowed": false,
     "dockerSocketAccessAllowed": false,
@@ -16,7 +17,11 @@
     "dockerTcpCredentialsAllowed": false,
     "genericEngineProxyAllowed": false,
     "brokerCapabilityRequired": "bounded-container-metrics-snapshot",
-    "brokerCapabilityImplementationAllowedByThisChild": false
+    "brokerCapabilityImplementationAllowedBySelectionChild": false,
+    "brokerCapabilityImplementationIssue": 270,
+    "brokerCapabilityImplementedInSource": true,
+    "exporterImplementedInSource": true,
+    "productionActivated": false
   },
   "productionBaseline": {
     "observedAt": "2026-09-10",
@@ -109,6 +114,11 @@
       "com.docker.compose.service",
       "com.docker.compose.container-number"
     ],
+    "prometheusLabelNames": [
+      "compose_project",
+      "compose_service",
+      "compose_container_number"
+    ],
     "allComposeTupleComponentsRequired": true,
     "tupleComponentsMustBeValidatedAndBounded": true,
     "automaticContainerNameFallbackAllowed": false,
@@ -124,13 +134,18 @@
   },
   "exporterBrokerBoundary": {
     "brokerCapabilityPurpose": "typed-sanitized-container-metric-and-identity-evidence",
+    "fixedBrokerRoute": "/v1/docker/container-metrics/snapshot",
+    "exporterMetricPath": "/metrics",
     "arbitraryDockerEndpointAllowed": false,
     "dockerMutationsAllowed": false,
     "timeoutBoundRequired": true,
     "responseSizeBoundRequired": true,
     "concurrencyBoundRequired": true,
+    "maxConcurrentBrokerSnapshots": 1,
+    "maxConcurrentExporterScrapes": 1,
     "rawEnvironmentAllowed": false,
-    "arbitraryDockerLabelsAllowed": false
+    "arbitraryDockerLabelsAllowed": false,
+    "wildcardOrPublicListenerAllowed": false
   },
   "prometheusBoundary": {
     "serverOwnedQueryRegistryRequired": true,
@@ -166,7 +181,7 @@
       "Prometheus scrape target is healthy after separately authorized activation",
       "effective retention still satisfies the 7d product range",
       "Docker Engine authority remains exclusive to dashboard-rpi5-docker-broker",
-      "broker and exporter latency/concurrency stay within reviewed resource budgets"
+      "broker/exporter latency and concurrency stay within reviewed resource budgets, and exact exporter listener/Prometheus reachability are re-proved from current runtime topology"
     ]
   },
   "mutationAllowed": false

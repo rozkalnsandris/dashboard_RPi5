@@ -6,6 +6,10 @@ export const DOCKER_BROKER_HEALTH_PATH = "/v1/health" as const;
 export const DOCKER_BROKER_PING_PATH = "/v1/docker/ping" as const;
 export const DOCKER_BROKER_VERSION_PATH = "/v1/docker/version" as const;
 export const DOCKER_BROKER_CONTAINERS_PATH = "/v1/docker/containers" as const;
+export const DOCKER_BROKER_CONTAINER_METRICS_PATH =
+  "/v1/docker/container-metrics/snapshot" as const;
+export const DOCKER_BROKER_CONTAINER_METRICS_MAX_RESPONSE_BYTES = 256 * 1024;
+export const DOCKER_BROKER_CONTAINER_METRICS_TIMEOUT_MS = 15_000;
 export const DOCKER_BROKER_EVENTS_PATH = "/v1/docker/events/recent" as const;
 export const DOCKER_BROKER_EVENTS_MAX_WINDOW_SECONDS = 60 * 60;
 export const DOCKER_BROKER_EVENTS_MAX_ITEMS = 512;
@@ -50,6 +54,7 @@ export type DockerBrokerRoute =
   | { kind: "ping" }
   | { kind: "version" }
   | { kind: "containers" }
+  | { kind: "containerMetrics" }
   | { kind: "inspect"; id: string }
   | { kind: "stats"; id: string }
   | { kind: "logs"; source: DockerBrokerLogSource; range: DockerBrokerLogRange }
@@ -92,6 +97,8 @@ export function parseDockerBrokerRoute(rawUrl: string): DockerBrokerRoute | null
       return { kind: "version" };
     case DOCKER_BROKER_CONTAINERS_PATH:
       return { kind: "containers" };
+    case DOCKER_BROKER_CONTAINER_METRICS_PATH:
+      return { kind: "containerMetrics" };
   }
 
   const inspect = /^\/v1\/docker\/containers\/([0-9a-f]{64})\/inspect$/.exec(rawUrl);
