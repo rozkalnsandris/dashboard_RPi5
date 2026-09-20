@@ -1,0 +1,52 @@
+{
+  "schema": "dashboard-rpi5.container-metrics-firewall.v1",
+  "sourceOnly": true,
+  "parentIssue": 247,
+  "sourceHardeningIssue": 275,
+  "purpose": "prometheus-to-exporter-host-ingress-only",
+  "transport": {
+    "protocol": "tcp",
+    "destinationPort": 9464
+  },
+  "runtimeInputs": {
+    "prometheusIngressInterfacePolicy": "fresh-current-prometheus-docker-bridge-interface-required",
+    "prometheusSourceSubnetPolicy": "fresh-current-prometheus-docker-subnet-required",
+    "exporterDestinationIpv4Policy": "same-as-reviewed-private-listener-ipv4"
+  },
+  "requiredRuleBinding": {
+    "ingressInterfaceRequired": true,
+    "sourceSubnetRequired": true,
+    "destinationIpv4Required": true,
+    "protocolRequired": "tcp",
+    "destinationPortRequired": 9464
+  },
+  "forbiddenExpansion": {
+    "wildcardInterfaceAllowed": false,
+    "wildcardSourceAllowed": false,
+    "wildcardDestinationAllowed": false,
+    "publicDestinationAllowed": false,
+    "lanWideAllowAllowed": false,
+    "generalDockerToHostAllowAllowed": false,
+    "additionalDestinationPortsAllowed": false,
+    "genericForwardingChangeAllowed": false,
+    "dockerEngineAuthorityChangeAllowed": false
+  },
+  "preflight": {
+    "freshRuntimeTopologyRequired": true,
+    "existingRuleMaySatisfyOnlyIfExactBindingMatches": true,
+    "missingOrBlockedReachabilityBehavior": "BLOCKED_NO_AUTOMATIC_FIREWALL_MUTATION"
+  },
+  "postActivationVerification": {
+    "prometheusNamespaceExporterReachabilityRequired": true,
+    "prometheusTargetHealthyRequired": true,
+    "prometheusTargetLastErrorMustBeEmpty": true,
+    "unrelatedHostExposureMustNotBroaden": true
+  },
+  "activationGate": {
+    "liveMutationRequiredIfExactRuleAbsent": true,
+    "ownerAuthorizationRequired": true,
+    "automaticFirewallMutationAllowed": false,
+    "mutationAllowedByThisSourceIssue": false
+  },
+  "mutationAllowed": false
+}

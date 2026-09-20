@@ -54,5 +54,11 @@
     "networkMutationAllowedByThisSourceIssue": false,
     "permissionMutationAllowedByThisSourceIssue": false
   },
-  "mutationAllowed": false
+  "mutationAllowed": false,
+  "firewall": {
+    "contract": "ops/production/container-metrics-firewall-contract.json",
+    "reachabilityRequired": true,
+    "freshRuntimeTopologyRequired": true,
+    "automaticMutationAllowed": false
+  }
 }

@@ -101,9 +101,11 @@ The browser remains outside the collector/Prometheus trust boundary: queries are
 
 The #272 source scrape budget is fixed at a 30-second interval with a 20-second timeout, leaving bounded headroom above the 17-second exporter request timeout and below the next scrape. The target host remains a deliberately invalid source token until a fresh LIVE preflight proves one exact private IPv4 reachable from the production Prometheus container; no historical bridge address is committed. Retention is unchanged.
 
-See [`docs/ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md`](ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md), [`ADR-0006`](adr/0006-broker-backed-container-metrics-exporter.md), `ops/production/container-metrics-source-contract.json` and `ops/production/container-metrics-activation-contract.json`.
+Issue #275 makes that reachability requirement explicit at the host firewall boundary. The exact Prometheus Docker ingress interface, source subnet and exporter destination IPv4 are runtime evidence, not source constants. If an exact allow is absent, activation remains blocked until a separately owner-authorized LIVE envelope permits one TCP `9464` ingress rule bound to all three fresh values. Broad Docker-to-host, wildcard, public, LAN-wide, extra-port or generic forwarding changes are outside the contract.
 
-Collector/exporter deployment, broker runtime capability activation, exact listener/network selection, Prometheus scrape/retention mutation, Docker permission changes, systemd/container changes and restarts remain separate explicit LIVE owner gates.
+See [`docs/ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md`](ISSUE265_CONTAINER_METRICS_SOURCE_READINESS.md), [`ADR-0006`](adr/0006-broker-backed-container-metrics-exporter.md), `ops/production/container-metrics-source-contract.json`, `ops/production/container-metrics-activation-contract.json` and `ops/production/container-metrics-firewall-contract.json`.
+
+Collector/exporter deployment, broker runtime capability activation, exact listener/network/firewall selection, Prometheus scrape/retention mutation, Docker permission changes, systemd/container changes and restarts remain separate explicit LIVE owner gates.
 
 ## Refresh cadence starting point
 

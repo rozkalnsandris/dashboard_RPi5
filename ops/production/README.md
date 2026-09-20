@@ -14,6 +14,7 @@ Canonical files:
 - `host-readiness-contract.json` — fixed read-only RPi5 pre-bootstrap evidence contract;
 - `container-metrics-source-contract.json` — broker/exporter authority, identity and activation-gate invariants;
 - `container-metrics-activation-contract.json` — source-only exporter/systemd/Prometheus activation wiring and timeout budget;
+- `container-metrics-firewall-contract.json` — source-only exact Prometheus-to-exporter host-ingress boundary;
 - `container-metrics-exporter.env.example` — fail-closed private-listener binding template;
 - `../prometheus/container-metrics-scrape.yml` — fixed container-metrics Prometheus scrape fragment.
 
@@ -64,6 +65,8 @@ Issue #272 makes the broker-backed container-metrics activation path source-read
 The fixed source budget is port `9464`, path `/metrics`, scrape interval `30s` and scrape timeout `20s`. This leaves bounded headroom above the exporter request timeout while keeping each scrape inside its interval. The exporter has no Docker Engine socket/group/TCP authority; it can only consume `/run/dashboard-rpi5-docker-broker/broker.sock` through the existing broker-client group.
 
 Installing/enabling/restarting the exporter unit, creating `/etc/dashboard-rpi5/container-metrics-exporter.env`, editing/reloading/restarting Prometheus, changing Docker/network/permissions, or selecting the live private address remain separate explicit LIVE mutations. Do not substitute a historical bridge IP directly into production outside that gate.
+
+Issue #275 additionally binds firewall reachability fail-closed. If current host policy does not already allow the exact scrape path, a future LIVE envelope must bind the rule to the freshly observed Prometheus Docker ingress interface, freshly observed Prometheus source subnet, exact reviewed private exporter destination IPv4, TCP, and destination port `9464` only. The repository deliberately stores policies rather than live bridge names, subnets or addresses. Wildcard/public/LAN-wide/general Docker-to-host allows, extra ports, generic forwarding changes and Docker-authority expansion are forbidden. Missing reachability blocks activation; it never triggers an automatic firewall change.
 
 ## Release-controller trust boundary
 
