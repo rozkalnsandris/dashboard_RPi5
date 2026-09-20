@@ -61,9 +61,11 @@ Uptime, CPU/load, RAM/swap, root filesystem, Pi temperature, decoded throttle/un
 
 Container inventory, health/state, CPU, memory, network, block I/O, PIDs, uptime and restart count through the dedicated bounded Docker authority. No generic Engine proxy, exec, restart, stop or remove.
 
+First live Docker socket permission expansion remains a separate owner gate.
+
 ### Phase 3B — Docker events
 
-Bounded read-only Docker container event projection for health/start/stop/restart/OOM/die/update-style operational evidence. Event filters/window semantics remain server-owned and bounded.
+Bounded read-only Docker container event projection for health/start/stop/restart/OOM/die/update-style operational evidence. Event filters/window semantics remain server-owned and bounded. No container mutation.
 
 ### Phase 4 — Bounded native operational history + Grafana drill-down
 
@@ -72,6 +74,8 @@ Provide predefined `1h` / `24h` / `7d` operational history, Top Consumers and co
 Grafana remains a specialist/deep-analysis option. The dashboard is not a general visualization/query platform and there is no current roadmap commitment to retire Grafana. A future retirement decision would require a separate product/operations contract change and separately authorized LIVE decommissioning.
 
 For per-container history, preserve ADR-0005/ADR-0006: the dedicated Docker broker remains the sole Docker Engine socket authority; historical collection must not give an exporter direct Docker socket/group/generic Engine access.
+
+For per-container history, #265 established source readiness and #267 selected a broker-backed container-metrics exporter that preserves ADR-0005: `dashboard-rpi5-docker-broker` remains the sole Docker Engine socket authority. Compose `project/service/container-number` is the primary stable logical identity; non-Compose or invalid/duplicate identity is `UNAVAILABLE` without an explicit reviewed static mapping. The fixed broker snapshot capability and exporter are implemented in source by #270. Issue #272 makes the activation wiring source-ready by adding the exporter systemd blueprint, fail-closed listener binding, fixed Prometheus scrape fragment and release-manifest closure; production deployment, exact private listener selection, Prometheus configuration mutation/reload and runtime activation remain separate owner-gated LIVE work.
 
 ### Phase 5A — Services read-only
 
@@ -95,27 +99,43 @@ High-value endpoint availability projection with optional deep links to Uptime K
 
 ### Phase 6C — Deployment state
 
-Authoritative GitHub `main` versus proven production SHA with explicit unknown/stale semantics. No deployment write action in this phase.
+Authoritative GitHub `main` versus proven production SHA with states such as `IN_SYNC`, `MAIN_AHEAD_NO_DEPLOY`, `DEPLOY_REQUIRED`, `DEPLOY_PENDING_AUTH`, `UNKNOWN`.
+
+No deployment write action in this phase.
 
 ### Phase 7 — PWA + Samsung A55 production polish
 
-Installable PWA, safe static caching, offline/stale state, Samsung Browser + Chrome, portrait + landscape, keyboard-open testing, increased font/display scaling and real-device acceptance. Never persistently cache logs, terminal, auth/session or sensitive API data.
+Installable PWA, safe static caching, offline/stale state, Samsung Browser + Chrome, portrait + landscape, keyboard-open testing, increased font/display scaling and real-device acceptance.
+
+Never persistently cache logs, terminal, auth/session or sensitive API data.
 
 ### Phase 8 — Quick Commands
 
-Owner-only registered diagnostics using fixed executable + fixed/typed argument arrays with timeout/output/concurrency limits and audit evidence. No browser-supplied executable, arbitrary flags or generic `sh -c`. Production activation requires separate owner authorization.
+Owner-only registered diagnostics using fixed executable + fixed/typed argument arrays with timeout/output/concurrency limits and audit evidence.
+
+No browser-supplied executable, arbitrary flags or generic `sh -c`.
+
+Production activation requires separate owner authorization.
 
 ### Phase 9 — Full terminal beta
 
-xterm.js + PTY over secure WebSocket after dedicated security review. Owner-only, non-root default, no auto-sudo, origin validation, idle/max lifetime, low concurrency and mobile accessibility/keyboard acceptance. Production activation requires separate owner authorization.
+xterm.js + PTY over secure WebSocket after a dedicated security review. Owner-only, non-root default, no auto-sudo, origin validation, idle/max lifetime, low concurrency and mobile accessory keys.
+
+Source readiness also requires an explicit screen-reader mode, keyboard/touch-reachable input focus, 48px controls, A55 keyboard-open acceptance and non-persistence of session material. See `docs/TERMINAL_ACCESSIBILITY_READINESS.md`.
+
+Native PTY readiness additionally requires the exact-pinned `node-pty` Linux runtime to be source-built before candidate creation, staged into the immutable release under a fixed allowlisted path, and smoke-tested from the packaged runtime on both x64 and ARM64. General production `node_modules`, live `npm install` and live native compilation are not activation repair paths.
+
+Production activation requires separate owner authorization.
 
 ### Phase 10 — Controlled write actions
 
-Only after another explicit product/security decision. Potential bounded restart/maintenance/deployment actions with state revalidation, confirmation, audit and recovery evidence. Never add a generic root, Docker, `systemctl`, `docker exec` or prune endpoint.
+Only after another explicit product/security decision. Potentially bounded restart/maintenance/deployment actions with state revalidation, confirmation, audit and recovery evidence.
+
+Never add a generic root, Docker, `systemctl`, `docker exec` or prune endpoint.
 
 ### Phase 11 — Production launch at `dash.rozkalns.net`
 
-Operational launch with exact-main evidence, Access, Tunnel, systemd deployment, smoke tests and recorded production SHA. Every production mutation is separately owner-authorized.
+Operational launch with exact-main evidence, Access, Tunnel, systemd deployment, smoke tests and recorded production SHA. Every production mutation in this phase is separately owner-authorized.
 
 ### Phase 12 — Ongoing operations / hardening
 
@@ -125,6 +145,25 @@ Frontend hardening should reduce accidental abstraction/dependency surface witho
 
 The dashboard itself must remain lightweight enough not to become a meaningful RPi workload.
 
+## Initial implementation issue order
+
+After the Phase 0 baseline is merged, open only the next bounded work items:
+
+```text
+Phase 1 toolchain/CI foundation
+Phase 1 desktop + A55 shell
+Phase 1 Overview fixtures
+Phase 1 Docker/Logs/Terminal fixture pages
+Phase 1 accessibility + A55/PWA acceptance
+Phase 2A local agent protocol + Unix socket
+Phase 2B host health read adapter
+Phase 3A Docker current-state read boundary
+Phase 3B Docker events
+...
+```
+
+Do not create dozens of speculative issues before earlier phases provide enough evidence to define them correctly.
+
 ## Definition of success
 
-The project is successful when the A55 provides a fast daily health/diagnostic view, desktop offers denser operations visibility, Prometheus and specialist tools remain authoritative where appropriate, routine logs/diagnostics no longer require SSH, terminal/write controls stay explicitly gated, missing evidence is never shown as healthy, the dashboard itself stays lightweight, and every trust-boundary expansion is explainable from GitHub history.
+The project is successful when the A55 provides a fast daily health/diagnostic view, desktop offers denser operations visibility, specialist tools remain authoritative for deep analysis, routine logs/diagnostics no longer require SSH, terminal/write controls stay explicitly gated, missing evidence is never shown as healthy, the dashboard itself stays lightweight, and every trust-boundary expansion is explainable from GitHub history.
