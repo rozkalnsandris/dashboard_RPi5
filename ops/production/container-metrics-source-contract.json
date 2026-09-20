@@ -196,7 +196,9 @@
       "broker/exporter latency and concurrency stay within reviewed resource budgets, and exact exporter listener/Prometheus reachability are re-proved from current runtime topology"
     ],
     "sourceWiringReadyForFutureLiveEnvelope": true,
-    "sourceWiringIssue": 272
+    "sourceWiringIssue": 272,
+    "firewallContract": "ops/production/container-metrics-firewall-contract.json",
+    "exactFirewallBindingRequired": true
   },
   "mutationAllowed": false,
   "sourceActivationWiringIssue": 272
