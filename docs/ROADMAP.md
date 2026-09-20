@@ -1,8 +1,9 @@
 # dashboard_RPi5 Roadmap
 
-> **Canonical live roadmap:** GitHub issue [#1 — MASTER / READ FIRST](https://github.com/rozkalnsandris/dashboard_RPi5/issues/1).
+> **Canonical durable product contract:** GitHub issue [#1 — MASTER / READ FIRST](https://github.com/rozkalnsandris/dashboard_RPi5/issues/1).  
+> **Mutable continuation/runtime handoff:** GitHub issue #213.
 
-This file is the repository index for the delivery plan. Issue #1 is authoritative for current phase, owner gates, security invariants and detailed exit criteria.
+This file is the repository index for the delivery plan. Issue #1 is authoritative for durable product/security scope. Mutable source/PR/CI/runtime state must be freshly read from GitHub and trusted-host evidence rather than copied into this file.
 
 ## Mandatory workflow
 
@@ -13,11 +14,26 @@ issue -> fresh main -> fresh branch -> focused change -> Draft PR
       -> Production deploy: YES / NO
 ```
 
-No merge without explicit owner authorization.
-
-**Merge authorization is not deployment authorization.**
+No merge without explicit owner authorization. Merge authorization is not deployment authorization.
 
 Separate explicit owner authorization is required for production deployment, Cloudflare mutation, host/root mutation, Docker trust-boundary expansion, systemd activation, Quick Command activation, full PTY activation and production write controls.
+
+## Frontend architecture guardrail
+
+ADR-0007 defines the durable UI implementation direction:
+
+```text
+React + TypeScript + Vite
+  -> semantic HTML first
+  -> browser-native controls/primitives first
+  -> plain product CSS + CSS custom properties
+  -> CSS cascade layers
+  -> extra UI library only when behavior/accessibility justifies it
+```
+
+React Router, TanStack Query and Lucide remain. React Aria is exception-only for complex accessible interactions. Tailwind and shadcn/ui are not architectural requirements for future work; Tailwind source removal requires a separate exact usage/Preflight and regression audit.
+
+Do not turn dependency simplification into a React rewrite or into trust-boundary flattening.
 
 ## Phases
 
@@ -29,39 +45,35 @@ Repository rules, security contract, architecture, A55/mobile spec, HTML/CSS gui
 
 ### Phase 1 — Frontend foundation / fixture UI
 
-React + TypeScript + Vite shell; Overview, Docker, Services, Logs, Terminal/Quick Commands, Activity, Backups and Deployments using deterministic fixture data. Desktop sidebar plus Samsung A55 bottom navigation. PWA shell baseline and accessibility regression tests.
+React + TypeScript + Vite shell with semantic HTML, source-owned product CSS, Overview, Docker, Services, Logs, Terminal/Quick Commands, Activity, Backups and Deployments. Desktop sidebar plus Samsung A55 bottom navigation. PWA shell baseline and accessibility regression tests.
 
 No RPi connection.
 
 ### Phase 2A — Local agent skeleton
 
-Create the narrow local agent boundary over a Unix socket with health/version protocol, bounded errors/timeouts and allowlist framework.
-
-No Docker socket and no shell yet. Source-only systemd unit until separately authorized.
+Narrow local agent boundary over a Unix socket with health/version protocol, bounded errors/timeouts and allowlist framework. No Docker socket and no shell yet. Source-only systemd unit until separately authorized.
 
 ### Phase 2B — Host read-only health
 
-Uptime, CPU/load, RAM/swap, root filesystem, Pi temperature, decoded throttle/under-voltage evidence, observed timestamps and stale semantics.
-
-First live RPi activation requires separate owner authorization.
+Uptime, CPU/load, RAM/swap, root filesystem, Pi temperature, decoded throttle/under-voltage evidence, observed timestamps and stale semantics. First live RPi activation requires separate owner authorization.
 
 ### Phase 3A — Docker current-state read boundary
 
-Container inventory, health/state, CPU, memory, network, block I/O, PIDs, uptime and restart count through a fixed, GET-only local Docker Engine adapter.
-
-No generic Engine proxy, exec, restart, stop or remove.
+Container inventory, health/state, CPU, memory, network, block I/O, PIDs, uptime and restart count through the dedicated bounded Docker authority. No generic Engine proxy, exec, restart, stop or remove.
 
 First live Docker socket permission expansion remains a separate owner gate.
 
 ### Phase 3B — Docker events
 
-Bounded read-only Docker container event projection for health/start/stop/restart/OOM/die/update-style operational evidence.
+Bounded read-only Docker container event projection for health/start/stop/restart/OOM/die/update-style operational evidence. Event filters/window semantics remain server-owned and bounded. No container mutation.
 
-Event filters/window semantics remain server-owned and bounded. No container mutation.
+### Phase 4 — Bounded native operational history + Grafana drill-down
 
-### Phase 4 — Prometheus history + Grafana bridge
+Provide predefined `1h` / `24h` / `7d` operational history, Top Consumers and compact sparklines using server-owned bounded queries. Prometheus remains the time-series authority and no duplicate metrics database is introduced.
 
-1h/24h/7d history, top consumers, compact sparklines and deep links to Grafana. Prometheus remains the time-series authority; no duplicate metrics database.
+Grafana remains a specialist/deep-analysis option. The dashboard is not a general visualization/query platform and there is no current roadmap commitment to retire Grafana. A future retirement decision would require a separate product/operations contract change and separately authorized LIVE decommissioning.
+
+For per-container history, preserve ADR-0005/ADR-0006: the dedicated Docker broker remains the sole Docker Engine socket authority; historical collection must not give an exporter direct Docker socket/group/generic Engine access.
 
 For per-container history, #265 established source readiness and #267 selected a broker-backed container-metrics exporter that preserves ADR-0005: `dashboard-rpi5-docker-broker` remains the sole Docker Engine socket authority. Compose `project/service/container-number` is the primary stable logical identity; non-Compose or invalid/duplicate identity is `UNAVAILABLE` without an explicit reviewed static mapping. The fixed broker snapshot capability and exporter are implemented in source by #270. Issue #272 makes the activation wiring source-ready by adding the exporter systemd blueprint, fail-closed listener binding, fixed Prometheus scrape fragment and release-manifest closure; production deployment, exact private listener selection, Prometheus configuration mutation/reload and runtime activation remain separate owner-gated LIVE work.
 
@@ -99,7 +111,7 @@ Never persistently cache logs, terminal, auth/session or sensitive API data.
 
 ### Phase 8 — Quick Commands
 
-Owner-only registered diagnostics using fixed executable + fixed/typed argument arrays with timeout/output limits and audit evidence.
+Owner-only registered diagnostics using fixed executable + fixed/typed argument arrays with timeout/output/concurrency limits and audit evidence.
 
 No browser-supplied executable, arbitrary flags or generic `sh -c`.
 
@@ -127,7 +139,9 @@ Operational launch with exact-main evidence, Access, Tunnel, systemd deployment,
 
 ### Phase 12 — Ongoing operations / hardening
 
-Dependency review, CSP, Cloudflare policy, systemd sandboxing, agent permissions, Docker access, PWA caching, audit retention and performance monitoring.
+Dependency review, frontend simplification, CSP, Cloudflare policy, systemd sandboxing, agent permissions, Docker access, PWA caching, audit retention and performance monitoring.
+
+Frontend hardening should reduce accidental abstraction/dependency surface without rewriting stable application architecture. Candidate work includes a focused Tailwind removal after usage/Preflight audit, incremental CSS-layer organization and React Aria inventory.
 
 The dashboard itself must remain lightweight enough not to become a meaningful RPi workload.
 
@@ -152,4 +166,4 @@ Do not create dozens of speculative issues before earlier phases provide enough 
 
 ## Definition of success
 
-The project is successful when the A55 provides a fast daily health/diagnostic view, desktop offers denser operations visibility, specialist tools remain authoritative for deep analysis, routine logs/diagnostics no longer require SSH, terminal/write controls stay explicitly gated, missing evidence is never shown as healthy, and every trust-boundary expansion is explainable from GitHub history.
+The project is successful when the A55 provides a fast daily health/diagnostic view, desktop offers denser operations visibility, specialist tools remain authoritative for deep analysis, routine logs/diagnostics no longer require SSH, terminal/write controls stay explicitly gated, missing evidence is never shown as healthy, the dashboard itself stays lightweight, and every trust-boundary expansion is explainable from GitHub history.

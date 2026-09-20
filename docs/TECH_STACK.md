@@ -1,26 +1,29 @@
 # dashboard_RPi5 — Implementation Stack
 
-> **Status:** current implementation and trust-boundary reference  
-> **Original stack decision:** 2026-08-15  
+> **Status:** durable implementation/trust-boundary reference  
+> **Original stack decision:** ADR-0004  
+> **Current frontend baseline:** ADR-0007  
 > **Master contract:** GitHub issue #1  
 > **Target hostname:** `dash.rozkalns.net`
 
-The original Phase 1 technology choices remain the implementation baseline, but this document now reflects the current repository layout and the trust boundaries added as the project progressed into live operation.
+This document separates **current source reality** from the **durable target architecture**. Mutable runtime/release state is intentionally not stored here; use canonical handoff issue #213 plus fresh trusted-host evidence for current production state.
 
-## Chosen stack
+## Durable stack
 
 ```text
 Node.js 24 LTS
 └── npm workspaces + TypeScript strict mode
     ├── apps/web
-    │   ├── React 19
-    │   ├── Vite 8.1
-    │   ├── React Router 8 — Data Mode
+    │   ├── React
+    │   ├── Vite
+    │   ├── React Router
     │   ├── TanStack Query
-    │   ├── shadcn/ui
-    │   │    └── React Aria base where appropriate
-    │   ├── Tailwind CSS 4
-    │   └── Lucide icons
+    │   ├── semantic HTML / native controls first
+    │   ├── plain product CSS + CSS custom properties
+    │   ├── CSS cascade layers
+    │   ├── Lucide icons
+    │   ├── React Aria only for justified complex widgets
+    │   └── xterm only for the separately gated Terminal capability
     │
     ├── apps/server
     │   └── Fastify 5
@@ -32,227 +35,152 @@ Node.js 24 LTS
     │   └── contained normal-user native PTY boundary
     │
     └── packages/contracts
-        └── TypeBox schemas + Fastify type provider
+        └── TypeBox runtime schemas + Fastify type provider
 ```
 
-## Current repository layout
+## Current frontend source reality
+
+The source has already converged toward semantic JSX and explicit product CSS, but migration is incomplete:
+
+- `apps/web/src/styles.css` is predominantly explicit CSS with CSS custom properties;
+- that stylesheet still imports `tailwindcss`;
+- `apps/web/vite.config.ts` still activates `@tailwindcss/vite`;
+- `apps/web/package.json` still includes Tailwind dependencies;
+- `react-aria-components` is used by the mobile More menu;
+- there is no durable shadcn/ui component layer that should be treated as a project-wide architecture requirement.
+
+Therefore:
+
+- **Tailwind is not the target baseline**, but it is still current source until a focused cleanup proves removal is safe;
+- **shadcn/ui is not an architectural baseline** and new UI work must not assume it;
+- **React Aria is exception-only**, retained where its accessibility/interaction value is concrete.
+
+## Frontend composition rule
+
+Use the smallest layer that solves the problem:
 
 ```text
-dashboard_RPi5/
-├── apps/
-│   ├── web/
-│   │   ├── src/components/
-│   │   ├── src/pages/
-│   │   └── public/
-│   ├── server/
-│   │   └── src/
-│   ├── agent/
-│   │   └── src/
-│   └── terminal-agent/
-│       └── src/
-├── packages/
-│   └── contracts/
-├── ops/
-│   ├── production/
-│   └── systemd/
-├── tests/
-│   └── e2e/
-├── tools/
-└── docs/
+semantic HTML
+  -> browser-native behavior
+      -> source-owned React composition
+          -> React Aria only if complex interaction requires it
 ```
 
-Do not create additional shared packages until a concrete duplication/problem justifies them.
+Do not replace a working accessible composite widget merely to remove a dependency. Prove equivalent focus, keyboard, touch and screen-reader behavior first.
 
-## Why Node.js 24 LTS
+## CSS baseline
 
-Production runtime uses the Node 24 LTS line rather than Node Current.
+Plain product CSS is canonical. Design tokens live in CSS custom properties.
 
-Benefits:
+Target cascade ordering:
 
-- one runtime across web tooling, API, main agent and terminal-agent source;
-- one TypeScript toolchain;
-- deterministic CI/runtime contract;
-- no second language/runtime without a measured need.
-
-A future Go/Rust component is not ruled out, but it requires evidence that the current TypeScript implementation is inadequate.
-
-## Why React + Vite instead of Next.js
-
-`dashboard_RPi5` is a private authenticated operations SPA. It has no meaningful SEO/SSR requirement.
-
-Next.js/RSC would add rendering, caching and deployment semantics that do not solve the primary problem: a deliberate browser/API/local-agent trust boundary.
-
-Vite keeps the frontend explicit and small, while React remains the component model.
-
-## Why React Router Data Mode
-
-Use React Router Data Mode instead of a bare `BrowserRouter` or the full React Router framework mode.
-
-It provides:
-
-- route loaders;
-- pending/error boundaries;
-- structured route data lifecycle;
-- lazy route modules;
-
-without coupling the project to a server-rendering framework.
-
-Current/planned top-level routes remain centered on:
-
-```text
-/
-/docker
-/services
-/logs
-/terminal
-/activity
-/backups
-/deployments
-/settings
+```css
+@layer reset, tokens, base, components, features, utilities;
 ```
 
-## Why TanStack Query
+Migrate incrementally. Do not perform a visual rewrite simply to reorganize files. Every UI-affecting migration must preserve:
 
-Server/telemetry state needs explicit stale/refetch/error semantics.
+- 320 CSS px reflow;
+- A55-class 412×915 regression target;
+- Samsung Browser + Chrome compatibility;
+- browser + PWA behavior;
+- zoom and safe areas;
+- keyboard-safe Logs/Terminal flows;
+- normal 48px touch targets;
+- visible focus and reduced-motion behavior.
 
-Use TanStack Query for:
+See `docs/HTML_CSS_MOBILE_IMPLEMENTATION.md` and ADR-0007.
 
-- caching;
-- controlled polling;
-- stale timestamps;
-- reconnect/refocus behavior;
-- request cancellation;
-- query invalidation.
+## Why React + Vite remain
 
-Defaults must be reviewed rather than accepted blindly. Health/agent failures must become visible promptly instead of being hidden behind excessive retries.
+`dashboard_RPi5` is a private operations SPA with live server state, polling/staleness/error semantics, routing, PWA behavior, logs and a separately gated terminal. React remains useful for stateful composition. Vite keeps build/runtime semantics explicit without SSR/RSC framework complexity.
 
-Polling cadence remains domain-specific; the dashboard must not become a meaningful source of RPi load.
+A React-to-vanilla-JavaScript rewrite is not a simplification target.
 
-## Why shadcn/ui + React Aria
+## Why React Router remains
 
-shadcn/ui is a component-source baseline, not the product visual design.
+The project needs explicit route lifecycle, navigation and error boundaries without coupling the backend to a full-stack frontend framework.
 
-The audited `dashboard_RPi5` desktop and Samsung A55 contracts remain the visual source of truth.
+## Why TanStack Query remains
 
-React Aria-style accessible behavior is useful for keyboard, touch, focus and screen-reader interactions. The project must not ship a generic stock component-library appearance.
+Operational evidence needs controlled polling, caching, stale/error semantics, cancellation and reconnect/refocus behavior. Defaults must be reviewed so retries or refetching never hide source failure or create unnecessary RPi load.
 
-## Why Tailwind CSS 4
+## Why Fastify + TypeBox remain
 
-Tailwind is used as a layout/utility layer, while CSS custom properties remain the canonical design-token layer.
+The server/agent interfaces are trust boundaries. Schema-first request/response handling and shared runtime validation reduce accidental field leakage and protocol drift. This complexity is security-relevant and should not be removed merely for line-count reduction.
 
-Use utility classes where they improve composition and consistency; keep product identity in reviewed tokens rather than scattering raw one-off colors through markup.
-
-## Why Fastify 5
-
-Fastify is the API/server baseline instead of Express.
-
-Reasons:
-
-- schema-first request/response handling;
-- bounded serialization contracts;
-- response schemas reduce accidental field leakage;
-- official type-provider support;
-- good fit for narrow local operational APIs.
-
-The dashboard server binds loopback in production behind Cloudflare Tunnel/Access.
-
-## Why TypeBox shared contracts
-
-Use shared runtime schemas from `packages/contracts` so server, agent, frontend adapters and tests do not maintain unrelated runtime validators that can drift.
-
-## Current trust boundaries
+## Trust boundaries that must remain explicit
 
 ### Browser / web API
 
-The browser is untrusted for host authority. The web/API process:
+The browser is untrusted for host authority. The web/API process must not own Docker Engine socket access, generic shell/root capability or unrestricted host mutation.
 
-- is Internet-reachable only through the authenticated Cloudflare path;
-- binds locally on the RPi5 origin;
-- does not own Docker Engine socket access;
-- does not expose a generic Docker proxy;
-- does not expose arbitrary shell/root capability.
-
-### Main agent
-
-The main `dashboard-rpi5-agent` is the narrow privileged-read evidence bridge over its Unix socket. It owns purpose-built host/systemd/journal/vcgencmd/procfs/sysfs reads and registered diagnostic operations.
-
-It does **not** own Docker Engine socket authority. It has no persistent `docker` or `video` group membership.
-
-Current Docker trust path is:
+### Main agent / Docker broker
 
 ```text
 web/API
   -> main agent
-  -> typed bounded Docker broker capability
-  -> Docker Engine Unix socket
+      -> fixed typed Docker broker capability
+          -> Docker Engine Unix socket
 ```
 
-The dedicated Docker broker is the sole Docker Engine authority. It exposes only reviewed current-state/events/log capabilities and never a generic caller-selected Engine endpoint.
+The dedicated Docker broker remains the sole Docker Engine authority. Do not flatten this into one privileged web/backend process.
 
-### Quick Commands
-
-The accepted production Quick Command catalog is exactly:
-
-```text
-host.disk-root
-host.failed-units
-host.kernel
-host.uptime
-```
-
-Each ID maps to a fixed executable and fixed argument array with bounded timeout/output. Quick Commands provide neither Docker authority nor free-form terminal authority.
-
-### Terminal agent
-
-Full PTY source is isolated into `apps/terminal-agent` and the corresponding contained systemd socket/service boundary.
-
-Conceptually:
+### Terminal
 
 ```text
 browser
-  -> owner-authenticated terminal session/WS gate
-  -> local terminal Unix transport
-  -> dashboard-rpi5-terminal-agent
-  -> contained normal-user PTY
+  -> owner-authenticated terminal admission / WebSocket
+      -> contained terminal-agent
+          -> normal-user PTY
 ```
 
-The terminal agent must not inherit main-agent privileges, Docker broker authority, root, or automatic sudo. Production terminal/PTTY remains absent/fail-closed until a separate owner-authorized activation.
+The terminal boundary must not inherit main-agent or Docker-broker authority. Production activation remains separately owner-gated.
 
-## Data ownership
+## Data ownership and product scope
 
 ```text
-Prometheus      = time-series/history
-Grafana         = deep visualization
+Prometheus      = time-series/history authority
+Grafana         = specialist/deep-analysis option
 Docker Engine   = authoritative container runtime state/events/logs
-Docker broker   = sole bounded transport authority to the Engine socket
+Docker broker   = sole bounded Engine-socket authority
 systemd/journal = host service state/logs
 main agent      = narrow normalized host/local evidence bridge
-dashboard       = normalized presentation + attention projection
+dashboard       = daily operational presentation + attention projection
 terminal agent  = separately gated contained PTY boundary
 ```
 
-Do not create a duplicate metrics database only to redraw existing Prometheus history.
+The dashboard may add predefined native `1h` / `24h` / `7d` history and Top Consumers. It must not become a generic PromQL endpoint, arbitrary visualization builder or duplicate TSDB.
 
-## Deliberately rejected alternatives / regressions
+Grafana retirement is not part of the current durable product contract. A future removal decision requires separate architecture/operations evidence and LIVE decommissioning authorization.
+
+## Deliberately rejected directions
 
 | Alternative | Reason not selected |
 |---|---|
 | Next.js | SSR/RSC/SEO complexity without sufficient value for this private SPA |
+| React-to-vanilla rewrite | removes useful state composition while not simplifying trust boundaries |
 | React Router Framework Mode | unnecessary full-stack framework coupling beside Fastify |
-| Express | weaker fit than Fastify's schema/serialization/type-provider model |
-| Material UI / Ant Design / Bootstrap | visual override burden or generic appearance |
-| Grafana as frontend | cannot provide the required logs/terminal/activity/control UX cleanly |
-| Python backend | unnecessary second runtime/toolchain |
-| Go agent immediately | no measured performance/footprint requirement yet |
-| main agent -> Docker Engine socket | violates the accepted broker-only Docker authority invariant |
-| generic Docker proxy | grants host-level authority beyond the reviewed capability set |
-| PTY inside privileged-read main agent | would let free-form shell inherit an unrelated privileged evidence boundary |
+| Express | weaker fit than Fastify's schema/serialization model |
+| generic component framework | additional abstraction/visual override burden without demonstrated need |
+| Tailwind as mandatory baseline | current source is already predominantly explicit product CSS; creates a second styling/cascade model |
+| Grafana as product frontend | cannot provide the required operational/log/terminal UX cleanly |
+| Grafana clone in dashboard | scope expansion; duplicates specialist visualization capabilities |
+| duplicate metrics database | Prometheus is already the time-series authority |
+| main agent -> Docker Engine socket | violates broker-only Docker authority |
+| generic Docker proxy | grants host-level authority beyond reviewed capabilities |
+| PTY inside privileged-read main agent | lets free-form shell inherit unrelated privileges |
 
-## Current operational status
+## Follow-up source cleanup
 
-The project is no longer a Phase 1 fixture-only implementation. P0–P3 MVP Operator Usable capabilities are accepted in production, including bounded host/Docker current state, registered Docker logs, four fixed read-only Quick Commands and bounded recent Docker events.
+ADR-0007 adoption does not itself remove dependencies. The next focused frontend simplification work should:
 
-The accepted production release can intentionally lag GitHub `main`; a source merge is never production evidence by itself. Terminal/PTTY remains absent/fail-closed.
+1. audit exact Tailwind utilities/theme/Preflight reliance;
+2. remove Tailwind import/plugin/packages/lockfile entries only if the audit proves no required behavior remains;
+3. replace any relied-on base behavior with explicit CSS;
+4. run typecheck/tests/build and UI/A55/accessibility regressions;
+5. migrate CSS into cascade layers incrementally;
+6. inventory React Aria use and retain only behaviorally justified cases.
 
 ## Governance
 
@@ -265,4 +193,4 @@ issue -> fresh main -> fresh branch -> focused change -> Draft PR
 -> classify Production deploy: YES / NO
 ```
 
-**Merge authorization is not deployment authorization.** Runtime, host, Docker-authority, terminal, systemd, Cloudflare and other production/trust-boundary mutations require their own explicit owner authorization.
+Merge authorization is not deployment authorization. Runtime, host, Docker-authority, terminal, systemd, Cloudflare and other production/trust-boundary mutations require separate explicit owner authorization.

@@ -1,8 +1,10 @@
 # ADR-0004 — Phase 1 implementation stack
 
-**Status:** Accepted  
+**Status:** Accepted historically; frontend styling/component-library portions partially superseded by ADR-0007  
 **Date:** 2026-08-15  
-**Related:** issue #1, issue #3
+**Related:** issue #1, issue #3, issue #282, ADR-0007
+
+> **Supersession note (2026-09-20):** ADR-0007 supersedes only the frontend baseline that treated Tailwind CSS and shadcn/ui as architectural defaults. The original decision below is preserved as historical evidence. Node.js 24 LTS, npm workspaces, TypeScript strict mode, React 19, Vite 8.1, React Router 8 Data Mode, TanStack Query, Lucide, Fastify 5 and TypeBox remain valid unless separately superseded.
 
 ## Decision
 
@@ -113,3 +115,7 @@ This ADR does **not** authorize:
 - host/root/container mutation.
 
 Those remain later explicit phase/owner gates.
+
+## Current frontend authority
+
+For new frontend composition and styling work, ADR-0007 is authoritative: semantic/native HTML first, plain product CSS + CSS custom properties as the canonical styling model, CSS cascade layers for explicit ordering, React Aria only where complex accessibility behavior justifies it, and Tailwind source removal only after an exact usage/Preflight regression audit.
