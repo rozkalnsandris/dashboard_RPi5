@@ -5,8 +5,11 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 
 import {
+  PRODUCTION_CANDIDATE_CONTROLLER_BOOTSTRAP_V1_FILE_ROOTS,
   PRODUCTION_CANDIDATE_DIRECTORY_ROOTS,
   PRODUCTION_CANDIDATE_FILE_ROOTS,
+  PRODUCTION_CANDIDATE_PROFILE_CONTROLLER_BOOTSTRAP_V1,
+  productionCandidateFileRoots,
   createProductionCandidateManifest,
   verifyProductionCandidateManifest,
 } from "./production-candidate-manifest.mjs";
@@ -130,4 +133,76 @@ test("candidate manifest rejects malformed source SHA", async () => {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+
+test("controller bootstrap v1 profile matches the historical trusted-controller closure", () => {
+  const expected = [
+    "package.json",
+    "package-lock.json",
+    "apps/web/package.json",
+    "apps/server/package.json",
+    "apps/agent/package.json",
+    "apps/agent/dist/log-broker-entry.js",
+    "apps/terminal-agent/package.json",
+    "packages/contracts/package.json",
+    "ops/production/launch-contract.json",
+    "ops/production/web.env.example",
+    "ops/production/terminal.env.example",
+    "ops/production/smoke-contract.json",
+    "ops/production/cloudflare-contract.json",
+    "ops/production/cloudflare.env.example",
+    "ops/production/release-activation-contract.json",
+    "ops/production/host-readiness-contract.json",
+    "ops/systemd/dashboard-rpi5-web.service",
+    "ops/systemd/dashboard-rpi5-agent.service",
+    "ops/systemd/dashboard-rpi5-log-broker.service",
+    "ops/systemd/dashboard-rpi5-docker-broker.service",
+    "ops/systemd/dashboard-rpi5-terminal.socket",
+    "ops/systemd/dashboard-rpi5-terminal@.service",
+    "tools/package-terminal-native-runtime.mjs",
+    "tools/production-candidate-manifest.mjs",
+    "tools/production-runtime-smoke.mjs",
+    "tools/production-release-controller.mjs",
+    "tools/production-host-readiness.mjs",
+  ];
+  assert.deepEqual(PRODUCTION_CANDIDATE_CONTROLLER_BOOTSTRAP_V1_FILE_ROOTS, expected);
+  assert.deepEqual(productionCandidateFileRoots(PRODUCTION_CANDIDATE_PROFILE_CONTROLLER_BOOTSTRAP_V1), expected);
+  assert.ok(expected.includes("tools/production-candidate-manifest.mjs"));
+  assert.ok(expected.includes("tools/production-release-controller.mjs"));
+});
+
+test("controller bootstrap profile is explicit and default full closure remains unchanged", async () => {
+  const root = await createFixture();
+  try {
+    const full = await createProductionCandidateManifest({ rootDir: root, sourceSha: SHA });
+    const bootstrap = await createProductionCandidateManifest({
+      rootDir: root,
+      sourceSha: SHA,
+      profile: PRODUCTION_CANDIDATE_PROFILE_CONTROLLER_BOOTSTRAP_V1,
+    });
+    const fullPaths = new Set(full.files.map((file) => file.path));
+    const bootstrapPaths = new Set(bootstrap.files.map((file) => file.path));
+    for (const path of [
+      "ops/production/container-metrics-source-contract.json",
+      "ops/production/container-metrics-activation-contract.json",
+      "ops/production/container-metrics-firewall-contract.json",
+      "ops/production/container-metrics-exporter.env.example",
+      "ops/prometheus/container-metrics-scrape.yml",
+      "ops/systemd/dashboard-rpi5-container-metrics-exporter.service",
+    ]) {
+      assert.equal(fullPaths.has(path), true);
+      assert.equal(bootstrapPaths.has(path), false);
+    }
+    assert.equal("profile" in bootstrap, false);
+    assert.equal("compatibility" in bootstrap, false);
+    assert.equal(bootstrap.schema, full.schema);
+    assert.notEqual(bootstrap.candidateSha256, full.candidateSha256);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("unknown production candidate profiles fail closed", () => {
+  assert.throws(() => productionCandidateFileRoots("legacy-ish"), /unknown production candidate profile/u);
 });
