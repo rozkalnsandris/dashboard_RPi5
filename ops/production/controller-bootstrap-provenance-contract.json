@@ -1,0 +1,26 @@
+{
+  "schema": "dashboard-rpi5.controller-bootstrap-provenance.v1",
+  "sourceOnly": true,
+  "profile": "controller-bootstrap-v1",
+  "bridgeSource": {
+    "requiredProvenance": "merged-pr-exact-head",
+    "requiresMergedPullRequest": true,
+    "requiresExactHeadCiSuccess": true,
+    "requiresTreeEqualityWithSquashMergeMain": true,
+    "requiresDistinctShaFromFullMain": true
+  },
+  "fullSource": {
+    "requiredProvenance": "fresh-current-main",
+    "requiresExactMainCiSuccess": true,
+    "requiresDifferentShaFromBridge": true
+  },
+  "forbidden": [
+    "unmerged-pr-head",
+    "tree-mismatch",
+    "same-sha-full-expansion",
+    "in-place-immutable-release-expansion",
+    "empty-or-noop-commit-created-only-to-manufacture-sha"
+  ],
+  "runtimeValuesStoredInSource": false,
+  "liveMutationAuthorized": false
+}

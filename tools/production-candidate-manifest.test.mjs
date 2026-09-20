@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
+import { URL } from "node:url";
 import test from "node:test";
 
 import {
@@ -187,6 +188,7 @@ test("controller bootstrap profile is explicit and default full closure remains 
       "ops/production/container-metrics-source-contract.json",
       "ops/production/container-metrics-activation-contract.json",
       "ops/production/container-metrics-firewall-contract.json",
+      "ops/production/controller-bootstrap-provenance-contract.json",
       "ops/production/container-metrics-exporter.env.example",
       "ops/prometheus/container-metrics-scrape.yml",
       "ops/systemd/dashboard-rpi5-container-metrics-exporter.service",
@@ -205,4 +207,33 @@ test("controller bootstrap profile is explicit and default full closure remains 
 
 test("unknown production candidate profiles fail closed", () => {
   assert.throws(() => productionCandidateFileRoots("legacy-ish"), /unknown production candidate profile/u);
+});
+
+
+test("controller bootstrap provenance contract binds merged PR head to tree-equivalent main", async () => {
+  const contract = JSON.parse(
+    await readFile(new URL("../ops/production/controller-bootstrap-provenance-contract.json", import.meta.url), "utf8"),
+  );
+  assert.equal(contract.schema, "dashboard-rpi5.controller-bootstrap-provenance.v1");
+  assert.equal(contract.sourceOnly, true);
+  assert.equal(contract.profile, PRODUCTION_CANDIDATE_PROFILE_CONTROLLER_BOOTSTRAP_V1);
+  assert.equal(contract.bridgeSource.requiredProvenance, "merged-pr-exact-head");
+  assert.equal(contract.bridgeSource.requiresMergedPullRequest, true);
+  assert.equal(contract.bridgeSource.requiresExactHeadCiSuccess, true);
+  assert.equal(contract.bridgeSource.requiresTreeEqualityWithSquashMergeMain, true);
+  assert.equal(contract.bridgeSource.requiresDistinctShaFromFullMain, true);
+  assert.equal(contract.fullSource.requiredProvenance, "fresh-current-main");
+  assert.equal(contract.fullSource.requiresExactMainCiSuccess, true);
+  assert.equal(contract.fullSource.requiresDifferentShaFromBridge, true);
+  for (const forbidden of [
+    "unmerged-pr-head",
+    "tree-mismatch",
+    "same-sha-full-expansion",
+    "in-place-immutable-release-expansion",
+    "empty-or-noop-commit-created-only-to-manufacture-sha",
+  ]) {
+    assert.ok(contract.forbidden.includes(forbidden));
+  }
+  assert.equal(contract.runtimeValuesStoredInSource, false);
+  assert.equal(contract.liveMutationAuthorized, false);
 });

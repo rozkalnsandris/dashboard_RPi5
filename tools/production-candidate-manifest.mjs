@@ -40,6 +40,7 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
   "ops/production/container-metrics-source-contract.json",
   "ops/production/container-metrics-activation-contract.json",
   "ops/production/container-metrics-firewall-contract.json",
+  "ops/production/controller-bootstrap-provenance-contract.json",
   "ops/production/container-metrics-exporter.env.example",
   "ops/prometheus/container-metrics-scrape.yml",
   "ops/systemd/dashboard-rpi5-web.service",
