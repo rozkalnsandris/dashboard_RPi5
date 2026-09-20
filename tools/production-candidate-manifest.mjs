@@ -9,6 +9,8 @@ import { assertPackagedTerminalNativeRuntime } from "./package-terminal-native-r
 
 export const PRODUCTION_CANDIDATE_SCHEMA = "dashboard-rpi5.production-candidate.v1";
 export const PRODUCTION_CANDIDATE_HASH = "sha256";
+export const PRODUCTION_CANDIDATE_PROFILE_FULL = "full";
+export const PRODUCTION_CANDIDATE_PROFILE_CONTROLLER_BOOTSTRAP_V1 = "controller-bootstrap-v1";
 
 export const PRODUCTION_CANDIDATE_DIRECTORY_ROOTS = Object.freeze([
   "apps/web/dist",
@@ -53,6 +55,44 @@ export const PRODUCTION_CANDIDATE_FILE_ROOTS = Object.freeze([
   "tools/production-release-controller.mjs",
   "tools/production-host-readiness.mjs",
 ]);
+
+export const PRODUCTION_CANDIDATE_CONTROLLER_BOOTSTRAP_V1_FILE_ROOTS = Object.freeze([
+  "package.json",
+  "package-lock.json",
+  "apps/web/package.json",
+  "apps/server/package.json",
+  "apps/agent/package.json",
+  "apps/agent/dist/log-broker-entry.js",
+  "apps/terminal-agent/package.json",
+  "packages/contracts/package.json",
+  "ops/production/launch-contract.json",
+  "ops/production/web.env.example",
+  "ops/production/terminal.env.example",
+  "ops/production/smoke-contract.json",
+  "ops/production/cloudflare-contract.json",
+  "ops/production/cloudflare.env.example",
+  "ops/production/release-activation-contract.json",
+  "ops/production/host-readiness-contract.json",
+  "ops/systemd/dashboard-rpi5-web.service",
+  "ops/systemd/dashboard-rpi5-agent.service",
+  "ops/systemd/dashboard-rpi5-log-broker.service",
+  "ops/systemd/dashboard-rpi5-docker-broker.service",
+  "ops/systemd/dashboard-rpi5-terminal.socket",
+  "ops/systemd/dashboard-rpi5-terminal@.service",
+  "tools/package-terminal-native-runtime.mjs",
+  "tools/production-candidate-manifest.mjs",
+  "tools/production-runtime-smoke.mjs",
+  "tools/production-release-controller.mjs",
+  "tools/production-host-readiness.mjs",
+]);
+
+export function productionCandidateFileRoots(profile = PRODUCTION_CANDIDATE_PROFILE_FULL) {
+  if (profile === PRODUCTION_CANDIDATE_PROFILE_FULL) return PRODUCTION_CANDIDATE_FILE_ROOTS;
+  if (profile === PRODUCTION_CANDIDATE_PROFILE_CONTROLLER_BOOTSTRAP_V1) {
+    return PRODUCTION_CANDIDATE_CONTROLLER_BOOTSTRAP_V1_FILE_ROOTS;
+  }
+  throw new Error(`unknown production candidate profile: ${profile}`);
+}
 
 const FULL_SHA = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
@@ -244,7 +284,7 @@ async function assertProgrammaticTerminalRuntimeClosure(rootDir) {
   return assertPackagedTerminalNativeRuntime({ rootDir: root });
 }
 
-export async function createProductionCandidateManifest({ rootDir, sourceSha }) {
+export async function createProductionCandidateManifest({ rootDir, sourceSha, profile = PRODUCTION_CANDIDATE_PROFILE_FULL }) {
   validateSourceSha(sourceSha);
   const root = resolve(rootDir);
   const rootStat = await lstat(root);
@@ -257,7 +297,7 @@ export async function createProductionCandidateManifest({ rootDir, sourceSha }) 
   for (const relativeDirectory of PRODUCTION_CANDIDATE_DIRECTORY_ROOTS) {
     files.push(...(await collectDirectory(root, resolve(root, relativeDirectory))));
   }
-  for (const relativeFile of PRODUCTION_CANDIDATE_FILE_ROOTS) {
+  for (const relativeFile of productionCandidateFileRoots(profile)) {
     const file = await collectRegularFile(root, resolve(root, relativeFile));
     if (files.some((entry) => entry.path === file.path)) {
       if (file.path !== LOG_BROKER_ENTRYPOINT) {
@@ -300,9 +340,14 @@ export function validateCandidateManifestShape(manifest, expectedSha) {
   if (!SHA256.test(manifest.candidateSha256 ?? "")) throw new Error("candidate manifest digest is invalid");
 }
 
-export async function verifyProductionCandidateManifest({ rootDir, sourceSha, manifest }) {
+export async function verifyProductionCandidateManifest({
+  rootDir,
+  sourceSha,
+  manifest,
+  profile = PRODUCTION_CANDIDATE_PROFILE_FULL,
+}) {
   validateCandidateManifestShape(manifest, sourceSha);
-  const expected = await createProductionCandidateManifest({ rootDir, sourceSha });
+  const expected = await createProductionCandidateManifest({ rootDir, sourceSha, profile });
   if (JSON.stringify(manifest) !== JSON.stringify(expected)) {
     throw new Error("candidate manifest does not match exact build contents");
   }
@@ -371,6 +416,7 @@ function parseCli(argv) {
   let rootDir;
   let sourceSha;
   let verifyPath;
+  let profile = PRODUCTION_CANDIDATE_PROFILE_FULL;
   while (args.length > 0) {
     const key = args.shift();
     const value = args.shift();
@@ -378,12 +424,14 @@ function parseCli(argv) {
     if (key === "--root") rootDir = value;
     else if (key === "--sha") sourceSha = value;
     else if (key === "--verify") verifyPath = value;
+    else if (key === "--profile") profile = value;
     else throw new Error("unknown CLI argument");
   }
   if (rootDir === undefined || sourceSha === undefined) {
-    throw new Error("usage: node tools/production-candidate-manifest.mjs --root <repo> --sha <40-hex-sha> [--verify <manifest.json>]");
+    throw new Error("usage: node tools/production-candidate-manifest.mjs --root <repo> --sha <40-hex-sha> [--profile full|controller-bootstrap-v1] [--verify <manifest.json>]");
   }
-  return { rootDir, sourceSha, verifyPath };
+  productionCandidateFileRoots(profile);
+  return { rootDir, sourceSha, verifyPath, profile };
 }
 
 async function main() {
@@ -403,6 +451,7 @@ async function main() {
       rootDir: input.rootDir,
       sourceSha: input.sourceSha,
       manifest,
+      profile: input.profile,
     });
     process.stdout.write(`${JSON.stringify({ status: "PASS", sourceSha: verified.sourceSha, candidateSha256: verified.candidateSha256 })}\n`);
   } catch (error) {

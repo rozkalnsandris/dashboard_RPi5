@@ -58,6 +58,18 @@ npm run manifest:production -- --root . --sha <exact-source-sha>
 
 The manifest hashes only explicit production roots, including the Cloudflare launch contract, release activation contract/controller and host-readiness contract/verifier, rejects symlinks/non-regular files, records per-file SHA-256 evidence and derives the intended immutable release path from the exact source SHA.
 
+### One-hop legacy controller bootstrap profile
+
+The default manifest profile remains the complete current production closure. A host whose current trusted release controller predates newly added production roots may use the explicit `controller-bootstrap-v1` profile only as a one-hop bridge:
+
+```text
+npm run manifest:production -- --root . --sha <bridge-exact-main-sha> --profile controller-bootstrap-v1
+```
+
+That profile deliberately emits the historical v1 file closure without adding compatibility metadata to the manifest JSON, so the historical controller can reconstruct the same exact manifest with its own trusted candidate code. The bridge still contains `tools/production-candidate-manifest.mjs` and `tools/production-release-controller.mjs`, establishing the newer trusted tooling inside the next immutable release.
+
+This profile is **not** the final container-metrics production candidate. After the bridge release is owner-authorized and accepted, a **different freshly reviewed exact-main SHA** must be built with the normal default/full profile and deployed through the now-current trusted controller. Never expand the bridge release in place, reuse its SHA for the full closure, relax descriptor/digest verification, or use this profile to omit newly required production artifacts from the final activation candidate.
+
 ## Container-metrics activation source boundary
 
 Issue #272 makes the broker-backed container-metrics activation path source-ready without activating it. The production candidate includes the exporter unit, source/activation contracts, fail-closed env example and fixed Prometheus scrape fragment. The env/template placeholders are intentionally invalid until a fresh owner-authorized LIVE preflight proves one exact private IPv4 that is non-public and reachable from the production Prometheus container.
