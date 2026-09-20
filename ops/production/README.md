@@ -15,6 +15,7 @@ Canonical files:
 - `container-metrics-source-contract.json` — broker/exporter authority, identity and activation-gate invariants;
 - `container-metrics-activation-contract.json` — source-only exporter/systemd/Prometheus activation wiring and timeout budget;
 - `container-metrics-firewall-contract.json` — source-only exact Prometheus-to-exporter host-ingress boundary;
+- `controller-bootstrap-provenance-contract.json` — source-only one-hop bridge provenance and tree-equivalence gate;
 - `container-metrics-exporter.env.example` — fail-closed private-listener binding template;
 - `../prometheus/container-metrics-scrape.yml` — fixed container-metrics Prometheus scrape fragment.
 
@@ -60,15 +61,15 @@ The manifest hashes only explicit production roots, including the Cloudflare lau
 
 ### One-hop legacy controller bootstrap profile
 
-The default manifest profile remains the complete current production closure. A host whose current trusted release controller predates newly added production roots may use the explicit `controller-bootstrap-v1` profile only as a one-hop bridge:
+The default manifest profile remains the complete current production closure. A host whose current trusted release controller predates newly added production roots may use the explicit `controller-bootstrap-v1` profile only as a one-hop bridge. The bridge SHA is not an arbitrary branch SHA and is not the squash-merge main SHA: it must be the exact head of the already-merged source PR that introduced the reviewed bridge tooling. Before any LIVE authorization, GitHub evidence must prove that exact PR head passed exact-head CI, the PR is merged, and the PR-head Git tree is byte-for-byte identical to the corresponding squash-merge main commit tree. The machine-readable policy is `ops/production/controller-bootstrap-provenance-contract.json`.
 
 ```text
-npm run manifest:production -- --root . --sha <bridge-exact-main-sha> --profile controller-bootstrap-v1
+npm run manifest:production -- --root . --sha <merged-pr-exact-head-sha> --profile controller-bootstrap-v1
 ```
 
 That profile deliberately emits the historical v1 file closure without adding compatibility metadata to the manifest JSON, so the historical controller can reconstruct the same exact manifest with its own trusted candidate code. The bridge still contains `tools/production-candidate-manifest.mjs` and `tools/production-release-controller.mjs`, establishing the newer trusted tooling inside the next immutable release.
 
-This profile is **not** the final container-metrics production candidate. After the bridge release is owner-authorized and accepted, a **different freshly reviewed exact-main SHA** must be built with the normal default/full profile and deployed through the now-current trusted controller. Never expand the bridge release in place, reuse its SHA for the full closure, relax descriptor/digest verification, or use this profile to omit newly required production artifacts from the final activation candidate.
+This profile is **not** the final container-metrics production candidate. After the bridge release is owner-authorized and accepted, the full candidate must use a freshly revalidated current-main SHA whose exact-main CI is green and whose SHA differs from the bridge PR-head SHA. Tree equality proves the bridge source bytes are already merged/reviewed while the distinct commit IDs preserve two immutable release directories. Never use an unmerged PR head, a tree-mismatched head, an empty/no-op commit manufactured only to create a SHA, same-SHA full expansion, or in-place expansion of the bridge release.
 
 ## Container-metrics activation source boundary
 
