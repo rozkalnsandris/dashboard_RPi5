@@ -143,6 +143,17 @@ Highest-risk feature. Source implementation must remain fail-closed until the ow
 - Bounded timeouts, output limits and concurrency limits.
 - Stale/missing evidence is shown as `UNKNOWN`, never fabricated as healthy `0`.
 
+## RPi5 visual verification evidence
+
+For pixel-level inspection of the deployed RPi5-hosted dashboard, the canonical host-side procedure is `rozkalnsandris/RPi5_main@main:docs/VISUAL_VERIFICATION.md`.
+
+- Default host tool: `~/.local/bin/ui-proof`.
+- Engine: Playwright with system Chromium; raw `chromium --screenshot` is not the standard path.
+- Standard evidence capture: desktop `1440x900` plus Galaxy A55 / `SM-A556B` browser viewport `412x892`, together with DOM, console, page-error and manifest evidence.
+- Use RDC only to open the generated host-local PNG evidence and inspect the rendered pixels.
+- Running the host tool writes evidence on the RPi5 and therefore still requires the applicable current LIVE/runtime authority; this documentation does not grant it.
+- The repository's existing A55 product regression contract remains authoritative: the `412x915` regression target in `AGENTS.md` is an additional dashboard acceptance requirement and is not replaced by the `ui-proof` `412x892` browser capture.
+
 ## Security reporting
 
 Do not publish credentials, tokens, private hostnames, session cookies or sensitive logs in public issues. Use a private channel for credential/security incident material.
