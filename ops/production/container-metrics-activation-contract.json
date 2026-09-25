@@ -7,7 +7,7 @@
   "productionActivated": false,
   "service": {
     "unitSource": "ops/systemd/dashboard-rpi5-container-metrics-exporter.service",
-    "runtimeIdentity": "dashboard-rpi5-container-metrics-exporter",
+    "runtimeIdentity": "dashboard-rpi5-metrics",
     "dynamicUser": true,
     "supplementaryGroups": [
       "dashboard-rpi5-docker-client"

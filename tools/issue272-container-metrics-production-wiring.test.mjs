@@ -8,10 +8,12 @@ import { PRODUCTION_CANDIDATE_FILE_ROOTS } from "./production-candidate-manifest
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (path) => readFile(resolve(ROOT, path), "utf8");
+const EXPORTER_RUNTIME_IDENTITY = "dashboard-rpi5-metrics";
 
 test("issue 272 source-wires the exporter without Docker Engine authority", async () => {
   const unit = await read("ops/systemd/dashboard-rpi5-container-metrics-exporter.service");
-  assert.match(unit, /User=dashboard-rpi5-container-metrics-exporter/u);
+  assert.match(unit, new RegExp(`^User=${EXPORTER_RUNTIME_IDENTITY}$`, "mu"));
+  assert.ok(EXPORTER_RUNTIME_IDENTITY.length <= 31);
   assert.match(unit, /DynamicUser=yes/u);
   assert.match(unit, /SupplementaryGroups=dashboard-rpi5-docker-client/u);
   assert.match(unit, /DASHBOARD_DOCKER_BROKER_SOCKET=\/run\/dashboard-rpi5-docker-broker\/broker\.sock/u);
@@ -38,6 +40,7 @@ test("issue 272 fixes listener and Prometheus scrape budgets while leaving activ
 
   assert.equal(activation.sourceWiringIssue, 272);
   assert.equal(activation.productionActivated, false);
+  assert.equal(activation.service.runtimeIdentity, EXPORTER_RUNTIME_IDENTITY);
   assert.equal(activation.service.dockerSocketAuthority, false);
   assert.equal(activation.listener.wildcardAllowed, false);
   assert.equal(activation.listener.publicAddressAllowed, false);
