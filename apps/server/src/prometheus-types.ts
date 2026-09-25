@@ -3,6 +3,7 @@ export const PROMETHEUS_QUERY_RANGE_PATH = "/api/v1/query_range";
 export const PROMETHEUS_REQUEST_TIMEOUT_MS = 3_000;
 export const PROMETHEUS_QUERY_TIMEOUT = "2s";
 export const PROMETHEUS_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+export const PROMETHEUS_MAX_QUERY_SERIES = 65;
 
 export class PrometheusSourceUnavailableError extends Error {
   constructor() {
@@ -16,6 +17,7 @@ export interface PrometheusQueryRangeRequest {
   startEpochSeconds: number;
   endEpochSeconds: number;
   stepSeconds: number;
+  maxSeries?: number;
 }
 
 export interface PrometheusTransport {

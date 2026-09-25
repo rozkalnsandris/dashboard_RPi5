@@ -21,6 +21,7 @@ import {
 } from "@dashboard-rpi5/contracts/endpoints";
 import {
   DashboardApiErrorSchema,
+  DockerTopConsumersSnapshotSchema,
   HostHistoryQuerySchema,
   HostHistorySnapshotSchema,
 } from "@dashboard-rpi5/contracts/history";
@@ -61,6 +62,7 @@ import {
   createDeploymentStatusReader,
   type DeploymentStatusReader,
 } from "./deployment-status.js";
+import { createDockerHistoryReader, type DockerHistoryReader } from "./docker-history.js";
 import { createGithubRpi5MainReader } from "./github-rpi5-main-client.js";
 import { createHostHistoryReader, type HostHistoryReader } from "./host-history.js";
 import { applyHttpResponsePolicy } from "./http-response-policy.js";
@@ -80,6 +82,7 @@ import {
 interface BuildAppOptions {
   staticRoot?: string;
   historyReader?: HostHistoryReader;
+  dockerHistoryReader?: DockerHistoryReader;
   servicesReader?: ServicesReader;
   activityReader?: ActivityReader;
   backupStatusReader?: BackupStatusReader;
@@ -92,11 +95,15 @@ interface BuildAppOptions {
   terminalLocalConnector?: TerminalLocalConnector;
 }
 
+function prometheusOptions(): { prometheusBaseUrl?: string } {
+  return process.env.DASHBOARD_PROMETHEUS_URL === undefined
+    ? {}
+    : { prometheusBaseUrl: process.env.DASHBOARD_PROMETHEUS_URL };
+}
+
 function buildDefaultHistoryReader(): HostHistoryReader {
   return createHostHistoryReader({
-    ...(process.env.DASHBOARD_PROMETHEUS_URL === undefined
-      ? {}
-      : { prometheusBaseUrl: process.env.DASHBOARD_PROMETHEUS_URL }),
+    ...prometheusOptions(),
     ...(process.env.DASHBOARD_PROMETHEUS_NODE_INSTANCE === undefined
       ? {}
       : { nodeInstance: process.env.DASHBOARD_PROMETHEUS_NODE_INSTANCE }),
@@ -107,6 +114,10 @@ function buildDefaultHistoryReader(): HostHistoryReader {
       ? {}
       : { grafanaDashboardPath: process.env.DASHBOARD_GRAFANA_HOST_DASHBOARD_PATH }),
   });
+}
+
+function buildDefaultDockerHistoryReader(): DockerHistoryReader {
+  return createDockerHistoryReader(prometheusOptions());
 }
 
 function agentSocketOptions(): { socketPath?: string } {
@@ -171,6 +182,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   registerTerminalWebSocketPlugin(app);
 
   const historyReader = options.historyReader ?? buildDefaultHistoryReader();
+  const dockerHistoryReader = options.dockerHistoryReader ?? buildDefaultDockerHistoryReader();
   const servicesReader = options.servicesReader ?? buildDefaultServicesReader();
   const activityReader = options.activityReader ?? buildDefaultActivityReader(servicesReader);
   const backupStatusReader = options.backupStatusReader ?? buildDefaultBackupStatusReader();
@@ -226,6 +238,32 @@ export function buildApp(options: BuildAppOptions = {}) {
 
       try {
         return await historyReader(request.query.range);
+      } catch {
+        return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/history/docker/top",
+    {
+      attachValidation: true,
+      schema: {
+        querystring: HostHistoryQuerySchema,
+        response: {
+          200: DockerTopConsumersSnapshotSchema,
+          400: DashboardApiErrorSchema,
+          503: DashboardApiErrorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (request.validationError !== undefined) {
+        return reply.code(400).send({ error: "INVALID_REQUEST" });
+      }
+
+      try {
+        return await dockerHistoryReader(request.query.range);
       } catch {
         return reply.code(503).send({ error: "SOURCE_UNAVAILABLE" });
       }

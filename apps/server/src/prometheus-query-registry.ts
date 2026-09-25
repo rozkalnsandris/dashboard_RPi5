@@ -1,4 +1,7 @@
-import type { HostHistoryRegistryMetric } from "@dashboard-rpi5/contracts/history";
+import type {
+  DockerHistoryMetric,
+  HostHistoryRegistryMetric,
+} from "@dashboard-rpi5/contracts/history";
 
 import { PrometheusSourceUnavailableError } from "./prometheus-types.js";
 
@@ -107,5 +110,18 @@ export function buildHostPromqlRegistry(
     DISK_READ_BYTES_PER_SECOND: `sum(rate(${diskRead}[5m]))`,
     DISK_WRITE_BYTES_PER_SECOND: `sum(rate(${diskWritten}[5m]))`,
     UPTIME_SECONDS: `time() - max(${bootTime})`,
+  });
+}
+
+export function buildDockerTopConsumersPromqlRegistry(): Readonly<
+  Record<DockerHistoryMetric, string>
+> {
+  const jobMatcher = ['job="dashboard-rpi5-container-metrics"'];
+  const cpu = selector("container_cpu_usage_seconds_total", jobMatcher);
+  const memory = selector("container_memory_working_set_bytes", jobMatcher);
+
+  return Object.freeze({
+    CPU_PERCENT: `100 * rate(${cpu}[5m])`,
+    MEMORY_WORKING_SET_BYTES: memory,
   });
 }
