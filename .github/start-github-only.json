@@ -9,6 +9,14 @@
     "minimum_machine_schema": 2,
     "adoption_version": "2026-08-26.1"
   },
+  "github_api_access": {
+    "consumer_manifest": ".github/github-api-access-v1.json",
+    "shared_contract_revision": "3bb0740b5f0a8ce631d2ff79f1acc4999ff6ed2c",
+    "applies_to": ["START", "SYNC", "turpini"],
+    "serial_by_default": true,
+    "minimum_sufficient_retrieval": true,
+    "tight_polling_allowed": false
+  },
   "authority": {
     "repository_rules": ["AGENTS.md"],
     "master_sources": [{"type": "issue", "number": 1}],
