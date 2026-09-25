@@ -214,7 +214,7 @@ test("controller bootstrap provenance contract binds merged PR head to tree-equi
   const contract = JSON.parse(
     await readFile(new URL("../ops/production/controller-bootstrap-provenance-contract.json", import.meta.url), "utf8"),
   );
-  assert.equal(contract.schema, "dashboard-rpi5.controller-bootstrap-provenance.v1");
+  assert.equal(contract.schema, "dashboard-rpi5.controller-bootstrap-provenance.v2");
   assert.equal(contract.sourceOnly, true);
   assert.equal(contract.profile, PRODUCTION_CANDIDATE_PROFILE_CONTROLLER_BOOTSTRAP_V1);
   assert.equal(contract.bridgeSource.requiredProvenance, "merged-pr-exact-head");
