@@ -11,7 +11,7 @@ After=local-fs.target dashboard-rpi5-docker-broker.service
 
 [Service]
 Type=exec
-User=dashboard-rpi5-container-metrics-exporter
+User=dashboard-rpi5-metrics
 DynamicUser=yes
 SupplementaryGroups=dashboard-rpi5-docker-client
 WorkingDirectory=/opt/dashboard_RPi5/current
