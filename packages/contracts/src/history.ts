@@ -101,6 +101,81 @@ export const HostHistorySnapshotSchema = Type.Object(
 
 export type HostHistorySnapshot = Static<typeof HostHistorySnapshotSchema>;
 
+export const DockerHistoryMetricSchema = Type.Union([
+  Type.Literal("CPU_PERCENT"),
+  Type.Literal("MEMORY_WORKING_SET_BYTES"),
+]);
+
+export type DockerHistoryMetric = Static<typeof DockerHistoryMetricSchema>;
+
+const ComposeComponentSchema = Type.String({
+  minLength: 1,
+  maxLength: 128,
+  pattern: "^[a-z0-9][a-z0-9_.-]{0,127}$",
+});
+
+export const DockerHistoryIdentitySchema = Type.Object(
+  {
+    composeProject: ComposeComponentSchema,
+    composeService: ComposeComponentSchema,
+    composeContainerNumber: Type.String({ pattern: "^[1-9][0-9]{0,9}$" }),
+  },
+  { additionalProperties: false },
+);
+
+export type DockerHistoryIdentity = Static<typeof DockerHistoryIdentitySchema>;
+
+export const DockerTopConsumerSchema = Type.Object(
+  {
+    identity: DockerHistoryIdentitySchema,
+    latest: Type.Number({ minimum: 0 }),
+    average: Type.Number({ minimum: 0 }),
+    maximum: Type.Number({ minimum: 0 }),
+    points: Type.Array(HistoryPointSchema, { minItems: 1, maxItems: 337 }),
+  },
+  { additionalProperties: false },
+);
+
+export type DockerTopConsumer = Static<typeof DockerTopConsumerSchema>;
+
+const AvailableDockerTopRankingSchema = Type.Object(
+  {
+    metric: DockerHistoryMetricSchema,
+    state: Type.Literal("AVAILABLE"),
+    consumers: Type.Array(DockerTopConsumerSchema, { minItems: 1, maxItems: 5 }),
+  },
+  { additionalProperties: false },
+);
+
+const UnavailableDockerTopRankingSchema = Type.Object(
+  {
+    metric: DockerHistoryMetricSchema,
+    state: Type.Literal("UNAVAILABLE"),
+    consumers: Type.Array(DockerTopConsumerSchema, { maxItems: 0 }),
+  },
+  { additionalProperties: false },
+);
+
+export const DockerTopRankingSchema = Type.Union([
+  AvailableDockerTopRankingSchema,
+  UnavailableDockerTopRankingSchema,
+]);
+
+export type DockerTopRanking = Static<typeof DockerTopRankingSchema>;
+
+export const DockerTopConsumersSnapshotSchema = Type.Object(
+  {
+    observedAt: Type.String({ format: "date-time" }),
+    range: HistoryRangeSchema,
+    windowStart: Type.String({ format: "date-time" }),
+    windowEnd: Type.String({ format: "date-time" }),
+    rankings: Type.Array(DockerTopRankingSchema, { minItems: 2, maxItems: 2 }),
+  },
+  { additionalProperties: false },
+);
+
+export type DockerTopConsumersSnapshot = Static<typeof DockerTopConsumersSnapshotSchema>;
+
 export const DashboardApiErrorCodeSchema = Type.Union([
   Type.Literal("INVALID_REQUEST"),
   Type.Literal("SOURCE_UNAVAILABLE"),

@@ -1,5 +1,6 @@
 import {
   PROMETHEUS_DEFAULT_BASE_URL,
+  PROMETHEUS_MAX_QUERY_SERIES,
   PROMETHEUS_MAX_RESPONSE_BYTES,
   PROMETHEUS_QUERY_RANGE_PATH,
   PROMETHEUS_QUERY_TIMEOUT,
@@ -30,6 +31,7 @@ export function buildPrometheusQueryRangeUrl(
   baseUrl: URL,
   request: PrometheusQueryRangeRequest,
 ): URL {
+  const maxSeries = request.maxSeries ?? 1;
   if (
     request.query.length === 0 ||
     request.query.length > 4_096 ||
@@ -38,7 +40,10 @@ export function buildPrometheusQueryRangeUrl(
     !Number.isSafeInteger(request.stepSeconds) ||
     request.startEpochSeconds < 0 ||
     request.endEpochSeconds < request.startEpochSeconds ||
-    request.stepSeconds <= 0
+    request.stepSeconds <= 0 ||
+    !Number.isSafeInteger(maxSeries) ||
+    maxSeries <= 0 ||
+    maxSeries > PROMETHEUS_MAX_QUERY_SERIES
   ) {
     throw new PrometheusSourceUnavailableError();
   }
@@ -49,7 +54,7 @@ export function buildPrometheusQueryRangeUrl(
   url.searchParams.set("end", String(request.endEpochSeconds));
   url.searchParams.set("step", `${request.stepSeconds}s`);
   url.searchParams.set("timeout", PROMETHEUS_QUERY_TIMEOUT);
-  url.searchParams.set("limit", "1");
+  url.searchParams.set("limit", String(maxSeries));
   return url;
 }
 

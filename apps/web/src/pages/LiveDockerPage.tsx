@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, ShieldAlert } from "lucide-react";
 
 import { CurrentDockerView } from "../components/CurrentDockerView";
+import { DockerTopConsumersPanel } from "../components/DockerTopConsumersPanel";
 import { fetchCurrentDocker } from "../current-state-api";
 
 const REFRESH_MS = 10_000;
@@ -61,6 +62,8 @@ export function LiveDockerPage() {
           </div>
         </>
       ) : null}
+
+      <DockerTopConsumersPanel />
     </section>
   );
 }
