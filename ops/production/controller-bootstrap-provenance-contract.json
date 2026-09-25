@@ -1,8 +1,21 @@
 {
-  "schema": "dashboard-rpi5.controller-bootstrap-provenance.v1",
+  "schema": "dashboard-rpi5.controller-bootstrap-provenance.v2",
   "sourceOnly": true,
-  "profile": "controller-bootstrap-v1",
+  "bootstrapProfile": "controller-bootstrap-v1",
+  "transitionProfile": "controller-transition-v1",
   "bridgeSource": {
+    "requiredProvenance": "merged-pr-exact-head",
+    "requiresMergedPullRequest": true,
+    "requiresExactHeadCiSuccess": true,
+    "requiresTreeEqualityWithSquashMergeMain": true,
+    "requiresDistinctShaFromFullMain": true
+  },
+  "transitionController": {
+    "trustedControllerSourceSha": "bc4cc9f1d49b97d8c5df65158640c4e3df3e7769",
+    "requiredFileRootCount": 33,
+    "requiresExactFileRootEquality": true
+  },
+  "transitionSource": {
     "requiredProvenance": "merged-pr-exact-head",
     "requiresMergedPullRequest": true,
     "requiresExactHeadCiSuccess": true,
@@ -12,12 +25,21 @@
   "fullSource": {
     "requiredProvenance": "fresh-current-main",
     "requiresExactMainCiSuccess": true,
-    "requiresDifferentShaFromBridge": true
+    "requiresDifferentShaFromBridge": true,
+    "requiresDifferentShaFromTransition": true,
+    "requiresTreeEqualityWithTransition": true
   },
+  "sequence": [
+    "controller-bootstrap-v1",
+    "controller-transition-v1",
+    "full"
+  ],
   "forbidden": [
     "unmerged-pr-head",
     "tree-mismatch",
+    "transition-profile-root-drift",
     "same-sha-full-expansion",
+    "same-sha-transition-full-expansion",
     "in-place-immutable-release-expansion",
     "empty-or-noop-commit-created-only-to-manufacture-sha"
   ],
