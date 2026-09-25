@@ -52,7 +52,9 @@ describe("Docker history UI contract", () => {
 
   it("rejects duplicate metrics, malformed identities, and inconsistent summaries", () => {
     const duplicateMetric = fixture();
-    duplicateMetric.rankings[1] = { ...duplicateMetric.rankings[0] };
+    const firstRanking = duplicateMetric.rankings[0];
+    if (firstRanking === undefined) throw new Error("fixture must include a ranking");
+    duplicateMetric.rankings[1] = { ...firstRanking };
     expect(() => parseDockerTopConsumersSnapshot(duplicateMetric)).toThrow();
 
     const malformedIdentity = fixture();
