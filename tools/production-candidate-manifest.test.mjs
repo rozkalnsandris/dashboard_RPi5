@@ -216,7 +216,7 @@ test("controller bootstrap provenance contract binds merged PR head to tree-equi
   );
   assert.equal(contract.schema, "dashboard-rpi5.controller-bootstrap-provenance.v2");
   assert.equal(contract.sourceOnly, true);
-  assert.equal(contract.profile, PRODUCTION_CANDIDATE_PROFILE_CONTROLLER_BOOTSTRAP_V1);
+  assert.equal(contract.bootstrapProfile, PRODUCTION_CANDIDATE_PROFILE_CONTROLLER_BOOTSTRAP_V1);
   assert.equal(contract.bridgeSource.requiredProvenance, "merged-pr-exact-head");
   assert.equal(contract.bridgeSource.requiresMergedPullRequest, true);
   assert.equal(contract.bridgeSource.requiresExactHeadCiSuccess, true);
