@@ -11,6 +11,7 @@ export const PRODUCTION_CANDIDATE_SCHEMA = "dashboard-rpi5.production-candidate.
 export const PRODUCTION_CANDIDATE_HASH = "sha256";
 export const PRODUCTION_CANDIDATE_PROFILE_FULL = "full";
 export const PRODUCTION_CANDIDATE_PROFILE_CONTROLLER_BOOTSTRAP_V1 = "controller-bootstrap-v1";
+export const PRODUCTION_CANDIDATE_PROFILE_CONTROLLER_TRANSITION_V1 = "controller-transition-v1";
 
 export const PRODUCTION_CANDIDATE_DIRECTORY_ROOTS = Object.freeze([
   "apps/web/dist",
@@ -87,10 +88,49 @@ export const PRODUCTION_CANDIDATE_CONTROLLER_BOOTSTRAP_V1_FILE_ROOTS = Object.fr
   "tools/production-host-readiness.mjs",
 ]);
 
+export const PRODUCTION_CANDIDATE_CONTROLLER_TRANSITION_V1_FILE_ROOTS = Object.freeze([
+  "package.json",
+  "package-lock.json",
+  "apps/web/package.json",
+  "apps/server/package.json",
+  "apps/agent/package.json",
+  "apps/agent/dist/log-broker-entry.js",
+  "apps/terminal-agent/package.json",
+  "packages/contracts/package.json",
+  "ops/production/launch-contract.json",
+  "ops/production/web.env.example",
+  "ops/production/terminal.env.example",
+  "ops/production/smoke-contract.json",
+  "ops/production/cloudflare-contract.json",
+  "ops/production/cloudflare.env.example",
+  "ops/production/release-activation-contract.json",
+  "ops/production/host-readiness-contract.json",
+  "ops/production/container-metrics-source-contract.json",
+  "ops/production/container-metrics-activation-contract.json",
+  "ops/production/container-metrics-firewall-contract.json",
+  "ops/production/container-metrics-exporter.env.example",
+  "ops/prometheus/container-metrics-scrape.yml",
+  "ops/systemd/dashboard-rpi5-web.service",
+  "ops/systemd/dashboard-rpi5-agent.service",
+  "ops/systemd/dashboard-rpi5-log-broker.service",
+  "ops/systemd/dashboard-rpi5-docker-broker.service",
+  "ops/systemd/dashboard-rpi5-container-metrics-exporter.service",
+  "ops/systemd/dashboard-rpi5-terminal.socket",
+  "ops/systemd/dashboard-rpi5-terminal@.service",
+  "tools/package-terminal-native-runtime.mjs",
+  "tools/production-candidate-manifest.mjs",
+  "tools/production-runtime-smoke.mjs",
+  "tools/production-release-controller.mjs",
+  "tools/production-host-readiness.mjs",
+]);
+
 export function productionCandidateFileRoots(profile = PRODUCTION_CANDIDATE_PROFILE_FULL) {
   if (profile === PRODUCTION_CANDIDATE_PROFILE_FULL) return PRODUCTION_CANDIDATE_FILE_ROOTS;
   if (profile === PRODUCTION_CANDIDATE_PROFILE_CONTROLLER_BOOTSTRAP_V1) {
     return PRODUCTION_CANDIDATE_CONTROLLER_BOOTSTRAP_V1_FILE_ROOTS;
+  }
+  if (profile === PRODUCTION_CANDIDATE_PROFILE_CONTROLLER_TRANSITION_V1) {
+    return PRODUCTION_CANDIDATE_CONTROLLER_TRANSITION_V1_FILE_ROOTS;
   }
   throw new Error(`unknown production candidate profile: ${profile}`);
 }
@@ -429,7 +469,7 @@ function parseCli(argv) {
     else throw new Error("unknown CLI argument");
   }
   if (rootDir === undefined || sourceSha === undefined) {
-    throw new Error("usage: node tools/production-candidate-manifest.mjs --root <repo> --sha <40-hex-sha> [--profile full|controller-bootstrap-v1] [--verify <manifest.json>]");
+    throw new Error("usage: node tools/production-candidate-manifest.mjs --root <repo> --sha <40-hex-sha> [--profile full|controller-bootstrap-v1|controller-transition-v1] [--verify <manifest.json>]");
   }
   productionCandidateFileRoots(profile);
   return { rootDir, sourceSha, verifyPath, profile };
