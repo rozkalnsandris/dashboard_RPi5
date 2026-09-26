@@ -1,0 +1,107 @@
+name: Work-cycle v2.3 conformance
+
+on:
+  pull_request:
+    paths:
+      - '.github/agent-bootstrap.json'
+      - '.github/work-cycle-v23.json'
+      - '.github/github-api-access-v1.json'
+      - '.github/start-github-only.json'
+      - 'AGENTS.md'
+      - 'docs/WORK_CYCLE_V23_ADOPTION.md'
+      - '.github/workflows/work-cycle-v23-conformance.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/agent-bootstrap.json'
+      - '.github/work-cycle-v23.json'
+      - '.github/github-api-access-v1.json'
+      - '.github/start-github-only.json'
+      - 'AGENTS.md'
+      - 'docs/WORK_CYCLE_V23_ADOPTION.md'
+      - '.github/workflows/work-cycle-v23-conformance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout dashboard_RPi5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout accepted shared work-cycle contract
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: rozkalnsandris/ops-workflows
+          ref: 274d58f2d9d3cb86feded2751b8f9009a4501f6b
+          path: .work-cycle-shared
+          persist-credentials: false
+
+      - name: Validate bootstrap manifest with canonical validator
+        run: >-
+          python3 .work-cycle-shared/scripts/agent_bootstrap_manifest.py
+          .github/agent-bootstrap.json
+          --repo-root .
+
+      - name: Validate dashboard adapter and local stricter-rule preservation
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          adapter = json.loads(Path('.github/work-cycle-v23.json').read_text())
+          api = json.loads(Path('.github/github-api-access-v1.json').read_text())
+          start = json.loads(Path('.github/start-github-only.json').read_text())
+          bootstrap = json.loads(Path('.github/agent-bootstrap.json').read_text())
+          agents = Path('AGENTS.md').read_text()
+
+          assert adapter['schema'] == 'rozkalns.work-cycle-v23.consumer.v1'
+          assert adapter['canonical_revision'] == '274d58f2d9d3cb86feded2751b8f9009a4501f6b'
+          assert adapter['bootstrap_manifest']['mutable_operational_truth_allowed'] is False
+          assert adapter['start_contract']['safe_auto_continuation'] is True
+          assert adapter['start_contract']['compact_terminal_response'] is True
+          assert adapter['start_contract']['local_owner_gates_preserved'] is True
+
+          preflight = adapter['write_preflight']
+          assert preflight['status'] == 'ADOPTED'
+          assert preflight['contract'] == 'WRITE_PREFLIGHT_COMPACT_V1'
+          assert preflight['exact_existing_intent'] == 'RECONCILE_OR_NOOP'
+          assert preflight['conflicting_identity'] == 'STOP'
+          assert preflight['stale_writer'] == 'STOP'
+          assert preflight['duplicate_framework_created'] is False
+
+          normalized = adapter['auto_run_full_normalized_state']
+          assert normalized['status'] == 'NOT_APPLICABLE'
+          assert normalized['controller_created'] is False
+          assert normalized['historical_state_rewritten'] is False
+          assert not Path('.github/auto-run-full-v2.json').exists()
+
+          assert bootstrap['automation']['fast_lane'] is True
+          assert bootstrap['automation']['auto_run_full'] is False
+          assert bootstrap['automation']['queue_mode'] == 'not-applicable'
+          assert bootstrap['deployment_profile'] == 'custom'
+
+          assert api['mutation_boundary']['expected_head_binding_required_when_supported'] is True
+          assert api['mutation_boundary']['post_dispatch_uncertainty_fail_closed'] is True
+          assert api['local_stricter_rules']['simple_deploy_activation_created'] is False
+          assert start['merge']['explicit_owner_authorization'] is True
+          assert start['merge']['bind_expected_head_sha'] is True
+
+          assert 'Never merge without an explicit owner instruction' in agents
+          assert 'Merge authorization is not deploy authorization' in agents
+          assert 'Require separate explicit owner authorization' in agents
+
+          deployment = adapter['deployment']
+          assert deployment['profile'] == 'custom'
+          assert deployment['simple_deploy_activated'] is False
+          assert deployment['production_deploy_authority_created'] is False
+
+          authority = adapter['authority']
+          assert not any(authority.values())
+          print('WORK_CYCLE_V23_DASHBOARD_CONFORMANCE=PASS')
+          PY
