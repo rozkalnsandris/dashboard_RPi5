@@ -52,3 +52,27 @@ test('synthetic ambiguous post-dispatch outcomes never permit duplicate mutation
     assert.equal(outcome.stop, true);
   }
 });
+
+
+const rdcFallback = JSON.parse(readFileSync('.github/github-first-rdc-v1.json', 'utf8'));
+const rdcRules = readFileSync('AGENTS.md', 'utf8');
+test('pinned GitHub-first policy and existing dashboard authority', () => {
+  assert.equal(rdcFallback.schema, 'rozkalns.github-first-rdc-fallback.consumer.v1');
+  assert.equal(rdcFallback.repository, 'rozkalnsandris/dashboard_RPi5');
+  assert.equal(rdcFallback.canonical_revision, '4e89b75d7f496dfb43fd9c1eb10a995fad53fdd8');
+  assert.match(rdcRules, /GitHub-first \/ bounded RDC fallback v1/);
+  for (const value of Object.values(rdcFallback.local)) assert.equal(value, true);
+});
+test('GitHub and Actions outrank bounded host fallback', () => {
+  assert.equal(rdcFallback.selection.github_equivalent_mandatory, true);
+  assert.equal(rdcFallback.selection.github_actions_when_equivalent, true);
+  assert.equal(rdcFallback.selection.rdc_for_convenience, false);
+  assert.deepEqual(rdcFallback.rdc_exception.record_fields, ["STEP","REPOSITORY_AND_TARGET","GITHUB_CAPABILITY_CHECKED","PRECISE_CAPABILITY_GAP","GITHUB_CI_NOT_EQUIVALENT_REASON","MINIMAL_RDC_OPERATION","EXISTING_AUTHORIZATION","GITHUB_RETURN_EVIDENCE"]);
+  assert.equal(rdcFallback.guardrails.duplicate_rdc_write_forbidden, true);
+});
+test('routing decision fixtures fail closed', () => {
+  const route = ([, github, actions, host, error, authority]) =>
+    error ? 'STOP' : github ? 'GITHUB' : actions ? 'GITHUB_ACTIONS' :
+    host && authority ? 'RDC_EXCEPTION' : 'STOP';
+  for (const item of rdcFallback.decision_cases) assert.equal(route(item), item[6], item[0]);
+});
