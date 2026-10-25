@@ -1,0 +1,55 @@
+{
+  "schema": "rozkalns.github-first-rdc-fallback.consumer.v1",
+  "repository": "rozkalnsandris/dashboard_RPi5",
+  "canonical_revision": "4e89b75d7f496dfb43fd9c1eb10a995fad53fdd8",
+  "tracking_issue": 296,
+  "status": "SOURCE_ONLY",
+  "selection": {
+    "per_step": true,
+    "github_equivalent_mandatory": true,
+    "github_actions_when_equivalent": true,
+    "rdc_for_convenience": false
+  },
+  "rdc_exception": {
+    "host_only": true,
+    "github_gap_required": true,
+    "actions_equivalence_checked": true,
+    "existing_authority_required": true,
+    "minimum_action": true,
+    "record_fields": [
+      "STEP",
+      "REPOSITORY_AND_TARGET",
+      "GITHUB_CAPABILITY_CHECKED",
+      "PRECISE_CAPABILITY_GAP",
+      "GITHUB_CI_NOT_EQUIVALENT_REASON",
+      "MINIMAL_RDC_OPERATION",
+      "EXISTING_AUTHORIZATION",
+      "GITHUB_RETURN_EVIDENCE"
+    ]
+  },
+  "guardrails": {
+    "github_error_stops": true,
+    "uncertain_write_stops": true,
+    "duplicate_rdc_write_forbidden": true,
+    "merge_live_unchanged": true
+  },
+  "local": {
+    "master_issue_1": true,
+    "security_model_unchanged": true,
+    "explicit_merge": true,
+    "separate_live": true,
+    "fast_lane_unchanged": true,
+    "github_only_live_all_explicit": true,
+    "no_runtime_change": true
+  },
+  "decision_cases": [
+    ["source", true, false, false, false, true, "GITHUB"],
+    ["ci", false, true, false, false, true, "GITHUB_ACTIONS"],
+    ["authorized-host", false, false, true, false, true, "RDC_EXCEPTION"],
+    ["no-live", false, false, true, false, false, "STOP"],
+    ["github-denied", false, false, true, true, true, "STOP"],
+    ["github-uncertain-write", false, false, false, true, true, "STOP"],
+    ["no-host-need", false, false, false, false, true, "STOP"],
+    ["rdc-convenience", true, false, true, false, true, "GITHUB"]
+  ]
+}
