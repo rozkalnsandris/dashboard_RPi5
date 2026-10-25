@@ -34,7 +34,12 @@ jobs:
         run: |
           set -euo pipefail
           npm install --package-lock-only --ignore-scripts
+          set +e
           npm audit fix --package-lock-only --ignore-scripts
+          audit_fix_status=$?
+          set -e
+          echo "npm audit fix exit code: $audit_fix_status"
+          npm audit --audit-level=high
           mapfile -t changed < <(git diff --name-only)
           [[ ${#changed[@]} -eq 1 ]]
           [[ "${changed[0]}" == "package-lock.json" ]]
