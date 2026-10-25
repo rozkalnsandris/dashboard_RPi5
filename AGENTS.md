@@ -18,6 +18,15 @@ Do not trust stale chat state when GitHub has moved.
 
 Before any merge/deploy decision, refresh current GitHub evidence.
 
+## GitHub-first / bounded RDC fallback v1
+
+Adopted shared contract: `rozkalnsandris/ops-workflows@4e89b75d7f496dfb43fd9c1eb10a995fad53fdd8` (`docs/GITHUB_FIRST_RDC_FALLBACK_V1.md`, `policy/github-first-rdc-fallback-v1.json`). Local adapter: `.github/github-first-rdc-v1.json`.
+
+- Decide **per step**. Connected GitHub tools are mandatory for source, commits, issues, PRs, CI, reviews and canonical repo state when equivalent; GitHub Actions for equivalent safe source tests. RDC or host shell is not a convenience GitHub substitute.
+- RDC is a **minimal authorized host-only exception**, where GitHub tools and hosted CI cannot give equivalent evidence. Before use, establish precise capability gap, why Actions cannot replace it, existing authorization, bounded host action and sanitized return evidence. Never expose host-private or credential data publicly.
+- If GitHub denies access, fails, rate limits, times out or a mutation outcome is uncertain, **STOP**. Do not switch to RDC, repeat the write or perform an unauthorized recovery.
+- This is tool priority, **not new authority**. Issue #1, SECURITY.md, owner MERGE, separate production/LIVE approvals, Cloudflare, Docker, systemd, agent, PTY, secrets, permissions and existing FAST-LANE/GITHUB-ONLY/LIVE-ALL boundaries prevail.
+
 ## 2. Canonical product contract
 
 Read first:
