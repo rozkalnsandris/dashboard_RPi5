@@ -16,7 +16,7 @@ concurrency:
 jobs:
   classify:
     name: FAST-LANE classify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       mode: ${{ steps.scope.outputs.mode }}
@@ -75,7 +75,7 @@ jobs:
   check:
     needs: classify
     if: needs.classify.outputs.core == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout exact source SHA
@@ -207,7 +207,7 @@ jobs:
     name: FAST-LANE Merge Gate
     needs: [classify, check, terminal-native]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Verify required validation results
