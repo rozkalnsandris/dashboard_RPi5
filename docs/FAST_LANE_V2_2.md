@@ -105,6 +105,12 @@ The current dashboard CI remains risk-scoped and fail-open:
 
 The classifier implementation remains `tools/ci-scope.mjs` with focused tests in `tools/ci-scope.test.mjs`. Pushes to `main` are classified from exact before/after SHAs; missing or ambiguous comparison evidence fails open. The stable aggregate status remains `FAST-LANE Merge Gate`.
 
+### CI run cost and trust boundaries
+
+The full source-validation workflow uses the ordinary GitHub `pull_request` source-change events (`opened`, `synchronize`, `reopened`) and `push` to `main`. Pure PR review-state toggles (`ready_for_review`, `converted_to_draft`) do not change the reviewed head and do not trigger a duplicate full CI. Any new commit or reopened PR still triggers CI; the required `FAST-LANE Merge Gate` and exact-head CI validation remain mandatory.
+
+The GitHub-hosted core `check` job verifies that preinstalled `make`, `g++`, and `python3` are present before a runtime-classified `node-pty` source rebuild. It fails closed when a prerequisite is missing instead of running an unconditional privileged `apt-get update/install` for every qualifying change. Locked dependencies, dependency audit, rebuilt native binding, candidate/runtime verification, unit/type/lint/build tests and responsive Playwright remain unchanged. The separately gated x64/arm64 PTY matrix keeps its existing toolchain installation and native tests.
+
 ## Evidence and operator UX
 
 Use one Ready receipt for source work and one final live receipt after a Composite Live execution. Do not ask the owner to shuttle intermediate command output unless execution has genuinely stopped.

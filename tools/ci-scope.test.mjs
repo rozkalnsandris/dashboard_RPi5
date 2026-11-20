@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { classifyPaths } from "./ci-scope.mjs";
 
@@ -78,4 +79,42 @@ test("workflow, dependency, host-boundary and unknown changes fail open to full 
 test("missing diff evidence fails open to full CI", () => {
   assert.equal(classifyPaths([]).mode, "full");
   assert.equal(classifyPaths(["", "   "]).terminal, true);
+});
+
+test("CI does not rerun unchanged PR heads on review-state toggles", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  assert.match(workflow, /pull_request:\\n\\s+types: \\[opened, synchronize, reopened\\]/);
+  assert.match(workflow, /push:\\n\\s+branches: \\[main\\]/);
+  assert.doesNotMatch(workflow, /ready_for_review|converted_to_draft/);
+});
+
+test("CI validates preinstalled native compiler tools without apt installs in the core job", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  const start = workflow.indexOf("\\n  check:");
+  const end = workflow.indexOf("\\n  terminal-native:");
+  assert.ok(start >= 0 && end > start);
+  const core = workflow.slice(start, end);
+  assert.match(core, /Verify preinstalled native toolchain/);
+  for (const command of ["make", "g++", "python3"]) {
+    assert.ok(core.includes(`command -v ${command}`), command);
+  }
+  assert.doesNotMatch(core, /sudo apt-get/);
+  for (const preserved of [
+    "npm ci --ignore-scripts",
+    "npm audit --audit-level=high",
+    "npm rebuild node-pty",
+    "npm run typecheck",
+    "npm run lint",
+    "npm run test",
+    "npm run build",
+    "production-candidate-manifest.mjs",
+    "production-runtime-smoke.mjs",
+    "npm run test:e2e",
+  ]) {
+    assert.ok(core.includes(preserved), preserved);
+  }
+  const native = workflow.slice(end);
+  assert.match(native, /ubuntu-24\\.04-arm/);
+  assert.match(native, /npm run test:native:packaged/);
+  assert.match(native, /FAST-LANE Merge Gate/);
 });
