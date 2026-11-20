@@ -62,6 +62,7 @@ Items are deduplicated by stable normalized identity, sorted newest-first and ca
 
 The Activity page provides:
 
+- **20 newest matching events initially**; a keyboard-accessible, 48px-minimum touch target reveals up to 20 more matching entries per explicit click, without ever exceeding the fixed server-owned 256-item snapshot. Only the displayed slice is rendered as timeline rows. Source/severity changes reset the displayed slice to 20, while periodic refresh preserves the user's selected expansion limit. The status distinguishes displayed, matching, and total bounded counts; no evidence is deleted, no additional API requests or browser query selectors are introduced by Show more;
 - five-second visible-only bounded refresh;
 - source filter: All / Docker / Services;
 - severity filter: All / Info / Attention / Critical;
