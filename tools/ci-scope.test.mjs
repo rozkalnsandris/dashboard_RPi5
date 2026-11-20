@@ -83,15 +83,15 @@ test("missing diff evidence fails open to full CI", () => {
 
 test("CI does not rerun unchanged PR heads on review-state toggles", () => {
   const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
-  assert.match(workflow, /pull_request:\\n\\s+types: \\[opened, synchronize, reopened\\]/);
-  assert.match(workflow, /push:\\n\\s+branches: \\[main\\]/);
+  assert.match(workflow, /pull_request:\n\s+types: \[opened, synchronize, reopened\]/);
+  assert.match(workflow, /push:\n\s+branches: \[main\]/);
   assert.doesNotMatch(workflow, /ready_for_review|converted_to_draft/);
 });
 
 test("CI validates preinstalled native compiler tools without apt installs in the core job", () => {
   const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
-  const start = workflow.indexOf("\\n  check:");
-  const end = workflow.indexOf("\\n  terminal-native:");
+  const start = workflow.indexOf("\n  check:");
+  const end = workflow.indexOf("\n  terminal-native:");
   assert.ok(start >= 0 && end > start);
   const core = workflow.slice(start, end);
   assert.match(core, /Verify preinstalled native toolchain/);
@@ -114,7 +114,7 @@ test("CI validates preinstalled native compiler tools without apt installs in th
     assert.ok(core.includes(preserved), preserved);
   }
   const native = workflow.slice(end);
-  assert.match(native, /ubuntu-24\\.04-arm/);
+  assert.match(native, /ubuntu-24\.04-arm/);
   assert.match(native, /npm run test:native:packaged/);
   assert.match(native, /FAST-LANE Merge Gate/);
 });
