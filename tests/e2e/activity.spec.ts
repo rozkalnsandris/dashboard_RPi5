@@ -100,7 +100,7 @@ test("Activity renders bounded live evidence including normalized endpoint trans
 
   await page.goto("/activity");
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
-  await expect(page.getByText("7 visible / 7 bounded events")).toBeVisible();
+  await expect(page.getByText("7 shown / 7 matching · 7 bounded events")).toBeVisible();
   await expect(page.getByText("homeassistant out of memory")).toBeVisible();
   await expect(page.getByText("Hermes Tech is down")).toBeVisible();
   await expect(page.getByText("Deploy verified")).toBeVisible();
@@ -214,4 +214,63 @@ test("Activity complete source failure remains unavailable, not empty", async ({
   await page.goto("/activity");
   await expect(page.getByText("Activity evidence unavailable")).toBeVisible();
   await expect(page.getByText("Loading activity…")).toHaveCount(0);
+});
+
+test("Activity initially renders 20 of 55 events, expands on demand and resets after filter changes", async ({ page }) => {
+  const newest = Date.parse("2026-08-15T16:59:00.000Z");
+  const items = Array.from({ length: 55 }, (_, index) => ({
+    ...activityPayload.items[0]!,
+    id: `docker:activity-${String(index).padStart(3, "0")}`,
+    occurredAt: new Date(newest - index * 1_000).toISOString(),
+    severity: index % 2 === 0 ? "CRITICAL" : "INFO",
+    title: `activity event ${index + 1}`,
+  }));
+  await page.route("**/api/activity", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ...activityPayload, items }),
+    }),
+  );
+
+  await page.goto("/activity");
+  const rows = page.locator(".activity-timeline--live > li");
+  await expect(rows).toHaveCount(20);
+  await expect(page.getByText("20 shown / 55 matching · 55 bounded events")).toBeVisible();
+  await expect(page.getByText("activity event 20", { exact: true })).toBeVisible();
+  await expect(page.getByText("activity event 21", { exact: true })).toHaveCount(0);
+
+  const more20 = page.getByRole("button", { name: "Show 20 more events" });
+  await expect(more20).toBeVisible();
+  expect(await more20.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(48);
+  await more20.click();
+  await expect(rows).toHaveCount(40);
+  await expect(page.getByText("40 shown / 55 matching · 55 bounded events")).toBeVisible();
+
+  await page.getByRole("button", { name: "Show 15 more events" }).click();
+  await expect(rows).toHaveCount(55);
+  await expect(page.getByText("activity event 55", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /show \d+ more events/i })).toHaveCount(0);
+
+  await page.getByLabel("Activity severity").selectOption("INFO");
+  await expect(rows).toHaveCount(20);
+  await expect(page.getByText("20 shown / 27 matching · 55 bounded events")).toBeVisible();
+  await page.getByRole("button", { name: "Show 7 more events" }).click();
+  await expect(rows).toHaveCount(27);
+
+  await page.getByLabel("Activity severity").selectOption("ALL");
+  await expect(rows).toHaveCount(20);
+  await expect(page.getByText("20 shown / 55 matching · 55 bounded events")).toBeVisible();
+
+  await page.getByLabel("Activity source").selectOption("SYSTEMD");
+  await expect(rows).toHaveCount(0);
+  await expect(page.getByText("0 shown / 0 matching · 55 bounded events")).toBeVisible();
+  await expect(page.getByRole("button", { name: /show \d+ more events/i })).toHaveCount(0);
+
+  await page.getByLabel("Activity source").selectOption("ALL");
+  await expect(rows).toHaveCount(20);
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+  );
+  expect(hasHorizontalOverflow).toBe(false);
 });

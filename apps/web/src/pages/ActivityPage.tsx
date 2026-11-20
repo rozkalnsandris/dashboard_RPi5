@@ -19,6 +19,7 @@ import { useMemo, useState } from "react";
 import { fetchActivity } from "../activity-api";
 
 const ACTIVITY_REFRESH_MS = 5_000;
+const ACTIVITY_PAGE_SIZE = 20;
 type SourceFilter = "ALL" | ActivitySource;
 type SeverityFilter = "ALL" | ActivitySeverity;
 
@@ -71,6 +72,7 @@ function sourceIcon(source: ActivitySource) {
 export function ActivityPage() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("ALL");
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("ALL");
+  const [visibleLimit, setVisibleLimit] = useState(ACTIVITY_PAGE_SIZE);
 
   const activityQuery = useQuery({
     queryKey: ["activity"],
@@ -89,6 +91,9 @@ export function ActivityPage() {
         (severityFilter === "ALL" || item.severity === severityFilter),
     );
   }, [activityQuery.data?.items, severityFilter, sourceFilter]);
+
+  const visibleItems = filteredItems.slice(0, visibleLimit);
+  const remainingCount = filteredItems.length - visibleItems.length;
 
   const unavailableSources =
     activityQuery.data?.sources.filter((source) => source.status === "UNAVAILABLE") ?? [];
@@ -111,7 +116,10 @@ export function ActivityPage() {
           <select
             aria-label="Activity source"
             value={sourceFilter}
-            onChange={(event) => setSourceFilter(event.target.value as SourceFilter)}
+            onChange={(event) => {
+              setSourceFilter(event.target.value as SourceFilter);
+              setVisibleLimit(ACTIVITY_PAGE_SIZE);
+            }}
           >
             <option value="ALL">All sources</option>
             <option value="DOCKER">Docker</option>
@@ -127,7 +135,10 @@ export function ActivityPage() {
           <select
             aria-label="Activity severity"
             value={severityFilter}
-            onChange={(event) => setSeverityFilter(event.target.value as SeverityFilter)}
+            onChange={(event) => {
+              setSeverityFilter(event.target.value as SeverityFilter);
+              setVisibleLimit(ACTIVITY_PAGE_SIZE);
+            }}
           >
             <option value="ALL">All severities</option>
             <option value="INFO">Info</option>
@@ -141,7 +152,7 @@ export function ActivityPage() {
         <span className="status-dot" aria-hidden="true" />
         <span>Live · 5s visible refresh</span>
         <span>·</span>
-        <span>{filteredItems.length} visible / {activityQuery.data?.items.length ?? 0} bounded events</span>
+        <span>{visibleItems.length} shown / {filteredItems.length} matching · {activityQuery.data?.items.length ?? 0} bounded events</span>
       </div>
 
       {sourceFailure ? (
@@ -178,8 +189,9 @@ export function ActivityPage() {
           {filteredItems.length === 0 ? (
             <p className="empty-state">No events match the selected bounded filters.</p>
           ) : (
-            <ol className="activity-timeline activity-timeline--live">
-              {filteredItems.map((item) => {
+            <>
+              <ol className="activity-timeline activity-timeline--live">
+                {visibleItems.map((item) => {
                 const Icon = sourceIcon(item.source);
                 return (
                   <li key={item.id} data-severity={item.severity}>
@@ -202,7 +214,18 @@ export function ActivityPage() {
                   </li>
                 );
               })}
-            </ol>
+              </ol>
+              {remainingCount > 0 ? (
+                <div className="activity-show-more">
+                  <button
+                    type="button"
+                    onClick={() => setVisibleLimit((current) => Math.min(current + ACTIVITY_PAGE_SIZE, filteredItems.length))}
+                  >
+                    Show {Math.min(ACTIVITY_PAGE_SIZE, remainingCount)} more events
+                  </button>
+                </div>
+              ) : null}
+            </>
           )}
         </section>
       ) : null}
