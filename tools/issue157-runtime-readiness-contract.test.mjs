@@ -24,7 +24,7 @@ test("Node v24 source contract stays lockfile-aligned while CI pins the reviewed
   assert.equal(packageLock.packages[""].engines.node, packageJson.engines.node);
   assert.equal(hostContract.runtime.nodeMajor, 24);
   assert.equal(nodeVersion, "24.19.0");
-  assert.equal((workflow.match(/node-version-file: \.node-version/gu) ?? []).length, 2);
+  assert.equal((workflow.match(/node-version-file: \.node-version/gu) ?? []).length, 3);
   assert.doesNotMatch(workflow, /node-version:\s*24(?:\s|$)/u);
 });
 

@@ -206,9 +206,87 @@ jobs:
       - name: Verify packaged native PTY runtime
         run: npm run test:native:packaged --workspace @dashboard-rpi5/terminal-agent
 
+  native-release-candidate:
+    name: Native ARM64 candidate (source only)
+    needs: classify
+    if: needs.classify.outputs.runtime == 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact source SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup reviewed Node.js runtime
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install native toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends make python3 build-essential
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+      - name: Build pinned ARM64 node-pty from source
+        env:
+          npm_config_build_from_source: "true"
+        run: npm rebuild node-pty --dangerously-allow-all-scripts --foreground-scripts
+
+      - name: Validate native source release policy
+        run: npm run check:native-release-profile
+
+      - name: Build full native release closure
+        run: npm run build
+
+      - name: Stage immutable ARM64 terminal runtime
+        run: node tools/package-terminal-native-runtime.mjs --root .
+
+      - name: Stage and verify manifest-selected candidate files
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/native-release-candidate-bundle.mjs \
+            --root . \
+            --sha "$SOURCE_SHA" \
+            --output "$RUNNER_TEMP/dashboard-native-candidate"
+
+      - name: Isolated smoke of packaged ARM64 release
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/production-runtime-smoke.mjs \
+            --root "$RUNNER_TEMP/dashboard-native-candidate/candidate" \
+            --manifest "$RUNNER_TEMP/dashboard-native-candidate/candidate-manifest.json" \
+            --sha "$SOURCE_SHA"
+
+      # Retained artifacts are untrusted bytes, never an automatic deploy.
+      - name: Retain main candidate for manual review only
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dashboard-native-arm64-${{ github.sha }}
+          path: ${{ runner.temp }}/dashboard-native-candidate/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+
   fast-lane-merge-gate:
     name: FAST-LANE Merge Gate
-    needs: [classify, check, terminal-native]
+    needs: [classify, check, terminal-native, native-release-candidate]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -220,6 +298,8 @@ jobs:
           CHECK_RESULT: ${{ needs.check.result }}
           TERMINAL_REQUIRED: ${{ needs.classify.outputs.terminal }}
           TERMINAL_RESULT: ${{ needs.terminal-native.result }}
+          NATIVE_REQUIRED: ${{ needs.classify.outputs.runtime }}
+          NATIVE_RESULT: ${{ needs.native-release-candidate.result }}
         shell: bash
         run: |
           set -euo pipefail
@@ -233,5 +313,10 @@ jobs:
             [[ "$TERMINAL_RESULT" == success ]]
           else
             [[ "$TERMINAL_RESULT" == skipped ]]
+          fi
+          if [[ "$NATIVE_REQUIRED" == true ]]; then
+            [[ "$NATIVE_RESULT" == success ]]
+          else
+            [[ "$NATIVE_RESULT" == skipped ]]
           fi
           echo "FAST_LANE_MERGE_GATE=PASS"
