@@ -8,6 +8,7 @@ const LIMITS = Object.freeze({ archive: 64 * 1024 * 1024, expanded: 256 * 1024 *
 const SIG_LOCAL = 0x04034b50;
 const SIG_CENTRAL = 0x02014b50;
 const SIG_END = 0x06054b50;
+const SIG_DESCRIPTOR = 0x08074b50;
 const UTF8 = new TextDecoder("utf-8", { fatal: true });
 const HEX_DIGEST = /^sha256:[a-f0-9]{64}$/u;
 const safe = (bytes, at, length, label) => {
@@ -73,7 +74,7 @@ export function verifyNativeArtifactZipEnvelope(archive, expectedTransportDigest
     const startDisk = u16(archive, pos + 34);
     const external = u32(archive, pos + 38);
     const offset = u32(archive, pos + 42);
-    assert.ok(needed <= 20 && (flags === 0 || flags === 0x0800) &&
+    assert.ok(needed <= 20 && (flags & ~0x0808) === 0 &&
       (method === 0 || method === 8), "ZIP unsupported version/flags/compression");
     assert.ok(extra === 0 && comment === 0 && startDisk === 0,
       "ZIP extra/metadata/multi-disk unsupported");
@@ -103,7 +104,8 @@ export function verifyNativeArtifactZipEnvelope(archive, expectedTransportDigest
     expanded += size;
     assert.ok(expanded <= LIMITS.expanded, "ZIP expanded size budget exceeded");
     assert.ok(offset < centralStart, "ZIP local header out of range");
-    local.push({ offset, flags, method, crc, compressed, size, nameBytes });
+    local.push({ offset, flags, method, crc, compressed, size, nameBytes,
+      descriptor: (flags & 0x0008) !== 0 });
     members.push({ name, kind: "regular-file", bytes: size });
     pos += 46 + nameLength;
   }
@@ -122,11 +124,19 @@ export function verifyNativeArtifactZipEnvelope(archive, expectedTransportDigest
     assert.ok(u16(archive, next + 4) <= 20, "ZIP local version unsupported");
     assert.equal(u16(archive, next + 6), entry.flags, "ZIP local flags mismatch");
     assert.equal(u16(archive, next + 8), entry.method, "ZIP local method mismatch");
-    assert.equal(u32(archive, next + 14), entry.crc, "ZIP local CRC header mismatch");
-    assert.equal(u32(archive, next + 18), entry.compressed,
-      "ZIP local compressed size mismatch");
-    assert.equal(u32(archive, next + 22), entry.size,
-      "ZIP local uncompressed size mismatch");
+    if (entry.descriptor) {
+      // The pinned upload-artifact transport writes zero local CRC/sizes and a
+      // signed 16-byte data descriptor after the exact compressed payload.
+      assert.equal(u32(archive, next + 14), 0, "ZIP descriptor local CRC not zero");
+      assert.equal(u32(archive, next + 18), 0, "ZIP descriptor local compressed size not zero");
+      assert.equal(u32(archive, next + 22), 0, "ZIP descriptor local size not zero");
+    } else {
+      assert.equal(u32(archive, next + 14), entry.crc, "ZIP local CRC header mismatch");
+      assert.equal(u32(archive, next + 18), entry.compressed,
+        "ZIP local compressed size mismatch");
+      assert.equal(u32(archive, next + 22), entry.size,
+        "ZIP local uncompressed size mismatch");
+    }
     const n = u16(archive, next + 26);
     assert.equal(n, entry.nameBytes.length, "ZIP local filename length mismatch");
     assert.equal(u16(archive, next + 28), 0, "ZIP local extra fields unsupported");
@@ -136,6 +146,16 @@ export function verifyNativeArtifactZipEnvelope(archive, expectedTransportDigest
       "ZIP local/central filename mismatch");
     safe(archive, data, entry.compressed, "compressed payload");
     next = data + entry.compressed;
+    if (entry.descriptor) {
+      // No signatureless/ZIP64 descriptor, padding or unknown trailing bytes.
+      safe(archive, next, 16, "signed ZIP data descriptor");
+      assert.equal(u32(archive, next), SIG_DESCRIPTOR, "ZIP descriptor signature missing");
+      assert.equal(u32(archive, next + 4), entry.crc, "ZIP descriptor CRC mismatch");
+      assert.equal(u32(archive, next + 8), entry.compressed,
+        "ZIP descriptor compressed size mismatch");
+      assert.equal(u32(archive, next + 12), entry.size, "ZIP descriptor size mismatch");
+      next += 16;
+    }
   }
   assert.equal(next, centralStart, "ZIP local payload has trailing or missing bytes");
 

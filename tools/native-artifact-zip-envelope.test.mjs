@@ -19,19 +19,31 @@ function makeZip(files = [
     const plain = Buffer.from(item.data);
     const method = item.method ?? 0;
     const body = method === 8 ? deflateRawSync(plain) : plain;
+    const signedDescriptor = item.signedDescriptor === true;
+    const descriptor = signedDescriptor ? Buffer.alloc(16) : Buffer.alloc(0);
+    if (signedDescriptor) {
+      descriptor.writeUInt32LE(0x08074b50, 0);
+      descriptor.writeUInt32LE(0x12345678, 4);
+      descriptor.writeUInt32LE(body.length, 8);
+      descriptor.writeUInt32LE(plain.length, 12);
+    }
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(signedDescriptor ? 8 : 0, 6);
     local.writeUInt16LE(method, 8);
-    local.writeUInt32LE(0x12345678, 14);
-    local.writeUInt32LE(body.length, 18);
-    local.writeUInt32LE(plain.length, 22);
+    if (!signedDescriptor) {
+      local.writeUInt32LE(0x12345678, 14);
+      local.writeUInt32LE(body.length, 18);
+      local.writeUInt32LE(plain.length, 22);
+    }
     local.writeUInt16LE(name.length, 26);
-    chunks.push(local, name, body);
+    chunks.push(local, name, body, descriptor);
     const cd = Buffer.alloc(46);
     cd.writeUInt32LE(0x02014b50, 0);
     cd.writeUInt16LE(0x0314, 4);
     cd.writeUInt16LE(20, 6);
+    cd.writeUInt16LE(signedDescriptor ? 8 : 0, 8);
     cd.writeUInt16LE(method, 10);
     cd.writeUInt32LE(0x12345678, 16);
     cd.writeUInt32LE(body.length, 20);
@@ -40,7 +52,7 @@ function makeZip(files = [
     cd.writeUInt32LE(ordinary, 38);
     cd.writeUInt32LE(offset, 42);
     directory.push(cd, name);
-    offset += local.length + name.length + body.length;
+    offset += local.length + name.length + body.length + descriptor.length;
   }
   const cdBytes = Buffer.concat(directory);
   const eocd = Buffer.alloc(22);
@@ -52,7 +64,14 @@ function makeZip(files = [
   return Buffer.concat([...chunks, cdBytes, eocd]);
 }
 const testArchive = makeZip();
+const signedDescriptorArchive = makeZip([
+  { name: "candidate-manifest.json", data: "{}", method: 8, signedDescriptor: true },
+  { name: "candidate-receipt.json", data: "{}", method: 8, signedDescriptor: true },
+  { name: "candidate/apps/server/dist/index.js", data: "hello", method: 8, signedDescriptor: true },
+]);
 const check = b => verifyNativeArtifactZipEnvelope(b, digest(b));
+const signedOffset = b => 30 + b.readUInt16LE(26) +
+  b.readUInt32LE(b.readUInt32LE(b.length - 22 + 16) + 20);
 test("bounded exact ZIP envelope accepts regular-file-only candidate structure", () => {
   const r = check(testArchive);
   assert.equal(r.status, "ZIP_ENVELOPE_ONLY_NO_PAYLOAD_VERIFICATION");
@@ -63,6 +82,30 @@ test("bounded exact ZIP envelope accepts regular-file-only candidate structure",
     "candidate/apps/server/dist/index.js",
   ]);
 });
+test("accept exact GitHub upload-artifact signed 16-byte data descriptors", () => {
+  const result = check(signedDescriptorArchive);
+  assert.equal(result.status, "ZIP_ENVELOPE_ONLY_NO_PAYLOAD_VERIFICATION");
+  assert.equal(result.count, 3);
+  assert.equal(result.expandedBytes, 9);
+});
+
+for (const [label, write] of [
+  ["missing descriptor signature", b => b.writeUInt32LE(0, signedOffset(b))],
+  ["descriptor CRC mismatch", b => b.writeUInt32LE(0, signedOffset(b) + 4)],
+  ["descriptor compressed size mismatch", b => b.writeUInt32LE(0, signedOffset(b) + 8)],
+  ["descriptor uncompressed size mismatch", b => b.writeUInt32LE(0, signedOffset(b) + 12)],
+  ["nonzero local CRC with descriptor", b => b.writeUInt32LE(1, 14)],
+  ["nonzero local compressed size with descriptor", b => b.writeUInt32LE(1, 18)],
+  ["nonzero local plain size with descriptor", b => b.writeUInt32LE(1, 22)],
+  ["missing local data descriptor flag", b => b.writeUInt16LE(0, 6)],
+  ["unsupported encrypted descriptor flag", b => b.writeUInt16LE(9, 6)],
+]) {
+  test("reject " + label, () => {
+    const bytes = Buffer.from(signedDescriptorArchive);
+    write(bytes);
+    assert.throws(() => check(bytes));
+  });
+}
 function tamper(modify) {
   const b = Buffer.from(testArchive);
   modify(b);
