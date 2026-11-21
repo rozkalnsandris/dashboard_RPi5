@@ -6,6 +6,7 @@ Canonical files:
 
 - `native-release-profile.json` — source-only native release policy validated by `npm run check:native-release-profile`; no automatic deployment or LIVE authorization (ADR-0008 / #309);
 - `native-artifact-host-import-design.json` — **design-only** untrusted ZIP admission, exact-SHA/run/manifest/receipt metadata and owner LIVE gates (ADR-0009); no executable host importer, new permissions or runtime mutation;
+- `../../tools/native-artifact-zip-envelope.mjs` — read-only source-test ZIP header/envelope validation only, no decompression, host import, file writes or runtime authority;
 - `../../tools/native-release-candidate-bundle.mjs` — manifest-verified source-only ARM64 CI candidate staging; the 7-day GitHub artifact remains untrusted and is never automatically deployed;
 - `launch-contract.json` — machine-readable identities, paths and capability defaults;
 - `web.env.example` — base production environment with terminal disabled;
