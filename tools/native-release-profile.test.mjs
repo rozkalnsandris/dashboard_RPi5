@@ -48,7 +48,7 @@ const cases = [
 ];
 for (const [description, change] of cases) {
   test(`fail closed: ${description}`, () => {
-    const evidence = structuredClone(baseline);
+    const evidence = JSON.parse(JSON.stringify(baseline));
     change(evidence);
     assert.throws(() => validateNativeReleaseEvidence(evidence));
   });
