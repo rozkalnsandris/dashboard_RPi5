@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { TextDecoder } from "node:util";
+import { crc32, inflateRawSync } from "node:zlib";
 
 // Source-only ZIP header admission. No download, decompression, extraction, host access or mutations.
 const LIMITS = Object.freeze({ archive: 64 * 1024 * 1024, expanded: 256 * 1024 * 1024, one: 64 * 1024 * 1024, count: 8192, manifest: 4 * 1024 * 1024, receipt: 64 * 1024 });
@@ -104,9 +105,11 @@ export function verifyNativeArtifactZipEnvelope(archive, expectedTransportDigest
     expanded += size;
     assert.ok(expanded <= LIMITS.expanded, "ZIP expanded size budget exceeded");
     assert.ok(offset < centralStart, "ZIP local header out of range");
-    local.push({ offset, flags, method, crc, compressed, size, nameBytes,
+    const member = { name, kind: "regular-file", bytes: size, method, crc32: crc,
+      compressedBytes: compressed, compressedOffset: null };
+    local.push({ offset, flags, method, crc, compressed, size, nameBytes, member,
       descriptor: (flags & 0x0008) !== 0 });
-    members.push({ name, kind: "regular-file", bytes: size });
+    members.push(member);
     pos += 46 + nameLength;
   }
   assert.equal(pos, end, "ZIP central directory has undeclared bytes");
@@ -145,6 +148,7 @@ export function verifyNativeArtifactZipEnvelope(archive, expectedTransportDigest
     assert.ok(archive.subarray(next + 30, data).equals(entry.nameBytes),
       "ZIP local/central filename mismatch");
     safe(archive, data, entry.compressed, "compressed payload");
+    entry.member.compressedOffset = data;
     next = data + entry.compressed;
     if (entry.descriptor) {
       // No signatureless/ZIP64 descriptor, padding or unknown trailing bytes.
@@ -165,6 +169,49 @@ export function verifyNativeArtifactZipEnvelope(archive, expectedTransportDigest
     count: totalEntries,
     expandedBytes: expanded,
     entries: members,
+    liveMutation: false,
+  };
+}
+
+/**
+ * Source-only, in-memory ZIP byte-integrity verification.
+ * The caller-supplied transport digest is NOT authenticated by this function.
+ * Does not interpret JSON, establish manifest closure or authorize host import.
+ */
+export function verifyNativeArtifactZipPayload(archive, expectedTransportDigest) {
+  const envelope = verifyNativeArtifactZipEnvelope(archive, expectedTransportDigest);
+  const files = [];
+  for (const member of envelope.entries) {
+    const compressed = archive.subarray(
+      member.compressedOffset, member.compressedOffset + member.compressedBytes,
+    );
+    let bytes;
+    if (member.method === 0) {
+      bytes = compressed;
+    } else {
+      // maxOutputLength is enforced inside zlib, not only after inflation.
+      // info.bytesWritten rejects trailing compressed junk ignored by zlib.
+      const inflated = inflateRawSync(compressed, {
+        info: true,
+        maxOutputLength: Math.max(1, member.bytes),
+      });
+      assert.equal(inflated.engine.bytesWritten, member.compressedBytes,
+        "ZIP compressed data not fully consumed");
+      bytes = inflated.buffer;
+    }
+    assert.equal(bytes.length, member.bytes, "ZIP decompressed length mismatch");
+    assert.equal(crc32(bytes) >>> 0, member.crc32 >>> 0, "ZIP payload CRC32 mismatch");
+    files.push({
+      name: member.name,
+      bytes: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    });
+  }
+  return {
+    status: "ZIP_PAYLOAD_BYTES_VERIFIED_NOT_RELEASE_VALIDATED",
+    transportSha256: envelope.transportSha256,
+    entries: files,
+    expandedBytes: envelope.expandedBytes,
     liveMutation: false,
   };
 }
