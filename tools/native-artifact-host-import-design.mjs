@@ -8,6 +8,17 @@ import { validateCandidateManifestShape } from "./production-candidate-manifest.
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SHA = /^[a-f0-9]{40}$/u;
 const DIGEST = /^[a-f0-9]{64}$/u;
+const GITHUB_UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function githubTimestamp(value, label) {
+  assert.match(value ?? "", GITHUB_UTC_TIMESTAMP, label + " must be GitHub UTC");
+  const millis = Date.parse(value);
+  assert.ok(Number.isFinite(millis) &&
+    new Date(millis).toISOString().slice(0, 19) + "Z" === value,
+  label + " must be a valid canonical timestamp");
+  return millis;
+}
 const FIELDS = [
   "schema", "sourceSha", "releasePath", "nodeMajor", "hashAlgorithm",
   "fileCount", "totalBytes", "files", "candidateSha256",
@@ -155,29 +166,64 @@ function safeMember(name) {
 
 // Pure metadata planning only, not a ZIP decoder or a trusted host acceptance.
 export function validateProposedHostImportMetadata({
-  sourceSha, expectedCandidateSha256, run, artifact, manifest, receipt, entries,
+  sourceSha, expectedMainSha, expectedCandidateSha256, observedAt,
+  run, artifact, manifest, receipt, entries,
 }) {
   const policy = ACCEPTED_HOST_IMPORT_DESIGN;
   assert.match(sourceSha ?? "", SHA, "exact source SHA required");
+  assert.match(expectedMainSha ?? "", SHA, "fresh exact main SHA required");
+  assert.equal(sourceSha, expectedMainSha, "selected artifact is not exact current main");
   assert.match(expectedCandidateSha256 ?? "", DIGEST,
     "independent owner-pinned candidate digest required");
+  const observedMillis = githubTimestamp(observedAt, "observation time");
+
   assert.ok(run && typeof run === "object");
+  assert.ok(Number.isSafeInteger(run.id) && run.id > 0, "GitHub run id required");
+  assert.ok(Number.isSafeInteger(run.attempt) && run.attempt > 0,
+    "GitHub run attempt required");
+  assert.ok(Number.isSafeInteger(run.repositoryId) && run.repositoryId > 0,
+    "GitHub repository id required");
+  assert.equal(run.headRepositoryId, run.repositoryId,
+    "run must originate in the canonical repository");
   assert.equal(run.repository, policy.repository);
   assert.equal(run.workflow, policy.provenance.workflowName);
+  assert.equal(run.workflowPath, policy.provenance.workflow);
   assert.equal(run.event, policy.provenance.event);
   assert.equal(run.ref, policy.provenance.ref);
+  assert.equal(run.headBranch, "main");
   assert.equal(run.headSha, sourceSha);
+  assert.equal(run.status, "completed");
   assert.equal(run.conclusion, "success");
   assert.equal(run.nativeJobConclusion, "success");
   assert.equal(run.mergeGateConclusion, "success");
-  assert.ok(Number.isSafeInteger(run.id) && run.id > 0, "GitHub run id required");
+  const runCreatedMillis = githubTimestamp(run.createdAt, "run createdAt");
+  assert.ok(runCreatedMillis <= observedMillis, "run date is in the future");
 
   assert.ok(artifact && typeof artifact === "object");
+  assert.ok(Number.isSafeInteger(artifact.id) && artifact.id > 0,
+    "GitHub artifact id required");
+  assert.equal(artifact.matchingNameCount, 1,
+    "exactly one matching artifact must appear in the complete run artifact list");
   assert.equal(artifact.runId, run.id);
   assert.equal(artifact.name, policy.provenance.artifactPrefix + sourceSha);
   assert.match(artifact.digest ?? "", /^sha256:[a-f0-9]{64}$/u,
     "GitHub transport ZIP SHA-256 required");
   assert.equal(artifact.expired, false);
+  assert.ok(artifact.workflowRun && typeof artifact.workflowRun === "object",
+    "artifact must link to its authenticated workflow run");
+  assert.equal(artifact.workflowRun.id, run.id);
+  assert.equal(artifact.workflowRun.repositoryId, run.repositoryId);
+  assert.equal(artifact.workflowRun.headRepositoryId, run.headRepositoryId);
+  assert.equal(artifact.workflowRun.headBranch, run.headBranch);
+  assert.equal(artifact.workflowRun.headSha, sourceSha);
+  const created = githubTimestamp(artifact.createdAt, "artifact createdAt");
+  const expires = githubTimestamp(artifact.expiresAt, "artifact expiresAt");
+  assert.ok(created >= runCreatedMillis && created <= observedMillis,
+    "artifact creation is outside the observed workflow run");
+  assert.ok(expires > observedMillis && expires > created,
+    "artifact expires before acceptance");
+  assert.ok(expires - created <= policy.provenance.retentionDays * DAY_MS,
+    "artifact retention exceeds the reviewed seven-day window");
   assert.ok(Number.isSafeInteger(artifact.sizeBytes) && artifact.sizeBytes > 0
     && artifact.sizeBytes <= policy.archive.maxArchiveBytes,
   "artifact ZIP exceeds transport budget");
