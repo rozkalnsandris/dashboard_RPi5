@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
+import { Buffer } from "node:buffer";
 import { deflateRawSync } from "node:zlib";
 import { verifyNativeArtifactZipEnvelope } from "./native-artifact-zip-envelope.mjs";
 

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { Buffer } from "node:buffer";
+import { TextDecoder } from "node:util";
 
 // Source-only ZIP header admission. No download, decompression, extraction, host access or mutations.
 const LIMITS = Object.freeze({ archive: 64 * 1024 * 1024, expanded: 256 * 1024 * 1024, one: 64 * 1024 * 1024, count: 8192, manifest: 4 * 1024 * 1024, receipt: 64 * 1024 });
