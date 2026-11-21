@@ -142,12 +142,12 @@ for (const [label, input] of [
   }],
   ["duplicate manifest JSON key", () => () => verify(fixture({
     manifestString: manifest => JSON.stringify(manifest).replace(
-      /}$/u, ',"sourceSha":"' + sourceSha + '"}',
+      /\}$/u, ',"sourceSha":"' + sourceSha + '"}',
     ) + "\n",
   }))],
   ["duplicate receipt JSON key", () => () => verify(fixture({
     receiptString: receipt => JSON.stringify(receipt).replace(
-      /}$/u, ',"architecture":"arm64"}',
+      /\}$/u, ',"architecture":"arm64"}',
     ) + "\n",
   }))],
   ["noncanonical manifest whitespace", () => () => verify(fixture({
