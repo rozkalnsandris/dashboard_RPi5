@@ -1,5 +1,7 @@
 # dashboard_RPi5
 
+> **Native release profile:** [ADR-0008](docs/adr/0008-native-immutable-release-deploy-profile.md) / [source contract](ops/production/native-release-profile.json) (**source-only, not active**). The dashboard remains outside ordinary Docker/Compose SIMPLE-DEPLOY v1; privileged release-controller/systemd and owner LIVE gates are unchanged. See [issue #309](https://github.com/rozkalnsandris/dashboard_RPi5/issues/309).
+
 Modern Raspberry Pi 5 homelab operations dashboard for **`https://dash.rozkalns.net`**.
 
 > **Mutable state is not stored in this README.** For current source/PR/CI/continuation state read [issue #213 — canonical handoff](https://github.com/rozkalnsandris/dashboard_RPi5/issues/213) and refresh GitHub. For actual production/runtime state require fresh trusted-host evidence. A repository SHA or merged source change is not proof of what is currently running on the RPi5.
