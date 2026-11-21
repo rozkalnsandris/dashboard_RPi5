@@ -1,0 +1,44 @@
+{
+  "schema": "dashboard-rpi5.native-release-profile.v1",
+  "repository": "rozkalnsandris/dashboard_RPi5",
+  "status": "SOURCE_ONLY_NOT_ACTIVATED",
+  "artifact": {
+    "identity": "exact-40hex-commit",
+    "architecture": "arm64",
+    "manifestProfile": "full",
+    "candidateSha256Required": true
+  },
+  "release": {
+    "root": "/opt/dashboard_RPi5",
+    "releases": "/opt/dashboard_RPi5/releases",
+    "current": "/opt/dashboard_RPi5/current",
+    "lock": "/opt/dashboard_RPi5/.dashboard-release-controller.lock",
+    "trustedController": "/opt/dashboard_RPi5/releases/<verified-current-sha>/tools/production-release-controller.mjs"
+  },
+  "runtime": {
+    "kind": "native-systemd",
+    "webUnit": "dashboard-rpi5-web.service",
+    "webUser": "dashboard-rpi5-web",
+    "webGroup": "dashboard-rpi5-web",
+    "webExecStart": "/usr/bin/node /opt/dashboard_RPi5/current/apps/server/dist/index.js",
+    "agentSocket": "/run/dashboard-rpi5/agent.sock",
+    "dockerAuthority": "dedicated-broker-only",
+    "dockerSocketToWeb": false,
+    "compose": false
+  },
+  "gates": {
+    "automaticDeploy": false,
+    "mergeAuthorizesLive": false,
+    "ownerLiveEveryRelease": true,
+    "ownerLiveForRestart": true,
+    "runCandidateControllerAsRoot": false,
+    "expectedCurrent": true,
+    "expectedCandidateSha256": true,
+    "automaticRetry": false,
+    "automaticRollback": false,
+    "automaticCleanup": false,
+    "cloudflareMutation": false,
+    "permissionOrSecretsMutation": false,
+    "dockerAuthorityExpansion": false
+  }
+}
