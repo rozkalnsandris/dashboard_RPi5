@@ -1,3 +1,5 @@
+import { DEPLOYMENT_IMPACT_PATHS } from "@dashboard-rpi5/contracts/deployment-status";
+
 const GITHUB_API_ORIGIN = "https://api.github.com";
 const GITHUB_REPOSITORY_PATH = "/repos/rozkalnsandris/RPi5_main";
 const GITHUB_API_VERSION = "2026-03-10";
@@ -133,14 +135,16 @@ function parseCompare(value: unknown): {
   relation: GithubRpi5Relation;
   aheadBy: number | null;
   changedFiles: string[];
+  filesComplete: boolean;
 } {
   if (!isRecord(value)) throw new GithubRpi5SourceUnavailableError();
   const status = value.status;
   const aheadBy = parseNonNegativeInteger(value.ahead_by);
   const behindBy = parseNonNegativeInteger(value.behind_by);
-  if (!Array.isArray(value.files) || value.files.length >= GITHUB_COMPARE_FILE_CAP) {
+  if (!Array.isArray(value.files) || value.files.length > GITHUB_COMPARE_FILE_CAP) {
     throw new GithubRpi5SourceUnavailableError();
   }
+  const filesComplete = value.files.length < GITHUB_COMPARE_FILE_CAP;
 
   const changedFiles: string[] = [];
   for (const file of value.files) {
@@ -157,16 +161,67 @@ function parseCompare(value: unknown): {
   }
   const uniqueFiles = [...new Set(changedFiles)].sort();
 
-  if (status === "identical" && aheadBy === 0 && behindBy === 0) {
-    return { relation: "IN_SYNC", aheadBy: 0, changedFiles: [] };
+  if (status === "identical" && aheadBy === 0 && behindBy === 0 && filesComplete) {
+    return { relation: "IN_SYNC", aheadBy: 0, changedFiles: [], filesComplete: true };
   }
   if (status === "ahead" && aheadBy > 0 && behindBy === 0) {
-    return { relation: "AHEAD", aheadBy, changedFiles: uniqueFiles };
+    return { relation: "AHEAD", aheadBy, changedFiles: uniqueFiles, filesComplete };
   }
   if (["behind", "diverged"].includes(String(status))) {
-    return { relation: "DIVERGED", aheadBy: null, changedFiles: [] };
+    return { relation: "DIVERGED", aheadBy: null, changedFiles: [], filesComplete: true };
   }
   throw new GithubRpi5SourceUnavailableError();
+}
+
+
+const IMPACT_PATH_SET = new Set<string>(DEPLOYMENT_IMPACT_PATHS);
+
+// GitHub's compare API caps the file list at 300 even when its ahead count is valid.
+// Only a complete pair of immutable trees can replace an incomplete file list.
+function parseImpactTree(value: unknown, expectedCommitSha: string): Map<string, string> {
+  if (
+    !isRecord(value) ||
+    value.sha !== expectedCommitSha ||
+    value.truncated !== false ||
+    !Array.isArray(value.tree)
+  ) {
+    throw new GithubRpi5SourceUnavailableError();
+  }
+  const impactEntries = new Map<string, string>();
+  for (const entry of value.tree) {
+    if (!isRecord(entry) || typeof entry.path !== "string") {
+      throw new GithubRpi5SourceUnavailableError();
+    }
+    if (!IMPACT_PATH_SET.has(entry.path)) continue;
+    if (
+      impactEntries.has(entry.path) ||
+      entry.type !== "blob" ||
+      typeof entry.sha !== "string" ||
+      !FULL_SHA.test(entry.sha) ||
+      typeof entry.mode !== "string" ||
+      !/^(100644|100755|120000)$/.test(entry.mode)
+    ) {
+      throw new GithubRpi5SourceUnavailableError();
+    }
+    impactEntries.set(entry.path, entry.mode + ":" + entry.sha);
+  }
+  return impactEntries;
+}
+
+async function compareImpactPathsFromTrees(
+  fetchImpl: typeof fetch,
+  productionSha: string,
+  mainSha: string,
+): Promise<string[]> {
+  const productionTree = parseImpactTree(
+    await requestJson(fetchImpl, fixedUrl(GITHUB_REPOSITORY_PATH + "/git/trees/" + productionSha + "?recursive=1")),
+    productionSha,
+  );
+  const mainTree = parseImpactTree(
+    await requestJson(fetchImpl, fixedUrl(GITHUB_REPOSITORY_PATH + "/git/trees/" + mainSha + "?recursive=1")),
+    mainSha,
+  );
+  return DEPLOYMENT_IMPACT_PATHS.filter((path) => productionTree.get(path) !== mainTree.get(path));
 }
 
 export function createGithubRpi5MainReader(
@@ -216,7 +271,10 @@ export function createGithubRpi5MainReader(
       compareUrl.searchParams.set("per_page", "1");
       compareUrl.searchParams.set("page", "1");
       const comparison = parseCompare(await requestJson(fetchImpl, compareUrl));
-      value = { mainSha, productionSha, ...comparison };
+      const changedFiles = comparison.relation === "AHEAD" && !comparison.filesComplete
+        ? await compareImpactPathsFromTrees(fetchImpl, productionSha, mainSha)
+        : comparison.changedFiles;
+      value = { mainSha, productionSha, relation: comparison.relation, aheadBy: comparison.aheadBy, changedFiles };
     }
 
     cache = { key: productionCommit, expiresAt: currentTime + cacheTtlMs, value };
