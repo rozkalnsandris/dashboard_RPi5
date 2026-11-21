@@ -1,6 +1,6 @@
 # ADR-0008 — Native immutable-release deployment profile
 
-**Status:** Proposed; source-only architecture approved 2026-11-21, accepted after merge.  
+**Status:** Accepted in PR #310 (source-only, 2026-11-21); runtime activation remains separate.  
 **Related:** #1, #213, #309, ADR-0005, `docs/PHASE11D_RELEASE_ACTIVATION.md`, `ops-workflows/docs/SIMPLE_DEPLOY_V1_PLAN.md`, `RPi5_main/docs/AUTOMATION_MASTER_PLAN.md`.
 
 ## Decision
@@ -28,6 +28,14 @@ Shared SIMPLE-DEPLOY v1 builds GHCR images and runs a fixed registered Docker/Co
 5. **Bounded verification:** verify exact current SHA, systemd web state, fixed loopback health and broker/agent stability. Any post-mutation failure/ambiguity preserves evidence and STOPs. No automatic retry, rollback, cleanup or alternate entrypoint.
 
 This PR implements only **source contract and tests**, not stages 1–5 as a runnable production pipeline, not standing release authority and not an automatic post-merge deploy.
+
+## Source-only ARM64 candidate preparation (next stage)
+
+The GitHub-hosted ARM64 CI candidate job builds an exact-SHA full native release with pinned Node tooling, packaged native PTY, and the reviewed production candidate manifest. It stages **only** manifest-selected regular files outside the checkout, independently checks the complete installed-release file closure and performs isolated runtime smoke. The public-safe receipt contains the exact source SHA and candidate SHA-256 digest.
+
+PRs validate without uploading artifacts. A push to merged main may retain an **untrusted** GitHub Actions artifact for seven days. The upload Action is pinned to its immutable commit and uses read-only repository permissions. No workflow has deployment credentials, a production runner, RPi5 access, or automatic deployment.
+
+The retained artifact is never automatically downloaded, extracted, staged, executed or activated on the host. Future host consumption needs an independently reviewed safe-extraction/import contract and the current trusted root-owned controller verifying exact expected-current and candidate digest under separate owner LIVE authorization. A green CI job or stored artifact cannot authorize any restart, retry, rollback or cleanup.
 
 ## Cross-repository boundaries and future integration
 

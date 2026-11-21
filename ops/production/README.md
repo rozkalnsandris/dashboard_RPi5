@@ -5,6 +5,7 @@ This directory is source-only. Nothing here authorizes host, systemd, Cloudflare
 Canonical files:
 
 - `native-release-profile.json` — source-only native release policy validated by `npm run check:native-release-profile`; no automatic deployment or LIVE authorization (ADR-0008 / #309);
+- `../../tools/native-release-candidate-bundle.mjs` — manifest-verified source-only ARM64 CI candidate staging; the 7-day GitHub artifact remains untrusted and is never automatically deployed;
 - `launch-contract.json` — machine-readable identities, paths and capability defaults;
 - `web.env.example` — base production environment with terminal disabled;
 - `terminal.env.example` — future owner-gated terminal activation inputs; intentionally incomplete/fail-closed;
