@@ -37,6 +37,10 @@ PRs validate without uploading artifacts. A push to merged main may retain an **
 
 The retained artifact is never automatically downloaded, extracted, staged, executed or activated on the host. Future host consumption needs an independently reviewed safe-extraction/import contract and the current trusted root-owned controller verifying exact expected-current and candidate digest under separate owner LIVE authorization. A green CI job or stored artifact cannot authorize any restart, retry, rollback or cleanup.
 
+## Artifact host-import design continuation
+
+A separately reviewed **source-only** host-import security design is documented in [ADR-0009](0009-native-release-artifact-host-import-design.md). It does not implement the host importer, add permissions, download artifacts to RPi5 or authorize release activation. Existing ADR-0008 controller and per-release LIVE gates remain unchanged.
+
 ## Cross-repository boundaries and future integration
 
 - `ops-workflows` may later offer a separately typed, full immutable-SHA pinned **native-release source/artifact workflow**, without privileged host access or reuse of the Compose executor. All production credentials, root helpers, host mutation and native release-controller code remain excluded from this public shared-policy repository.

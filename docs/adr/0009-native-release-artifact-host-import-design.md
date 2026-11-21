@@ -1,0 +1,39 @@
+# ADR-0009 — Native release ZIP host-import design (source-only)
+
+**Status:** Proposed architecture/source contract, not activated. **Scope:** #309; follows accepted ADR-0008 and PR #311.
+
+## Decision and trust boundary
+
+Keep the root-owned, immutable current-release controller and native systemd service model. The GitHub Actions artifact is **untrusted ZIP transport**. A merged source SHA, successful CI, ZIP transport digest or self-consistent manifest **does not** grant host mutation authority, prove independently trusted build provenance, or authorize deploying candidate code. No Docker/Compose SIMPLE-DEPLOY substitution.
+
+The source-only contract is `ops/production/native-artifact-host-import-design.json`; `tools/native-artifact-host-import-design.mjs` provides pure policy and proposed *parsed metadata* checks, exercised by negative tests. It is **not** a ZIP parser, host importer, CLI, extractor, privileged entrypoint or executable rollout. Nothing in this PR retrieves an artifact or writes to the host.
+
+## Required future ingestion sequence (NOT implemented)
+
+1. **Selection:** an operator reviews one authenticated GitHub Actions `CI` **push on `refs/heads/main`** for the exact merged 40-hex source SHA; require successful workflow, native ARM64 candidate job and FAST-LANE merge gate, matching unexpired artifact name, run ID and API-reported ZIP digest. Reject PR-produced, mutable-ref, skipped, mismatched or expired inputs. Existing 7-day artifacts are *time-limited evidence*, not stable release storage.
+2. **Explicit host-import gate:** fresh exact owner authorization is required even to write an unprivileged RPi5 quarantine. The future host importer implementation, fixed target and maximum operation envelope require a separate reviewed source/host-control decision. No target directory, host agent, token, new privilege or scheduled job is defined by this design.
+3. **Archive admission before write:** treat ZIP bytes, local/central-directory metadata, filenames, file types, modes, embedded JSON and all source files as hostile. A future bounded parser must verify central/local headers, offsets, lengths, encryption/unsupported features and CRC consistency, but never trust CRC as authenticity. Reject absolute, drive, UNC, backslash, empty/dot/parent paths, duplicates, overlap/aliasing, symlinks/hardlinks, devices, special files, directory records and members outside exactly two JSON files plus `candidate/` manifest-listed files. Limit compressed bytes, expanded bytes, individual bytes and entry count **before and throughout** decompression to prevent ZIP bombs. Confirm actual uploaded ZIP compatibility with this file-only policy before considering activation.
+4. **Unprivileged isolated extraction:** only after the parser's complete preflight, a separately authorized importer may create a *new exclusive* bounded quarantine outside `/opt/dashboard_RPi5` and all trusted release paths. Use descriptor-relative no-follow / exclusive-create semantics; never trust archive uid/gid/modes or execute anything from ZIP. Reject existing destinations, races, hardlinks, symlinks, or changing source descriptors. Error after first host write means preserve evidence and STOP; no silent cleanup/retry.
+5. **Byte-level verification:** parse strict bounded JSON with duplicate-key rejection; require exact manifest schema, fileCount, sorted unique paths, SHA-256 for every byte and canonical candidate digest (digest of the existing manifest core). Require exact expected source SHA, Linux ARM64 receipt, `UNTRUSTED_SOURCE_ONLY_NOT_DEPLOYED`, `activationAuthorized=false`, no extras or unlisted files. Compare independently owner-selected expected candidate digest, not one taken solely from the untrusted artifact. API ZIP digest is transport evidence and **not** the manifest's candidateSha256; metadata-only tests cannot prove bytes or GitHub authenticity. The current controller must independently re-read and verify all candidate bytes.
+6. **Trusted read-only PLAN:** fresh owner-approved trusted-controller access must verify root-owned current release/controller, exact current SHA, lock state, all candidate bytes and `candidateSha256`; derive `observedCurrent`, `candidateSha256` and operations from the **current verified root-owned controller**, not candidate JavaScript. Unknown baseline or stale lock blocks the operation.
+7. **Separate LIVE APPLY and restart:** only a new exact owner LIVE command may authorize current controller's expected-current/expected-candidate APPLY. Web service restart is separately named in the owner envelope. No automatic retry, rollback, cleanup, stage promotion, Docker authority expansion, Cloudflare, secrets, systemd, identities or permissions change. Mutation uncertainty preserves evidence and STOP.
+
+## Required identity and authority comparison
+
+- GitHub ZIP artifact identity: repo, exact source SHA, run ID, workflow/ref/event, artifact ID/name/digest/expiry and workflow/check conclusions. All must come from authenticated authoritative GitHub API, not a string in the ZIP. No artifact attestations are configured; adding `id-token`/attestation permissions requires a separate source-security decision.
+- Archive members: exact `candidate-manifest.json`, `candidate-receipt.json` and regular files named `candidate/<manifest.path>`. The ZIP is not a trust root and archive mode bits are discarded. Re-created release permissions, if any future LIVE APPLY is authorized, remain fixed by the **existing** controller (directories 0755, regular files 0644, marker 0600, owner/group root). This PR changes none.
+- Candidate manifest: existing `dashboard-rpi5.production-candidate.v1`; release identity remains `/opt/dashboard_RPi5/releases/<exact-source-sha>` with full release closure including agent, broker, terminal and systemd blueprints. The candidate is not a web/API-only container.
+- Receipt: existing `dashboard-rpi5.native-candidate-receipt.v1`, Linux ARM64 and `activationAuthorized=false`. Cross-check its fields against independently parsed manifest and the owner-pinned SHA/digest.
+- Host importer execution and ZIP parsing remain **unimplemented**; all metadata validation tests are simulations, not cryptographic verification, not archive parsing, not host preflight or host authorization.
+
+## Scope and verification
+
+Source-only: one new machine-readable design policy, a pure validator with hostile metadata tests, and documentation/test registration. No changes to current controller, production manifests, candidate build workflow, systemd, Cloudflare, Docker broker, permissions, GitHub workflow permissions, secrets, RPi5_main or LIVE runtime.
+
+Acceptance: `npm test` covers policy drift, malformed provenance, unsafe members, excess size and metadata mismatch. Existing exact-head CI runs; review the PR diff and GitHub checks. **STOP at owner MERGE**. Even after merge, host importer and production activation remain separately gated.
+
+## Public references
+
+- GitHub upload-artifact security: https://github.com/actions/upload-artifact#limitations (ZIP does not preserve permission bits).
+- GitHub artifact attestations: https://docs.github.com/en/actions/concepts/security/artifact-attestations (not currently authorized/enabled).
+- Existing release-controller and trust requirements: `docs/PHASE11D_RELEASE_ACTIVATION.md` and `ops/production/release-activation-contract.json`.
