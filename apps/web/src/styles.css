@@ -129,6 +129,11 @@ button:focus-visible, a:focus-visible, [role="menuitem"]:focus-visible { outline
   .metric-grid { grid-template-columns: 1fr; }
   .attention-card { grid-template-columns: auto minmax(0, 1fr); }
   .attention-card > .health-pill { grid-column: 1 / -1; justify-self: start; }
+  /* Keep brand identity inside the 320px shell alongside the status pill. */
+  .mobile-brand .brand { gap: 9px; }
+  .mobile-brand .brand-mark { width: 34px; height: 34px; font-size: .72rem; }
+  .mobile-brand .brand strong { font-size: .84rem; }
+  .mobile-brand .brand span { margin-top: 1px; font-size: .64rem; }
   .mobile-nav__item { font-size: .58rem; }
 }
 
