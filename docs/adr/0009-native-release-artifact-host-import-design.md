@@ -6,7 +6,13 @@
 
 Keep the root-owned, immutable current-release controller and native systemd service model. The GitHub Actions artifact is **untrusted ZIP transport**. A merged source SHA, successful CI, ZIP transport digest or self-consistent manifest **does not** grant host mutation authority, prove independently trusted build provenance, or authorize deploying candidate code. No Docker/Compose SIMPLE-DEPLOY substitution.
 
-The source-only contract is `ops/production/native-artifact-host-import-design.json`; `tools/native-artifact-host-import-design.mjs` provides pure policy and proposed *parsed metadata* checks, exercised by negative tests. It is **not** a ZIP parser, host importer, CLI, extractor, privileged entrypoint or executable rollout. Nothing in this PR retrieves an artifact or writes to the host.
+The source-only contract is `ops/production/native-artifact-host-import-design.json`; `tools/native-artifact-host-import-design.mjs` provides pure policy and proposed *parsed metadata* checks, exercised by negative tests. It is **not** a complete ZIP payload verifier, host importer, CLI, extractor, privileged entrypoint or executable rollout. Nothing in this PR retrieves an artifact or writes to the host.
+
+## Incremental read-only ZIP envelope admission (source-only)
+
+`tools/native-artifact-zip-envelope.mjs` implements only a memory-buffer structural ZIP envelope check with a caller-supplied SHA-256 transport digest and source-test fixtures. It accepts strict classic single-disk ZIPs with local/central header agreement, contiguous member offsets, sorted-size budgets, canonical candidate/receipt filenames, and Unix regular-file mode evidence. It rejects ZIP64, data descriptors, extra fields, comments, encryption, unusual compression, symlinks, directories, gaps/overlaps, duplicate members and unknown paths. These conservative limitations may reject valid GitHub artifacts until actual archive compatibility is independently established.
+
+**This is not full ZIP or release validation.** No decompression, payload CRC verification, per-file SHA-256 verification, JSON decoding, manifest closure, authenticated GitHub API read, download, extraction, archive-to-host write, trusted controller PLAN/APPLY or systemd restart is performed. The caller-supplied digest is not independently authenticated by this function; no production suitability or LIVE authority can be inferred from its PASS result. Source-only synthetic fixture tests do not prove compatibility with a real GitHub Actions ZIP.
 
 ## Required future ingestion sequence (NOT implemented)
 
@@ -24,7 +30,7 @@ The source-only contract is `ops/production/native-artifact-host-import-design.j
 - Archive members: exact `candidate-manifest.json`, `candidate-receipt.json` and regular files named `candidate/<manifest.path>`. The ZIP is not a trust root and archive mode bits are discarded. Re-created release permissions, if any future LIVE APPLY is authorized, remain fixed by the **existing** controller (directories 0755, regular files 0644, marker 0600, owner/group root). This PR changes none.
 - Candidate manifest: existing `dashboard-rpi5.production-candidate.v1`; release identity remains `/opt/dashboard_RPi5/releases/<exact-source-sha>` with full release closure including agent, broker, terminal and systemd blueprints. The candidate is not a web/API-only container.
 - Receipt: existing `dashboard-rpi5.native-candidate-receipt.v1`, Linux ARM64 and `activationAuthorized=false`. Cross-check its fields against independently parsed manifest and the owner-pinned SHA/digest.
-- Host importer execution and ZIP parsing remain **unimplemented**; all metadata validation tests are simulations, not cryptographic verification, not archive parsing, not host preflight or host authorization.
+- Host importer, ZIP payload decompression/verification and host extraction remain **unimplemented**. The new read-only ZIP header parser verifies only transport digest and structural envelope; metadata tests remain simulations. Neither step authenticates a GitHub caller, proves actual ZIP payload bytes, performs host preflight or grants host authorization.
 
 ## Scope and verification
 
