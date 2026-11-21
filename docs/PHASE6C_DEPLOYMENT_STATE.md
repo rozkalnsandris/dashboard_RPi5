@@ -38,9 +38,9 @@ Each request has a three-second timeout, redirects are rejected and the decoded 
 
 GitHub compare responses expose at most 300 changed files. The production-impact decision must not silently rely on a potentially truncated list.
 
-Therefore a response containing **300 files** is treated as incomplete and fails closed. It becomes `UNKNOWN`; it is never treated as `MAIN_AHEAD_NO_DEPLOY`.
+A response containing **300 files** is incomplete. If and only if the same compare response proves `ahead_by > 0` and `behind_by = 0`, the server requests the two **recursive Git trees** for the exact resolved production and main commit SHAs. Both responses must be complete (`truncated=false`), carry the exact requested SHA, and pass the existing 3-second timeout and 2-MiB decoded response caps. For each of the ten reviewed production-impact paths, compare immutable blob SHA plus file mode; a path present at only one endpoint is changed. A rename into or out of a reviewed path therefore counts as an impact. Unrelated tree changes do not affect the production-impact classification.
 
-Renames are checked by considering both `filename` and `previous_filename`.
+If either tree is unavailable, truncated, malformed, internally inconsistent, or exceeds a bound, keep `UNKNOWN`. Never infer `MAIN_AHEAD_NO_DEPLOY` from the capped compare list alone. The ordinary compare path (fewer than 300 files) remains unchanged and checks renames using both `filename` and `previous_filename`. This fallback adds only two fixed public GitHub GET requests; it provides no deploy capability.
 
 ## Reviewed production-impact policy
 
@@ -86,7 +86,7 @@ A changed file outside this reviewed list does not by itself require this contro
 : reserved in the shared contract. Phase 6C does **not** emit this state because no separate owner-authorization evidence source exists yet.
 
 `UNKNOWN`
-: correlation cannot be proven. Examples include missing verified deploy evidence, GitHub failure/rate limit, short-SHA resolution failure, divergent history, malformed data or a 300-file comparison boundary.
+: correlation cannot be proven. Examples include missing verified deploy evidence, GitHub failure/rate limit, short-SHA resolution failure, divergent history, malformed data or missing/incomplete 300-file fallback trees.
 
 Merge authorization is never interpreted as deployment authorization.
 

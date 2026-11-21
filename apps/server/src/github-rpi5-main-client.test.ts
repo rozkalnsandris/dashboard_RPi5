@@ -97,14 +97,102 @@ describe("GitHub RPi5 main reader", () => {
     expect(compareUrl.searchParams.get("page")).toBe("1");
   });
 
-  it("fails closed when GitHub returns the 300-file comparison boundary", async () => {
-    const files = Array.from({ length: 300 }, (_, index) => ({ filename: `docs/${index}.md` }));
+
+  it("uses complete immutable trees when the compare file list reaches 300", async () => {
+    const files = Array.from({ length: 300 }, (_, index) => ({ filename: "docs/" + index + ".md" }));
+    const unchanged = { path: "ops/bin/rpi5-backup", type: "blob", mode: "100755", sha: "a".repeat(40) };
+    const changed = { path: "scripts/rpi5_deploy_lib.py", type: "blob", mode: "100644", sha: "b".repeat(40) };
     const fetchImpl = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({ commit: { sha: mainSha } }))
       .mockResolvedValueOnce(jsonResponse({ sha: productionSha }))
-      .mockResolvedValueOnce(jsonResponse({ status: "ahead", ahead_by: 1, behind_by: 0, files }));
+      .mockResolvedValueOnce(jsonResponse({ status: "ahead", ahead_by: 751, behind_by: 0, files }))
+      .mockResolvedValueOnce(jsonResponse({ sha: productionSha, truncated: false, tree: [unchanged, changed] }))
+      .mockResolvedValueOnce(jsonResponse({
+        sha: mainSha,
+        truncated: false,
+        tree: [unchanged, { ...changed, sha: "c".repeat(40) }],
+      }));
     const read = createGithubRpi5MainReader({ fetchImpl, now: () => 1_000_000 });
 
+    await expect(read(productionShort)).resolves.toEqual({
+      mainSha,
+      productionSha,
+      relation: "AHEAD",
+      aheadBy: 751,
+      changedFiles: ["scripts/rpi5_deploy_lib.py"],
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
+    expect(String(fetchImpl.mock.calls[3]![0])).toBe(
+      "https://api.github.com/repos/rozkalnsandris/RPi5_main/git/trees/" + productionSha + "?recursive=1",
+    );
+    expect(String(fetchImpl.mock.calls[4]![0])).toBe(
+      "https://api.github.com/repos/rozkalnsandris/RPi5_main/git/trees/" + mainSha + "?recursive=1",
+    );
+  });
+
+  it("proves no controlled-deploy impact with complete trees despite a 300-file compare list", async () => {
+    const files = Array.from({ length: 300 }, (_, index) => ({ filename: "docs/" + index + ".md" }));
+    const unchanged = { path: "ops/deploy/targets.json", type: "blob", mode: "100644", sha: "a".repeat(40) };
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ commit: { sha: mainSha } }))
+      .mockResolvedValueOnce(jsonResponse({ sha: productionSha }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ahead", ahead_by: 3, behind_by: 0, files }))
+      .mockResolvedValueOnce(jsonResponse({ sha: productionSha, truncated: false, tree: [unchanged] }))
+      .mockResolvedValueOnce(jsonResponse({ sha: mainSha, truncated: false, tree: [unchanged] }));
+    const read = createGithubRpi5MainReader({ fetchImpl, now: () => 1_000_000 });
+    await expect(read(productionShort)).resolves.toMatchObject({
+      relation: "AHEAD",
+      aheadBy: 3,
+      changedFiles: [],
+    });
+  });
+
+  it("treats a rename away from an allowlisted path as changed on the tree fallback", async () => {
+    const files = Array.from({ length: 300 }, (_, index) => ({ filename: "docs/" + index + ".md" }));
+    const moved = { path: "scripts/rpi5-deploy", type: "blob", mode: "100644", sha: "a".repeat(40) };
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ commit: { sha: mainSha } }))
+      .mockResolvedValueOnce(jsonResponse({ sha: productionSha }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ahead", ahead_by: 3, behind_by: 0, files }))
+      .mockResolvedValueOnce(jsonResponse({ sha: productionSha, truncated: false, tree: [moved] }))
+      .mockResolvedValueOnce(jsonResponse({
+        sha: mainSha,
+        truncated: false,
+        tree: [{ ...moved, path: "scripts/rpi5-deploy-moved" }],
+      }));
+    const read = createGithubRpi5MainReader({ fetchImpl, now: () => 1_000_000 });
+    await expect(read(productionShort)).resolves.toMatchObject({
+      relation: "AHEAD",
+      changedFiles: ["scripts/rpi5-deploy"],
+    });
+  });
+
+  it.each([
+    ["truncated", { sha: mainSha, truncated: true, tree: [] }],
+    ["wrong SHA", { sha: productionSha, truncated: false, tree: [] }],
+    ["missing entries", { sha: mainSha, truncated: false }],
+    ["duplicate impact paths", {
+      sha: mainSha,
+      truncated: false,
+      tree: [
+        { path: "ops/bin/rpi5-backup", type: "blob", mode: "100755", sha: "a".repeat(40) },
+        { path: "ops/bin/rpi5-backup", type: "blob", mode: "100755", sha: "a".repeat(40) },
+      ],
+    }],
+    ["unsafe impact entry", {
+      sha: mainSha,
+      truncated: false,
+      tree: [{ path: "ops/bin/rpi5-backup", type: "tree", mode: "040000", sha: "a".repeat(40) }],
+    }],
+  ])("fails closed for %s recursive tree evidence", async (_label, invalidTree) => {
+    const files = Array.from({ length: 300 }, (_, index) => ({ filename: "docs/" + index + ".md" }));
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ commit: { sha: mainSha } }))
+      .mockResolvedValueOnce(jsonResponse({ sha: productionSha }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ahead", ahead_by: 751, behind_by: 0, files }))
+      .mockResolvedValueOnce(jsonResponse({ sha: productionSha, truncated: false, tree: [] }))
+      .mockResolvedValueOnce(jsonResponse(invalidTree));
+    const read = createGithubRpi5MainReader({ fetchImpl, now: () => 1_000_000 });
     await expect(read(productionShort)).rejects.toBeInstanceOf(GithubRpi5SourceUnavailableError);
   });
 
