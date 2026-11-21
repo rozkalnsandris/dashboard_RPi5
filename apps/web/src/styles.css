@@ -46,11 +46,12 @@ button:focus-visible, a:focus-visible, [role="menuitem"]:focus-visible { outline
 .mobile-brand { min-width: 0; }
 .main-content { min-width: 0; padding: var(--page-pad) max(var(--page-pad), var(--safe-right)) calc(var(--page-pad) + 8px) max(var(--page-pad), var(--safe-left)); }
 
-.brand { min-width: 0; display: flex; align-items: center; gap: 9px; }
-.brand-mark { width: 34px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid #405679; border-radius: 11px; background: #121e30; color: #dbe7ff; font-size: .72rem; font-weight: 900; letter-spacing: -.04em; }
+.brand { min-width: 0; display: flex; align-items: center; gap: 11px; }
+.brand > div:last-child { min-width: 0; }
+.brand-mark { width: 40px; height: 40px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid #4b6491; border-radius: 12px; background: linear-gradient(145deg, #1c3152, #111c2e); color: #f1f6ff; font-size: .78rem; font-weight: 850; letter-spacing: -.035em; box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
 .brand strong, .brand span { display: block; min-width: 0; }
-.brand strong { overflow: hidden; font-size: .84rem; text-overflow: ellipsis; white-space: nowrap; }
-.brand span { margin-top: 1px; overflow: hidden; color: var(--subtle); font-size: .64rem; text-overflow: ellipsis; white-space: nowrap; }
+.brand strong { overflow: hidden; font-size: .9rem; font-weight: 780; letter-spacing: -.015em; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.brand span { margin-top: 3px; overflow: hidden; color: var(--muted); font-size: .72rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 
 .health-pill, .inline-status, .count-pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; font-weight: 800; white-space: nowrap; }
 .health-pill { min-height: 28px; padding: 4px 9px; border: 1px solid #29523a; background: #0d2317; color: #c5f7d8; font-size: .68rem; }
@@ -140,7 +141,7 @@ button:focus-visible, a:focus-visible, [role="menuitem"]:focus-visible { outline
 @media (min-width: 900px) {
   .app-shell { grid-template-columns: 238px minmax(0, 1fr); grid-template-rows: 64px minmax(0, 1fr); }
   .desktop-sidebar { grid-row: 1 / -1; display: flex; flex-direction: column; min-width: 0; padding: 14px 11px; border-right: 1px solid var(--border); background: rgba(7,11,17,.82); }
-  .desktop-sidebar .brand { padding: 2px 5px 15px; }
+  .desktop-sidebar .brand { padding: 4px 5px 17px; }
   .desktop-nav { display: grid; gap: 3px; margin-top: 7px; }
   .desktop-nav__link { min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 11px; color: var(--subtle); font-size: .8rem; font-weight: 760; text-decoration: none; }
   .desktop-nav__link.is-active { color: var(--text); background: var(--surface-2); }
