@@ -3,6 +3,7 @@
 > **Canonical durable product contract:** GitHub issue [#1 — MASTER / READ FIRST](https://github.com/rozkalnsandris/dashboard_RPi5/issues/1).  
 > **Mutable continuation/runtime handoff:** GitHub issue #213.  
 > **Native release profile:** [ADR-0008](adr/0008-native-immutable-release-deploy-profile.md), issue #309 (source-only; no automatic deployment or LIVE authority).
+> **Quarantine importer boundary:** [ADR-0010](adr/0010-native-artifact-quarantine-boundary.md) (design-only; no importer executable or host target, merge/LIVE separately gated).
 
 This file is the repository index for the delivery plan. Issue #1 is authoritative for durable product/security scope. Mutable source/PR/CI/runtime state must be freshly read from GitHub and trusted-host evidence rather than copied into this file.
 
