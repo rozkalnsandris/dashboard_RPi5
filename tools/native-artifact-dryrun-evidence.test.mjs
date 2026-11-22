@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Buffer } from "node:buffer";
 
 import { verifyNativeArtifactDryRunEvidence } from "./native-artifact-dryrun-evidence.mjs";
 
