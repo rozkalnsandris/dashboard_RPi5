@@ -42,6 +42,24 @@ source by itself. A PASS cannot authorize any LIVE action.
 
 **Trust limit:** projection does not make HTTP requests, authenticate GitHub, obtain artifact bytes, supply an independent candidate digest, or authorize host access. The caller must independently authenticate and bind each GitHub response to the same observed run; the existing ZIP byte correlator and owner-selected expected digest are separate checks. Refuse paginated/incomplete API lists instead of silently trusting the first page. No automatic download, import, restart or LIVE.
 
+## Source-only correlation of raw REST projections and ZIP bytes
+
+`verifyNativeArtifactApiProjectedDryRunEvidence` composes the existing raw GitHub REST
+projection with the ZIP byte/manifest/receipt closure **in one pure function**.
+It takes the exact source SHA, repository/run/jobs/artifacts response objects,
+the ZIP `Buffer`, observation time, and a separately selected candidate SHA-256;
+the verified ZIP bytes must match the projected artifact size, GitHub transport
+digest, manifest member hashes and independently supplied candidate digest.
+Synthetic positive and tamper tests cover stale main, incomplete or wrong
+workflow jobs, producer/run/artifact mismatches, wrong ZIP size/digest and
+modified archive bytes.
+
+A PASS is **only caller-projected source evidence**. This code does not call
+GitHub, authenticate its responses, fetch artifacts, establish trusted build
+provenance, download or extract to disk, or authorize an RPi5 host operation.
+Owner-approved host import, trusted-controller PLAN/APPLY, any restart, and
+every LIVE release remain separate gates.
+
 ## Required future ingestion sequence (NOT implemented)
 
 1. **Selection:** an operator reviews one authenticated GitHub Actions `CI` **push on `refs/heads/main`** for the exact merged 40-hex source SHA; require successful workflow, native ARM64 candidate job and FAST-LANE merge gate, matching unexpired artifact name, run ID and API-reported ZIP digest. Reject PR-produced, mutable-ref, skipped, mismatched or expired inputs. Existing 7-day artifacts are *time-limited evidence*, not stable release storage.
