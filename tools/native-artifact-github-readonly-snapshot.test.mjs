@@ -149,7 +149,6 @@ test("main moving between GETs fails closed with exactly six reads", async () =>
 });
 
 test("read error stops immediately without retry", async () => {
-  const f = fixture();
   let attempts = 0;
   await assert.rejects(collectNativeArtifactGitHubReadOnlySnapshot({
     getJson: async () => {
