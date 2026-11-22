@@ -45,7 +45,7 @@ function sample() {
     },
   };
 }
-const clone = value => structuredClone(value);
+const clone = value => JSON.parse(JSON.stringify(value));
 
 test("raw GitHub API shapes project into a non-authoritative verifier envelope", () => {
   const result = projectNativeArtifactGitHubApi(sample());
