@@ -5,7 +5,10 @@ import { createHash } from "node:crypto";
 import { crc32, deflateRawSync } from "node:zlib";
 
 import { verifyNativeArtifactCandidateClosure } from "./native-artifact-manifest-closure.mjs";
-import { verifyNativeArtifactDryRunEvidence } from "./native-artifact-dryrun-evidence.mjs";
+import {
+  verifyNativeArtifactDryRunEvidence,
+  verifyNativeArtifactApiProjectedDryRunEvidence,
+} from "./native-artifact-dryrun-evidence.mjs";
 import { verifyNativeArtifactZipPayload } from "./native-artifact-zip-envelope.mjs";
 
 const sourceSha = "a".repeat(40);
@@ -272,5 +275,105 @@ for (const [label, mutate] of [
     const params = provenanceFixture();
     mutate(params);
     assert.throws(() => verifyNativeArtifactDryRunEvidence(params));
+  });
+}
+
+
+function rawGitHubApiFixture() {
+  const evidence = provenanceFixture();
+  const { run, artifact, archive } = evidence;
+  const repository = { id: run.repositoryId, full_name: run.repository };
+  const requiredJobs = [
+    "FAST-LANE classify",
+    "Native ARM64 candidate (source only)",
+    "FAST-LANE Merge Gate",
+  ].map((name, index) => ({
+    id: 700 + index, name,
+    run_id: run.id, run_attempt: run.attempt,
+    head_sha: run.headSha, workflow_name: run.workflow,
+    status: "completed", conclusion: "success",
+  }));
+  return {
+    archive,
+    repository,
+    observedAt: evidence.observedAt,
+    expectedMainSha: evidence.expectedMainSha,
+    expectedCandidateSha256: evidence.expectedCandidateSha256,
+    workflowRun: {
+      id: run.id, run_attempt: run.attempt, name: run.workflow,
+      path: run.workflowPath, event: run.event,
+      head_sha: run.headSha, head_branch: run.headBranch,
+      status: run.status, conclusion: run.conclusion,
+      created_at: run.createdAt,
+      repository: { ...repository },
+      head_repository: { ...repository },
+    },
+    jobsPage: { total_count: requiredJobs.length, jobs: requiredJobs },
+    artifactsPage: {
+      total_count: 1,
+      artifacts: [{
+        id: artifact.id, name: artifact.name,
+        digest: artifact.digest, size_in_bytes: archive.length,
+        expired: artifact.expired,
+        created_at: artifact.createdAt, expires_at: artifact.expiresAt,
+        workflow_run: {
+          id: artifact.workflowRun.id,
+          repository_id: artifact.workflowRun.repositoryId,
+          head_repository_id: artifact.workflowRun.headRepositoryId,
+          head_branch: artifact.workflowRun.headBranch,
+          head_sha: artifact.workflowRun.headSha,
+        },
+      }],
+    },
+  };
+}
+
+test("API-projected source-only verification closes one raw run and ZIP", () => {
+  const params = rawGitHubApiFixture();
+  const result = verifyNativeArtifactApiProjectedDryRunEvidence(params);
+  assert.deepStrictEqual(result, {
+    status: "API_PROJECTED_ZIP_BYTES_CLOSED_NOT_AUTHENTICATED_OR_HOST_AUTHORIZED",
+    sourceSha, candidateSha256: params.expectedCandidateSha256,
+    transportSha256: params.artifactsPage.artifacts[0].digest,
+    artifactId: 7734, runId: 4123, fileCount: 1, totalBytes: 5,
+    liveMutation: false, githubApiAuthenticated: false,
+  });
+});
+
+for (const [label, mutate] of [
+  ["stale main", x => { x.expectedMainSha = "b".repeat(40); }],
+  ["PR workflow run", x => { x.workflowRun.event = "pull_request"; }],
+  ["foreign run repository", x => { x.workflowRun.repository.id += 1; }],
+  ["different head repository", x => { x.workflowRun.head_repository.id += 1; }],
+  ["wrong run attempt", x => { x.jobsPage.jobs[1].run_attempt += 1; }],
+  ["missing merge gate", x => { x.jobsPage.jobs.pop(); x.jobsPage.total_count -= 1; }],
+  ["skipped ARM64 candidate", x => { x.jobsPage.jobs[1].conclusion = "skipped"; }],
+  ["partial API job list", x => { x.jobsPage.total_count += 1; }],
+  ["duplicate named artifact", x => {
+    const a = x.artifactsPage.artifacts[0];
+    x.artifactsPage.artifacts.push({ ...a });
+    x.artifactsPage.total_count += 1;
+  }],
+  ["artifact workflow link mismatch", x => {
+    x.artifactsPage.artifacts[0].workflow_run.head_sha = "b".repeat(40);
+  }],
+  ["incorrect artifact byte count", x => {
+    x.artifactsPage.artifacts[0].size_in_bytes += 1;
+  }],
+  ["incorrect transport digest", x => {
+    x.artifactsPage.artifacts[0].digest = "sha256:" + "0".repeat(64);
+  }],
+  ["untrusted candidate digest", x => {
+    x.expectedCandidateSha256 = "0".repeat(64);
+  }],
+  ["ZIP byte tamper", x => {
+    x.archive = Buffer.from(x.archive);
+    x.archive[0] ^= 0xff;
+  }],
+]) {
+  test("raw API and ZIP correlation fails closed: " + label, () => {
+    const params = rawGitHubApiFixture();
+    mutate(params);
+    assert.throws(() => verifyNativeArtifactApiProjectedDryRunEvidence(params));
   });
 }

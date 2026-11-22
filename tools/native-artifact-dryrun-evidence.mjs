@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 
+import { projectNativeArtifactGitHubApi } from "./native-artifact-github-api-projection.mjs";
 import { validateProposedHostImportMetadata } from "./native-artifact-host-import-design.mjs";
 import { verifyNativeArtifactCandidateClosure } from "./native-artifact-manifest-closure.mjs";
 
@@ -47,5 +48,37 @@ export function verifyNativeArtifactDryRunEvidence({
     fileCount: contents.fileCount,
     totalBytes: contents.totalBytes,
     liveMutation: false,
+  };
+}
+
+
+/**
+ * Single source-only correlation for caller-supplied GitHub REST responses and
+ * the exact ZIP buffer. API authentication and independently owner-selected
+ * candidate digest are external requirements, NEVER established here.
+ * No network, archive extraction, host access or release activation.
+ */
+export function verifyNativeArtifactApiProjectedDryRunEvidence({
+  archive, repository, expectedMainSha, observedAt, workflowRun,
+  jobsPage, artifactsPage, expectedCandidateSha256,
+}) {
+  const projected = projectNativeArtifactGitHubApi({
+    repository, expectedMainSha, observedAt, workflowRun, jobsPage, artifactsPage,
+  });
+  assert.equal(projected.status, "CALLER_PROJECTED_GITHUB_API_NOT_AUTHENTICATED");
+  const verified = verifyNativeArtifactDryRunEvidence({
+    archive,
+    observedAt: projected.observedAt,
+    expectedMainSha: projected.expectedMainSha,
+    expectedCandidateSha256,
+    run: projected.run,
+    artifact: projected.artifact,
+  });
+  assert.equal(verified.status,
+    "NATIVE_ARTIFACT_SOURCE_ONLY_EVIDENCE_CLOSED_NO_HOST_AUTHORITY");
+  return {
+    ...verified,
+    status: "API_PROJECTED_ZIP_BYTES_CLOSED_NOT_AUTHENTICATED_OR_HOST_AUTHORIZED",
+    githubApiAuthenticated: false,
   };
 }
