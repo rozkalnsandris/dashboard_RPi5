@@ -66,6 +66,7 @@ function readCanonicalJson(archive, member, maximum, label, keys) {
  */
 export function verifyNativeArtifactCandidateClosure({
   archive, transportDigest, sourceSha, expectedCandidateSha256,
+  includeValidatedMetadata = false,
 }) {
   assert.match(sourceSha ?? "", SOURCE_SHA, "exact source SHA required");
   assert.match(expectedCandidateSha256 ?? "", SHA256,
@@ -139,11 +140,20 @@ export function verifyNativeArtifactCandidateClosure({
   assert.equal(receipt.architecture, "arm64");
   assert.equal(receipt.status, "UNTRUSTED_SOURCE_ONLY_NOT_DEPLOYED");
   assert.equal(receipt.activationAuthorized, false);
-  return {
+  const result = {
     status: "ZIP_MANIFEST_BYTES_CLOSED_NOT_AUTHORIZED_FOR_HOST",
     sourceSha, candidateSha256,
     fileCount: manifest.fileCount,
     totalBytes: manifest.totalBytes,
     liveMutation: false,
   };
+  if (includeValidatedMetadata === true) {
+    // Internal bridge for the source-only provenance correlator.
+    // These values are derived from verified ZIP bytes, not caller projections.
+    result.validatedMetadata = {
+      manifest, receipt,
+      entries: envelope.entries.map(({ name, kind, bytes }) => ({ name, kind, bytes })),
+    };
+  }
+  return result;
 }
