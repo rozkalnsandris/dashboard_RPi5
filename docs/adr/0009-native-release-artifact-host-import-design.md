@@ -20,6 +20,22 @@ The source-only contract is `ops/production/native-artifact-host-import-design.j
 
 **No authentication or authority:** caller-supplied ZIP, source and candidate digests are not authenticated GitHub/API/owner evidence by this function. It cannot download, extract to a host, install, promote or activate an artifact, and does not verify trusted-controller execution. Even a PASS result is **not** approval for any RPi5 operation.
 
+## Source-only end-to-end dry-run evidence correlation
+
+`tools/native-artifact-dryrun-evidence.mjs` joins the existing ZIP
+envelope/payload/manifest/receipt checks with strict GitHub provenance metadata
+validation using the **same verified archive bytes**. It rejects archive byte
+length drift against the artifact API projection, mismatched transport and
+independent candidate digests, incomplete/PR workflow runs, stale main, expired
+or ambiguous artifacts, and changed artifact-run links. The output is a
+deterministic **source-only evidence summary**, not an extraction plan or
+production permission.
+
+**Not yet implemented:** an authenticated GitHub API collector, independent
+owner-pinned candidate digest acquisition, an RPi5 host importer, staging or
+trusted-controller invocation. Caller-projected metadata is not an authenticated
+source by itself. A PASS cannot authorize any LIVE action.
+
 ## Required future ingestion sequence (NOT implemented)
 
 1. **Selection:** an operator reviews one authenticated GitHub Actions `CI` **push on `refs/heads/main`** for the exact merged 40-hex source SHA; require successful workflow, native ARM64 candidate job and FAST-LANE merge gate, matching unexpired artifact name, run ID and API-reported ZIP digest. Reject PR-produced, mutable-ref, skipped, mismatched or expired inputs. Existing 7-day artifacts are *time-limited evidence*, not stable release storage.

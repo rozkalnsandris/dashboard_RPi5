@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { crc32, deflateRawSync } from "node:zlib";
 
 import { verifyNativeArtifactCandidateClosure } from "./native-artifact-manifest-closure.mjs";
+import { verifyNativeArtifactDryRunEvidence } from "./native-artifact-dryrun-evidence.mjs";
 import { verifyNativeArtifactZipPayload } from "./native-artifact-zip-envelope.mjs";
 
 const sourceSha = "a".repeat(40);
@@ -197,4 +198,79 @@ for (const [label, input] of [
   }))],
 ]) {
   test("fail closed: " + label, () => assert.throws(input()));
+}
+
+
+function provenanceFixture() {
+  const selected = fixture();
+  const archive = selected.archive;
+  return {
+    archive,
+    observedAt: "2026-11-22T10:00:00Z",
+    expectedMainSha: sourceSha,
+    expectedCandidateSha256: selected.digest,
+    run: {
+      id: 4123, attempt: 1,
+      repository: "rozkalnsandris/dashboard_RPi5",
+      repositoryId: 123456, headRepositoryId: 123456,
+      workflow: "CI", workflowPath: ".github/workflows/ci.yml",
+      event: "push", ref: "refs/heads/main", headBranch: "main",
+      headSha: sourceSha,
+      status: "completed", conclusion: "success",
+      nativeJobConclusion: "success", mergeGateConclusion: "success",
+      createdAt: "2026-11-21T10:00:00Z",
+    },
+    artifact: {
+      id: 7734, matchingNameCount: 1, runId: 4123,
+      name: "dashboard-native-arm64-" + sourceSha,
+      digest: transportDigest(archive), expired: false,
+      sizeBytes: archive.length,
+      createdAt: "2026-11-21T10:05:00Z",
+      expiresAt: "2026-11-28T10:04:59Z",
+      workflowRun: {
+        id: 4123, repositoryId: 123456,
+        headRepositoryId: 123456,
+        headBranch: "main", headSha: sourceSha,
+      },
+    },
+  };
+}
+
+test("native artifact dry-run binds ZIP bytes to projected run identity", () => {
+  const params = provenanceFixture();
+  const result = verifyNativeArtifactDryRunEvidence(params);
+  assert.deepStrictEqual(result, {
+    status: "NATIVE_ARTIFACT_SOURCE_ONLY_EVIDENCE_CLOSED_NO_HOST_AUTHORITY",
+    sourceSha, candidateSha256: params.expectedCandidateSha256,
+    transportSha256: params.artifact.digest,
+    artifactId: 7734, runId: 4123, fileCount: 1, totalBytes: 5,
+    liveMutation: false,
+  });
+});
+
+for (const [label, mutate] of [
+  ["stale main", x => { x.expectedMainSha = "b".repeat(40); }],
+  ["PR artifact", x => { x.run.event = "pull_request"; }],
+  ["wrong workflow", x => { x.run.workflowPath = ".github/workflows/other.yml"; }],
+  ["failed native job", x => { x.run.nativeJobConclusion = "failure"; }],
+  ["incomplete workflow run", x => { x.run.status = "in_progress"; }],
+  ["wrong producer repository", x => { x.run.repositoryId += 1; }],
+  ["wrong artifact run", x => { x.artifact.runId += 1; }],
+  ["wrong artifact branch", x => { x.artifact.workflowRun.headBranch = "dev"; }],
+  ["ambiguous matching artifacts", x => { x.artifact.matchingNameCount = 2; }],
+  ["expired artifact", x => { x.artifact.expired = true; }],
+  ["wrong observed artifact length", x => { x.artifact.sizeBytes += 1; }],
+  ["incorrect ZIP transport digest", x => {
+    x.artifact.digest = "sha256:" + "0".repeat(64);
+  }],
+  ["untrusted candidate digest", x => {
+    x.expectedCandidateSha256 = "0".repeat(64);
+  }],
+  ["ZIP byte drift", x => { x.archive = Buffer.from(x.archive); x.archive[0] ^= 0xff; }],
+]) {
+  test("source-only dry-run rejects " + label, () => {
+    const params = provenanceFixture();
+    mutate(params);
+    assert.throws(() => verifyNativeArtifactDryRunEvidence(params));
+  });
 }
