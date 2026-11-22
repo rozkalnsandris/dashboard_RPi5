@@ -36,6 +36,12 @@ owner-pinned candidate digest acquisition, an RPi5 host importer, staging or
 trusted-controller invocation. Caller-projected metadata is not an authenticated
 source by itself. A PASS cannot authorize any LIVE action.
 
+## GitHub REST API provenance adapter (source-only)
+
+`tools/native-artifact-github-api-projection.mjs` maps canonical GitHub REST repository, completed push-on-main workflow run, complete (bounded under 100) run-jobs listing, and complete run-artifacts listing into the existing read-only evidence verifier's inputs. It rejects foreign repository IDs, stale SHA, wrong workflow, run attempt drift, incomplete or failed required native ARM64/FAST-LANE jobs, missing or ambiguous matching artifact names, expired artifacts, and mismatched embedded workflow-run linkage. Source tests use a synthetic fixture shaped after a real read-only GitHub REST response and negative tampering cases.
+
+**Trust limit:** projection does not make HTTP requests, authenticate GitHub, obtain artifact bytes, supply an independent candidate digest, or authorize host access. The caller must independently authenticate and bind each GitHub response to the same observed run; the existing ZIP byte correlator and owner-selected expected digest are separate checks. Refuse paginated/incomplete API lists instead of silently trusting the first page. No automatic download, import, restart or LIVE.
+
 ## Required future ingestion sequence (NOT implemented)
 
 1. **Selection:** an operator reviews one authenticated GitHub Actions `CI` **push on `refs/heads/main`** for the exact merged 40-hex source SHA; require successful workflow, native ARM64 candidate job and FAST-LANE merge gate, matching unexpired artifact name, run ID and API-reported ZIP digest. Reject PR-produced, mutable-ref, skipped, mismatched or expired inputs. Existing 7-day artifacts are *time-limited evidence*, not stable release storage.
