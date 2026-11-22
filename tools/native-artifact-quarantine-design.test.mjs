@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { URL } from "node:url";
 
 const read = async path => JSON.parse(await readFile(new URL("../" + path, import.meta.url), "utf8"));
 const policy = await read("ops/production/native-artifact-quarantine-design.json");
@@ -79,7 +80,7 @@ for (const [name, change] of [
   ["accidental importer implementation", p => { p.authority.importerExecutableImplemented = true; }],
 ]) {
   test("quarantine design fails closed: " + name, () => {
-    const bad = structuredClone(policy);
+    const bad = JSON.parse(JSON.stringify(policy));
     change(bad);
     assert.throws(() => requireQuarantineBoundary(bad));
   });
