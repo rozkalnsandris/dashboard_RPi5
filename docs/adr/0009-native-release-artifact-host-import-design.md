@@ -60,6 +60,23 @@ provenance, download or extract to disk, or authorize an RPi5 host operation.
 Owner-approved host import, trusted-controller PLAN/APPLY, any restart, and
 every LIVE release remain separate gates.
 
+## Six-read GitHub snapshot contract (source-only, external GET transport)
+
+`tools/native-artifact-github-readonly-snapshot.mjs` defines a bounded, sequential
+six-GET selection for the canonical repository: exact `main` before, repository
+identity, one exact workflow run, complete jobs, complete artifacts, then exact
+`main` after. It fails closed on a stale or moving SHA, unexpected/partial
+responses, missing or failed native/FAST-LANE jobs, and artifact provenance
+mismatches. One failed GET ends the process with no hidden retry. Negative
+tests prove fail-closed behavior and exact fixed endpoints.
+
+The caller supplies `getJson`: this module **does not implement HTTP**, read
+credentials or tokens, authenticate GitHub responses, download ZIP bytes or
+establish independent candidate authenticity. It returns a
+`GITHUB_READONLY_SNAPSHOT_PROJECTED_NOT_AUTHENTICATED` projection for
+subsequent separately pinned ZIP-byte validation, **not** permission to import
+or run code on RPi5. No LIVE, host mutation or automatic deploy.
+
 ## Required future ingestion sequence (NOT implemented)
 
 1. **Selection:** an operator reviews one authenticated GitHub Actions `CI` **push on `refs/heads/main`** for the exact merged 40-hex source SHA; require successful workflow, native ARM64 candidate job and FAST-LANE merge gate, matching unexpired artifact name, run ID and API-reported ZIP digest. Reject PR-produced, mutable-ref, skipped, mismatched or expired inputs. Existing 7-day artifacts are *time-limited evidence*, not stable release storage.
